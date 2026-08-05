@@ -101,6 +101,15 @@ android/app/debug/
 *.ap_
 *.dex
 *.hprof
+*.iml
+.cxx/
+.kotlin/
+
+# ══ iOS (RN CLI template additions) ══
+*.xcuserstate
+
+# ══ Ruby / CocoaPods (fastlane Gemfile) ══
+vendor/bundle/
 
 # ══ Supabase ══
 supabase/.branches/
