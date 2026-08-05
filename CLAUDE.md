@@ -88,8 +88,8 @@ These cause 90% of merge pain. No owner, so the rule is **single-writer at a tim
 Everyone works apart, so the discipline is about **merging cleanly** and **staying visible** — not about review gates.
 
 ```
-main        ← protected. Tagged releases only.
-develop     ← integration branch. All PRs target this.
+main        ← integration branch. All PRs target this. CI green to merge.
+              Releases are cut by tagging a commit on main (v1.0.0).
 feature/*   ← your work. One branch per task.
 ```
 
@@ -106,7 +106,7 @@ fix/P3-3.0-rssi-flapping
 
 1. **Check `git fetch && git branch -r` before starting a task.** Remote branches are the live claim list. If a `feature/P2-2.0-*` branch exists, that task is taken.
 2. **Push your branch on day one**, empty if need be. That is how you claim the task. An unpushed branch claims nothing.
-3. **Rebase on `develop` every morning.** `git pull --rebase origin develop`. A three-day-old branch is a merge conflict waiting to happen.
+3. **Rebase on `main` every morning.** `git pull --rebase origin main`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `main`, staying current matters more, not less.
 4. **Small PRs.** One task, one PR. A 2000-line PR nobody has seen in progress is unreviewable and unmergeable.
 5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
 6. **CI green before merge.** No exceptions.
@@ -125,7 +125,7 @@ frame order is mandatory per spec. Constant-time CMAC comparison.
 
 - **Git is not on PATH.** Prefix: `$env:PATH = "C:\Program Files\Git\cmd;$env:PATH"`
 - **PowerShell 5.1 mangles `-m` messages containing double quotes.** Write the message to a file and use `git commit -F <file>`.
-- Never `--no-verify`. Never force-push `develop` or `main`.
+- Never `--no-verify`. **Never force-push `main`** — everyone's work lives there.
 
 ---
 
@@ -172,7 +172,7 @@ npx supabase db push     # migrations
 
 From spec §12.1. All of it, not the happy path:
 
-- [ ] Merged to `develop` via PR; CI green
+- [ ] Merged to `main` via PR; CI green
 - [ ] Works on **both** iOS and Android, on a **physical** device
 - [ ] Touches 🔴 data → verified no disk write, no log, no network payload
 - [ ] Touches BLE → tested against the mock, **failure paths included**

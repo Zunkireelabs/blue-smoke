@@ -268,7 +268,7 @@ why M1 carries no secondary responsibilities.
 - **Daily standup**, 15 min, tracks report blockers only. Open questions are read aloud every day until closed.
 - **Definition of Done** is §12.1 of the technical spec. A ticked box means every criterion, not "the happy path works."
 - **Ticking a box here is a claim.** Milestones M0–M8 are demonstrated live or on video, never asserted.
-- **Branching:** `feature/*` → PR → `develop` → tag → `main`. CI must be green to merge.
+- **Branching:** `feature/*` → PR → `main` → tag for release. CI must be green to merge.
 - **The three inviolable rules** (§2.2 of the spec) are checked in every PR touching verification. A breach is an automatic block, not a review comment.
 - **Scope changes** go through the PRD. Add-ons stay in [`TODO-addons.md`](TODO-addons.md) and do not leak into the base build.
 

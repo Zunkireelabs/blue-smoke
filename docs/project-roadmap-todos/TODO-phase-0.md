@@ -170,7 +170,7 @@
 - [ ] PR pipeline: typecheck → lint → unit tests → build both platforms
 - [ ] iOS signing via App Store Connect API key
 - [ ] Android signing via Play service account
-- [ ] `develop` merge → TestFlight + Play Internal Testing
+- [ ] `main` merge → TestFlight + Play Internal Testing
 - [ ] Tag `v*` → production build behind a manual approval gate
 - [ ] Remote-config table + client cache implemented (spec §10.2)
 - [ ] **Staging verified to mirror production, including RLS policies**

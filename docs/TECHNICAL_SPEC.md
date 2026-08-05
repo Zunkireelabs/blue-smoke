@@ -960,7 +960,7 @@ Staging must mirror production configuration exactly, including RLS policies. Mi
 
 GitHub Actions:
 - **On PR:** typecheck → lint → unit tests → build both platforms. All four must pass to merge.
-- **On merge to `develop`:** staging build → TestFlight + Play Internal.
+- **On merge to `main`:** staging build → TestFlight + Play Internal.
 - **On tag `v*`:** production build → store submission (manual approval gate).
 
 Secrets in GitHub Actions secrets; signing via App Store Connect API key and a Play service account. **No secret is ever committed**, and CI runs a secret-scanning step.
@@ -1003,7 +1003,7 @@ Android budget devices are where on-device ML latency and liveness FRR will hurt
 
 A task is Done when **all** of these hold:
 
-- [ ] Code merged to `develop` via reviewed PR
+- [ ] Code merged to `main` via reviewed PR
 - [ ] Typecheck, lint, and unit tests pass in CI
 - [ ] Works on **both** iOS and Android on a physical device
 - [ ] If it touches 🔴 data: verified no disk write, no log, no network payload
