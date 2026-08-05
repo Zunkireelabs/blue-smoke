@@ -1,0 +1,149 @@
+# ─────────────────────────────────────────────────────────────
+# Blue Smoke — .gitignore
+# React Native (bare) + TypeScript + Supabase
+# See docs/TECHNICAL_SPEC.md §10 for environment & secret handling
+# ─────────────────────────────────────────────────────────────
+
+# ══ SECRETS — nothing here may ever be committed ══
+# The Supabase SERVICE ROLE key bypasses every RLS policy in §5.3.
+# Committing it defeats the entire server-side ownership model.
+.env
+.env.*
+!.env.example
+*.env
+secrets.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+
+# Signing & provisioning
+*.keystore
+!debug.keystore
+*.jks
+*.p12
+*.p8
+AuthKey_*.p8
+*.mobileprovision
+*.cer
+*.certSigningRequest
+ios/fastlane/report.xml
+ios/fastlane/Preview.html
+ios/fastlane/screenshots
+ios/fastlane/test_output
+
+# Device root keys / provisioning manifests (spec §4.5, OQ-4)
+# K_dev material must never be in version control under any circumstance.
+*key-manifest*
+*keymanifest*
+device-keys*
+*.kdev
+
+# ══ VERIFICATION TEST DATA — 🔴 never-persisted class (spec §8.1) ══
+# The labelled face-match set (§6.3) contains real government IDs and
+# real faces. It stays on tuning machines, never in the repo.
+test-data/ids/
+test-data/selfies/
+test-data/faces/
+*.id-sample.*
+fixtures/verification/
+
+# ══ Node ══
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/cache
+.yarn/install-state.gz
+.eslintcache
+
+# ══ React Native / Metro ══
+.expo/
+.expo-shared/
+*.jsbundle
+.metro-health-check*
+metro.config.js.bak
+
+# ══ iOS ══
+ios/Pods/
+ios/build/
+ios/.xcode.env.local
+ios/Podfile.lock.bak
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+DerivedData/
+
+# ══ Android ══
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/local.properties
+android/.idea/
+android/app/release/
+android/app/debug/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.hprof
+
+# ══ Supabase ══
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+# NOTE: supabase/migrations/ IS tracked — it is the schema source of truth (§10.1)
+
+# ══ Testing ══
+coverage/
+.nyc_output/
+artifacts/
+e2e/artifacts/
+detox/artifacts/
+*.log
+
+# ══ Build output ══
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ══ Editors & OS ══
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ══ Scratch / working files ══
+temp_ss/
+temp/
+tmp/
+scratch/
+*.tmp
+*.bak
+~$*.xlsx
+~$*.docx
