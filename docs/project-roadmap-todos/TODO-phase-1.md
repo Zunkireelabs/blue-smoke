@@ -7,13 +7,13 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — proposed phone-OTP addition, spec §1.2.1)*
+**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
 
 **Depends on:** `P0-3.0` (Supabase + RLS), `P0-4.0` (RN scaffold), `P0-2.0` + mock peripheral
 
 ---
 
-## P1-1.0 — Signup / Login / Password Reset + Phone OTP ⚠️ SCOPE ADDITION PROPOSED
+## P1-1.0 — Signup / Login / Password Reset + Phone OTP
 `Auth` · `Mobile (iOS+Android)` · **Medium** · **~4.5 d** *(was 2.5 d — see spec §1.2.1)* · Owner: M3
 
 > Account creation and secure login via **two** first-class methods — email + password, or phone
@@ -21,9 +21,8 @@
 > ownership and age status attach to. Both auth methods resolve to the same `user_id`; business
 > logic never branches on which one was used.
 >
-> **⚠️ The phone-OTP half of this task is a proposed scope addition** (spec §1.2.1), not yet
-> confirmed with the client/team. Confirm before counting the extra ~2 person-days against the
-> roadmap.
+> Phone OTP was raised as a proposal and **confirmed in team meeting, 2026-08-05** — the ~4.5
+> person-day estimate (was 2.5 d, see spec §1.2.1) is the locked figure for this task.
 
 **Method A — Email + password** *(original scope)*
 - [ ] Signup screen — email + password, Zod validation
@@ -32,7 +31,7 @@
 - [ ] Password reset request + email flow
 - [ ] Deep-link handling for the reset link on both platforms
 
-**Method B — Phone number + OTP** *(proposed addition, spec §1.2.1)*
+**Method B — Phone number + OTP** *(confirmed addition, spec §1.2.1)*
 - [ ] Auth method choice screen — Email or Phone, single decision point before either flow
 - [ ] Phone input with country-code picker, validated via `libphonenumber-js`
 - [ ] Twilio Verify configured as Supabase Auth's **native** phone provider (no custom bridge)
@@ -51,7 +50,7 @@
 - [ ] Tested on both platforms, both methods
 
 **Assumption:** BaaS auth supports email/password and reset email flow; Twilio Verify account
-provisioned for the phone method *(pending confirmation of the §1.2.1 proposal)*.
+provisioned for the phone method (§1.2.1, confirmed 2026-08-05).
 **Excludes:** social / SSO login.
 **Risk:** email deliverability for reset links. → *Verify Supabase SMTP config early; consider a
 custom SMTP provider for prod.* **New risk:** Twilio Verify cost/volume and SMS deliverability by

@@ -58,12 +58,15 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 | Firmware | **We author the BLE spec (§4); the client's firmware team implements it** | Firmware development is an add-on, quoted separately. |
 | Timeline | **30 days** | See `project-roadmap-todos/ROADMAP.md`. |
 | Push | **Supabase → FCM (Android) / APNs (iOS)** via Edge Function | Avoids adding Firebase as a second BaaS. |
+| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1 | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. |
 
-> ### ⚠️ 1.2.1 Proposed scope addition — Phone + OTP authentication
-> **Status: proposed, not yet team/client-confirmed.** Raised during Phase 1 auth planning.
+> ### 1.2.1 Phone + OTP authentication — second auth method
+> **Status: confirmed in team meeting, 2026-08-05.** Raised during Phase 1 auth planning as a
+> proposal; the team confirmed it in meeting. `P1-1.0`'s effort estimate (§5.5 below and
+> `TODO-phase-1.md`) is locked at ~4.5 person-days on this basis.
 >
-> Today, `P1-1.0` and §5.5 below assume a single auth method (email + password). This proposal
-> adds a **second, equally first-class method** — users choose **either** at signup/login:
+> `P1-1.0` and §5.5 below now assume **two** first-class auth methods — users choose **either** at
+> signup/login:
 >
 > | | |
 > |---|---|
@@ -641,7 +644,7 @@ Server logic (service role):
 | Operation | Mechanism | Auth |
 |---|---|---|
 | Sign up / sign in / password reset | `supabase.auth` | — |
-| *(proposed, §1.2.1)* Sign up / sign in via phone OTP | `supabase.auth` with Twilio Verify as the native phone provider | — |
+| Sign up / sign in via phone OTP *(§1.2.1)* | `supabase.auth` with Twilio Verify as the native phone provider | — |
 | Submit verification result | `INSERT verifications` (RLS) | User JWT |
 | Read own verification status | `SELECT verifications` (RLS) | User JWT |
 | List / rename / unpair devices | CRUD on `device_ownership` (RLS) | User JWT |
