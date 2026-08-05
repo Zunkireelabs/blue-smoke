@@ -7,33 +7,54 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 0 / 71 sub-tasks
+**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
 
 **Depends on:** `P0-3.0` (Supabase + RLS), `P0-4.0` (RN scaffold), `P0-2.0` + mock peripheral
 
 ---
 
-## P1-1.0 — Signup / Login / Password Reset
-`Auth` · `Mobile (iOS+Android)` · **Medium** · **2.5 d** · Owner: M3
+## P1-1.0 — Signup / Login / Password Reset + Phone OTP
+`Auth` · `Mobile (iOS+Android)` · **Medium** · **~4.5 d** *(was 2.5 d — see spec §1.2.1)* · Owner: M3
 
-> Account creation, secure login, and email-based password reset handled by the managed backend
-> (BaaS). Establishes the verified identity that device ownership and age status attach to.
+> Account creation and secure login via **two** first-class methods — email + password, or phone
+> number + OTP — plus email-based password reset. Establishes the verified identity that device
+> ownership and age status attach to. Both auth methods resolve to the same `user_id`; business
+> logic never branches on which one was used.
+>
+> Phone OTP was raised as a proposal and **confirmed in team meeting, 2026-08-05** — the ~4.5
+> person-day estimate (was 2.5 d, see spec §1.2.1) is the locked figure for this task.
 
+**Method A — Email + password** *(original scope)*
 - [ ] Signup screen — email + password, Zod validation
 - [ ] Password strength requirements + clear inline feedback
 - [ ] Login screen with error handling that does not leak account existence
 - [ ] Password reset request + email flow
 - [ ] Deep-link handling for the reset link on both platforms
+
+**Method B — Phone number + OTP** *(confirmed addition, spec §1.2.1)*
+- [ ] Auth method choice screen — Email or Phone, single decision point before either flow
+- [ ] Phone input with country-code picker, validated via `libphonenumber-js`
+- [ ] Twilio Verify configured as Supabase Auth's **native** phone provider (no custom bridge)
+- [ ] OTP entry screen — segmented 6-digit input, resend cooldown timer
+- [ ] Error handling mirrors the email flow — no enumeration, no leaking account existence
+
+**Shared — both methods**
 - [ ] Session persistence — refresh token in Keychain/Keystore (🟠 secret-at-rest, spec §8.1)
 - [ ] Auto-refresh + graceful expiry handling
 - [ ] Sign-out clears all local secrets, including any `K_sess`
-- [ ] `profiles` row created on signup
+- [ ] `profiles` row created on signup, regardless of method
 - [ ] Email verification flow (if enabled) handled
-- [ ] Tested on both platforms
+- [ ] Account-linking policy enforced: a first-time method with no existing link always creates a
+      new account; linking email + phone to one identity only happens as a deliberate
+      already-authenticated action, never an automatic merge at verify time (spec §1.2.1)
+- [ ] Tested on both platforms, both methods
 
-**Assumption:** BaaS auth supports email/password and reset email flow.
+**Assumption:** BaaS auth supports email/password and reset email flow; Twilio Verify account
+provisioned for the phone method (§1.2.1, confirmed 2026-08-05).
 **Excludes:** social / SSO login.
-**Risk:** email deliverability for reset links. → *Verify Supabase SMTP config early; consider a custom SMTP provider for prod.*
+**Risk:** email deliverability for reset links. → *Verify Supabase SMTP config early; consider a
+custom SMTP provider for prod.* **New risk:** Twilio Verify cost/volume and SMS deliverability by
+region — not yet assessed for target markets (relates to OQ-3).
 
 ---
 
