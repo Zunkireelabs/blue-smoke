@@ -46,30 +46,38 @@ Check these on **every** change. A breach is an automatic block, not a review co
 
 ---
 
-## Team & track ownership
+## Team & how work is claimed
 
-Three developers, working **independently**. Tracks are carved so the three of you rarely touch the same file.
+Three developers — **Sadin, Anish, Hardik** — working independently on feature branches.
 
-| Track | Owner | Owns these paths | Focus |
-|---|---|---|---|
-| **A — BLE & Lock** | **Sadin** | `src/features/ble/**`, `src/features/lock/**` | Scan, bonding, auth handshake, lock/unlock commands, proximity, background BLE. **The critical path.** |
-| **B — Verification** | **Anish** | `src/features/verification/**`, `src/native/**` | ID capture, OCR/DOB, liveness, face match, threshold tuning. **The 🔴 zone.** |
-| **C — App & Backend** | **Hardik** | `src/features/auth/**`, `src/features/onboarding/**`, `src/features/profile/**`, `src/features/devices/**`, `supabase/**`, `.github/**` | Auth, onboarding, device management UI, Supabase schema + RLS + Edge Functions, CI/CD |
+**There is no fixed ownership.** Anyone can pick up any task. Work is claimed dynamically:
 
-> Assignments are swappable — if the team reshuffles, **update this table first**, before the code moves.
+> **Pushing a branch named for a PRD task is the claim.** `git push -u origin feature/P1-4.0-bonding-flow` means P1-4.0 is taken. Check the remote branch list before starting something — it is the live picture of who is on what.
 
-**When asked to do work outside the current track's paths:** do it, but say which track's territory it's in, so the owner isn't surprised by the diff.
+So: **push the branch early**, on day one of the task, even empty. An unpushed branch claims nothing, and two people silently building `P2-2.0` is the expensive failure mode when everyone works apart.
 
-### ⚠️ Shared files — coordinate before editing
+### Codebase areas
 
-These cause 90% of merge pain. Touching one means telling the other two **in advance**:
+Not assignments — a map, so you can tell whose in-flight branch your diff might land near.
+
+| Area | Paths | Notes |
+|---|---|---|
+| **BLE & Lock** | `src/features/ble/**`, `src/features/lock/**` | Scan, bonding, auth handshake, lock/unlock, proximity, background BLE. **Critical path** — most likely to block others. |
+| **Verification** | `src/features/verification/**`, `src/native/**` | ID capture, OCR/DOB, liveness, face match. **The 🔴 zone** — extra rules below. Most self-contained area; easiest to work in without collisions. |
+| **App & Backend** | `src/features/auth|onboarding|profile|devices/**`, `supabase/**`, `.github/**` | Auth, onboarding, device UI, Supabase schema + RLS + Edge Functions, CI/CD. Broadest surface, so most likely to touch shared files. |
+
+**When work spans two areas:** say so, and prefer splitting it into two PRs over one wide diff.
+
+### ⚠️ Shared files — announce before editing
+
+These cause 90% of merge pain. No owner, so the rule is **single-writer at a time**: tell the other two before you start, not when you open the PR.
 
 | File | Why it's contested | Rule |
 |---|---|---|
-| `src/features/ble/protocol.ts` | Single home for **all** spec §4 constants | Sadin owns it. Others read, never edit. |
-| `package.json` / lockfile | Everyone adds deps | Announce first. Never resolve a lockfile conflict by hand — delete and regenerate. |
+| `src/features/ble/protocol.ts` | Single home for **all** spec §4 constants | Whoever's BLE task needs a constant adds it. **Append only** — never rewrite existing entries. Everyone else reads. |
+| `supabase/migrations/**` | Ordered, append-only | **Never edit a migration that has been pushed** — always add a new one. Announce before adding, so two migrations don't claim the same sequence number. |
+| `package.json` / lockfile | Everyone adds deps | Announce first. Never hand-resolve a lockfile conflict — delete and regenerate. |
 | `src/app/navigation.tsx` | Every feature adds routes | Add your route, touch nothing else. |
-| `supabase/migrations/**` | Ordered, append-only | Hardik owns. **Never edit a migration that has been pushed** — always add a new one. |
 | `src/shared/ui/**` | Shared components | Additive only. Changing an existing component's API needs a heads-up. |
 | `CLAUDE.md`, `docs/**` | Shared truth | Anyone may update; mention it in the PR body. |
 
@@ -77,7 +85,7 @@ These cause 90% of merge pain. Touching one means telling the other two **in adv
 
 ## Git workflow
 
-Solo tracks, so the discipline is about **merging cleanly**, not about review gates.
+Everyone works apart, so the discipline is about **merging cleanly** and **staying visible** — not about review gates.
 
 ```
 main        ← protected. Tagged releases only.
@@ -96,11 +104,13 @@ fix/P3-3.0-rssi-flapping
 
 **Rules that matter when three people work apart:**
 
-1. **Rebase on `develop` every morning.** `git pull --rebase origin develop`. A three-day-old branch is a merge conflict waiting to happen.
-2. **Small PRs.** One task, one PR. A 2000-line PR from a solo track is unreviewable and unmergeable.
-3. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
-4. **CI green before merge.** No exceptions.
-5. **Tick the TODO box in the same PR** that completes the work. The checkbox is the progress signal; if it lags, the roadmap lies.
+1. **Check `git fetch && git branch -r` before starting a task.** Remote branches are the live claim list. If a `feature/P2-2.0-*` branch exists, that task is taken.
+2. **Push your branch on day one**, empty if need be. That is how you claim the task. An unpushed branch claims nothing.
+3. **Rebase on `develop` every morning.** `git pull --rebase origin develop`. A three-day-old branch is a merge conflict waiting to happen.
+4. **Small PRs.** One task, one PR. A 2000-line PR nobody has seen in progress is unreviewable and unmergeable.
+5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
+6. **CI green before merge.** No exceptions.
+7. **Tick the TODO box in the same PR** that completes the work. The checkbox is the progress signal; if it lags, the roadmap lies.
 
 **Commit messages:** imperative subject, why-not-what body. Reference the PRD ID.
 
