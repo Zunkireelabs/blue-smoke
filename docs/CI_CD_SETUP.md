@@ -10,6 +10,7 @@ pipeline spec in `docs/TECHNICAL_SPEC.md` §10.3.
 | `.github/workflows/ci.yml` | PR → `main` | secret scan, typecheck, lint, unit tests, debug/simulator build both platforms |
 | `.github/workflows/deploy-staging.yml` | push to `main` | EAS staging build → TestFlight + Play Internal Testing |
 | `.github/workflows/deploy-production.yml` | manual (`workflow_dispatch`, enter a tag) | EAS production build → App Store + Play |
+| `.github/workflows/rollback.yml` | manual (`workflow_dispatch`, enter channel + update group) | Republishes a prior EAS Update — OTA rollback only, see its header comment for the native-binary caveat |
 | `eas.json` | — | build/submit profiles for development, staging, production |
 
 ## Known gap — this cannot be finished until P0-4.0 lands
@@ -77,6 +78,14 @@ account with access to it.
 
 ## Still open
 
+- **`rollback.yml` has nothing to roll back to yet.** `deploy-staging.yml`
+  and `deploy-production.yml` only run `eas build` + `eas submit` (full
+  native builds) — neither publishes an OTA update via `eas update`, so no
+  update groups exist on the `staging`/`production` channels for
+  `rollback.yml` to republish. If/when the team adopts `eas update` for
+  JS-only hotfixes (common alongside full builds), add an `eas update`
+  step to the deploy workflows so there's actually something for
+  `rollback.yml` to target.
 - Android signing keystore generation/storage isn't set up — EAS can manage
   this (`eas credentials`) once the project exists, or the team can supply
   its own upload keystore.

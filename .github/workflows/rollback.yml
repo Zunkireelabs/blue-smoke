@@ -1,0 +1,69 @@
+name: Rollback (OTA update)
+
+# Mobile translation of edgexcrm's rollback.yml. edgexcrm rolls back by
+# re-pointing a running container at a previously-built Docker image — there
+# is no equivalent "swap the running artifact" operation for an installed
+# native app. The one thing that IS instantly reversible, the same way, is
+# an EAS Update: republishing an older update group makes already-installed
+# apps fetch the old JS bundle again on next launch, no store review needed.
+#
+# IMPORTANT SCOPE LIMIT — read before using this for an incident:
+# This can only undo an OTA update published via `eas update`. It CANNOT
+# undo a new native build shipped via `eas build` + `eas submit`
+# (deploy-staging.yml / deploy-production.yml as they stand today don't
+# publish OTA updates at all — they only build+submit full native builds).
+# If the bad change is in native code, or shipped as a new store build, see
+# the per-platform steps below instead of running this workflow.
+#
+#   iOS:     No rollback exists. Apple does not let you revert a live
+#            version. Submit a new (fixed) build via deploy-production.yml
+#            and, if urgent, request Expedited Review in App Store Connect.
+#   Android: Play Console has a real rollback for staged rollouts —
+#            Play Console -> your app -> Production -> the active release
+#            -> "Halt rollout" (stops it spreading further) or, if a
+#            previous release is still active, "Rollback to previous
+#            release". This is a manual Play Console action; we haven't
+#            wired up the Play Developer API to automate it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "EAS update channel to roll back"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      update_group_id:
+        description: "EAS update group ID to republish — find via `eas update:list --branch <channel>`"
+        required: true
+        type: string
+      reason:
+        description: "Reason for rollback"
+        required: false
+        type: string
+        default: "Production issue"
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.channel }} to ${{ inputs.update_group_id }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.channel }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Republish previous update to channel
+        run: |
+          echo "================================================================"
+          echo "ROLLBACK channel '${{ inputs.channel }}' to update group ${{ inputs.update_group_id }}"
+          echo "Reason: ${{ inputs.reason }}"
+          echo "This affects the JS bundle only. It does NOT touch native code"
+          echo "or an already-submitted store build — see this file's header"
+          echo "comment for what to do if the bad change wasn't an OTA update."
+          echo "================================================================"
+          eas update:republish --channel "${{ inputs.channel }}" --group "${{ inputs.update_group_id }}" --non-interactive
