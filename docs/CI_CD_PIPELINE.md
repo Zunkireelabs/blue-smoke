@@ -13,8 +13,8 @@ underlying requirement, see `docs/TECHNICAL_SPEC.md` §10.3 and
  feature/*  ──PR──►  main  ──push──►  staging build  ──►  TestFlight
                       │                                    Play Internal
                       │
-                      └──tag v*──►  ⏸ manual approval  ──►  production build  ──►  App Store
-                                                                                    Play Production
+                      └──tag v*, then a human clicks     production build  ──►  App Store
+                         "Run workflow" ──────────────►                        Play Production
 ```
 
 Three workflows, three triggers, no overlap:
@@ -23,7 +23,13 @@ Three workflows, three triggers, no overlap:
 |---|---|---|
 | `.github/workflows/ci.yml` | PR opened/updated against `main` | All jobs green required to merge |
 | `.github/workflows/deploy-staging.yml` | push to `main` (i.e. every merge) | None — staging always tracks `main` |
-| `.github/workflows/deploy-production.yml` | push of a tag matching `v*` | Required reviewers on the `production` GitHub Environment |
+| `.github/workflows/deploy-production.yml` | manual `workflow_dispatch` (enter a tag) | The act of triggering it — no automatic firing on tag push |
+
+**Why manual dispatch instead of required reviewers:** required-reviewer
+environment protection needs a paid GitHub plan (Team/Enterprise) for
+private repos; this org doesn't have it. Decided 2026-08-05 with sthasadin
++ ani-shh. If the org upgrades later, add required reviewers to the
+`production` environment for a second layer on top of this.
 
 ---
 
@@ -82,33 +88,35 @@ checkout → npm ci → eas build --profile staging --platform all --wait
 
 ## 4. Stage 3 — Production deploy (`deploy-production.yml`)
 
-Fires only when someone tags a commit on `main` with `v*` (e.g. `v1.0.0`) —
-a deliberate, human-initiated action, not automatic.
+Tag a commit on `main` with `v*` (e.g. `v1.0.0`), then go to the Actions
+tab and manually run the workflow, entering that tag. Nothing fires
+automatically on the tag push itself.
 
 ```
-tag v* pushed
+1. someone tags main:  git tag v1.0.0 && git push origin v1.0.0
+2. someone with write access opens Actions → Deploy to Production →
+   "Run workflow" → types "v1.0.0" → Run
       │
       ▼
 ┌─────────────────────────┐
-│  job: build              │
-│  environment: production │  ⏸ waits for required reviewer approval
-│                           │
+│  job: build               │
+│  environment: production  │
+│  checkout ref: v1.0.0     │
 │  eas build --profile      │
 │  production --platform all│
 └─────────────────────────┘
-      │  (approved + built)
+      │
       ▼
 ┌─────────────────────────┐
-│  job: submit              │
-│  environment: production │  ⏸ waits for required reviewer approval (again)
-│                           │
-│  eas submit → App Store   │
-│  eas submit → Play (prod) │
+│  job: submit               │
+│  environment: production   │
+│  eas submit → App Store    │
+│  eas submit → Play (prod)  │
 └─────────────────────────┘
 ```
 
-- **The approval gate is not YAML** — it's a GitHub Environment (`production`) configured with required reviewers in repo settings. Any job declaring `environment: production` pauses until a reviewer approves the run. This is what satisfies "tag `v*` → production build behind a manual approval gate" (spec §10.3).
-- Approval happens **twice**: once before the build starts, once before submission. Collapse `build` and `submit` into a single job if the team decides one sign-off is enough.
+- **The approval gate is the manual dispatch itself**, not a GitHub review step. Required-reviewer environment protection needs a paid GitHub plan (Team/Enterprise) for private repos, which this org doesn't have — confirmed by the API rejecting it when we tried. Decided 2026-08-05 (sthasadin + ani-shh): no automatic trigger on the tag push at all; the workflow only exists to be run on purpose by someone with write access. That satisfies "manual approval gate" (spec §10.3) without needing the paid tier.
+- If the org upgrades to a plan with environment protection later, add required reviewers to the `production` GitHub Environment as a second, stronger layer on top of manual dispatch — don't need to remove the dispatch trigger to do that.
 - Google Play release is submitted with `releaseStatus: draft` (see `eas.json`) — it lands in the Play Console but does not go live until a human publishes it there. Apple review is separate and always manual regardless.
 - Uses the `bluesmoke-prod` Supabase project and the `com.bluesmoke.app` app identifier.
 
@@ -125,4 +133,5 @@ named profile in `eas.json` carries the environment variables, channel, and
 
 - No application code exists yet — the build jobs and the iOS scheme name in `ci.yml` are best-effort until `P0-4.0` scaffolds the app.
 - Per-environment bundle IDs in `eas.json` assume Expo prebuild; this is a **bare** RN project, so the real separation needs native Xcode/Gradle configuration once the app is scaffolded.
+- Production approval is manual-dispatch-only, not required-reviewer sign-off (billing plan limitation — see §4 above).
 - No E2E (Detox) job yet.

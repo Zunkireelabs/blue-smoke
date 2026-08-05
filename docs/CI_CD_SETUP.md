@@ -9,7 +9,7 @@ pipeline spec in `docs/TECHNICAL_SPEC.md` §10.3.
 |---|---|---|
 | `.github/workflows/ci.yml` | PR → `main` | secret scan, typecheck, lint, unit tests, debug/simulator build both platforms |
 | `.github/workflows/deploy-staging.yml` | push to `main` | EAS staging build → TestFlight + Play Internal Testing |
-| `.github/workflows/deploy-production.yml` | tag `v*` | EAS production build → App Store + Play, gated by manual approval |
+| `.github/workflows/deploy-production.yml` | manual (`workflow_dispatch`, enter a tag) | EAS production build → App Store + Play |
 | `eas.json` | — | build/submit profiles for development, staging, production |
 
 ## Known gap — this cannot be finished until P0-4.0 lands
@@ -35,13 +35,21 @@ double-checked against it afterward.
 
 ### Environments (Settings → Environments)
 
-Create three: `staging`, `production`, and (already referenced by nothing
-yet, add if a manual dev-build trigger is wanted later) `development`.
+`staging` and `production` exist (created 2026-08-05). Add `development`
+too if a manual dev-build trigger is wanted later.
 
-- **`staging`** — no required reviewers. Secrets below.
-- **`production`** — **add required reviewers** here. This is the entire
-  mechanism behind "tag `v*` → production build behind a manual approval
-  gate" in the spec; it is not expressed anywhere in the YAML.
+- **`staging`** — no gate. Secrets below.
+- **`production`** — **required reviewers is unavailable**: it's a paid
+  GitHub feature (Team/Enterprise) for private repos, and this org is on a
+  plan that doesn't include it (`gh api` returned "Please ensure the
+  billing plan supports the required reviewers protection rule" when
+  attempted). Approval decision (2026-08-05, sthasadin + ani-shh): the gate
+  is **manual `workflow_dispatch`** instead — `deploy-production.yml` has no
+  automatic trigger, so it only runs when someone with write access
+  explicitly clicks "Run workflow" and enters the tag to deploy. That
+  action of triggering it is the approval. If the org upgrades its plan
+  later, add required reviewers (sthasadin, ani-shh) to `production` for a
+  second layer on top of this.
 
 ### Secrets
 
