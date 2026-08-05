@@ -1,0 +1,44 @@
+# Normalise line endings so three developers on different machines don't
+# produce whole-file diffs against each other.
+* text=auto eol=lf
+
+# Windows-only files keep CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Shell scripts and Gradle wrappers must stay LF to remain executable
+*.sh          text eol=lf
+gradlew       text eol=lf
+*.gradle      text eol=lf
+
+# Binary — never diff, never normalise
+*.xlsx binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.keystore binary
+*.jks  binary
+*.p12  binary
+*.p8   binary
+*.ipa  binary
+*.apk  binary
+*.aab  binary
+*.jar  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+
+# Lockfiles: keep them out of diffs and out of merge negotiations.
+# Never hand-resolve a lockfile conflict — delete and regenerate.
+package-lock.json -diff linguist-generated
+yarn.lock         -diff linguist-generated
+Podfile.lock      -diff
+
+# Xcode project files conflict constantly; mark as binary-ish to avoid
+# corrupt auto-merges.
+*.pbxproj -merge
