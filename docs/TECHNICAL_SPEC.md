@@ -59,6 +59,36 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 | Timeline | **30 days** | See `project-roadmap-todos/ROADMAP.md`. |
 | Push | **Supabase → FCM (Android) / APNs (iOS)** via Edge Function | Avoids adding Firebase as a second BaaS. |
 
+> ### ⚠️ 1.2.1 Proposed scope addition — Phone + OTP authentication
+> **Status: proposed, not yet team/client-confirmed.** Raised during Phase 1 auth planning.
+>
+> Today, `P1-1.0` and §5.5 below assume a single auth method (email + password). This proposal
+> adds a **second, equally first-class method** — users choose **either** at signup/login:
+>
+> | | |
+> |---|---|
+> | **Method A — Email + password** | Existing, `supabase.auth` native. Unchanged. |
+> | **Method B — Phone number + OTP** *(new)* | **Twilio Verify**, configured as Supabase Auth's **native phone provider** — Supabase Auth calls Twilio Verify's `VerificationCheck` endpoint directly and issues the session itself. **No custom Edge Function bridge required.** |
+>
+> **Unified identity:** both methods resolve to the same `auth.users.id`. The app never branches
+> business logic on which method a user signed in with.
+>
+> **Account linking policy:** a first-time signup/login via either method with no existing link
+> **always creates a new account.** Linking email + phone to one identity is only ever a
+> deliberate action taken from an already-authenticated session (e.g. "add a phone number" in
+> settings) — **never** an automatic merge at verify time. This closes an account-takeover vector
+> (a reused/resold phone number or compromised email shouldn't silently inherit another user's
+> account).
+>
+> **New dependency:** Twilio Verify (SMS OTP delivery + verification). `libphonenumber-js` for
+> client-side phone validation/formatting.
+>
+> **Effort impact:** `P1-1.0` grows from **2.5 → ~4.5 person-days** — see the updated sub-task
+> list in `project-roadmap-todos/TODO-phase-1.md`.
+>
+> **Does not affect:** §2–§14 of this spec. This is additive to the account/auth layer only —
+> device trust model, verification pipeline, BLE spec, and crypto are all untouched.
+
 ### 1.3 Explicit non-goals (base scope)
 
 - ❌ Firmware development on the YC1012_JD / Cortex-M0+ *(add-on; base scope is spec only)*
@@ -611,6 +641,7 @@ Server logic (service role):
 | Operation | Mechanism | Auth |
 |---|---|---|
 | Sign up / sign in / password reset | `supabase.auth` | — |
+| *(proposed, §1.2.1)* Sign up / sign in via phone OTP | `supabase.auth` with Twilio Verify as the native phone provider | — |
 | Submit verification result | `INSERT verifications` (RLS) | User JWT |
 | Read own verification status | `SELECT verifications` (RLS) | User JWT |
 | List / rename / unpair devices | CRUD on `device_ownership` (RLS) | User JWT |
