@@ -8,11 +8,17 @@
  *
  * Constants only. No CMAC/HKDF implementation, no encoding functions, no I/O —
  * that belongs to commands.ts / auth.ts (P1-4.0, P3-2.0).
+ *
+ * All multi-byte integers are little-endian (spec §4.2).
  */
 
 // ── §4 — protocol version ───────────────────────────────────────────────────
 
 export const PROTOCOL_VERSION = 0x01; // §4 — frozen per P0-2.0
+
+// ── §4.2 — byte order ────────────────────────────────────────────────────────
+
+export const BYTE_ORDER = 'little-endian'; // §4.2 — all multi-byte integers
 
 // ── §4.2 — service and characteristics ──────────────────────────────────────
 
