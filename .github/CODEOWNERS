@@ -1,0 +1,14 @@
+# Auto-requests review from ani-shh and sthasadin on every PR.
+#
+# This is a soft nudge, not a hard gate: GitHub's branch protection
+# (required reviewers, blocked merge without approval) needs a paid plan for
+# private repos — this org doesn't have it (confirmed via the API, see
+# docs/CI_CD_SETUP.md). CODEOWNERS auto-requests these two as reviewers and
+# shows "review required" in the PR UI, but a merge isn't technically
+# blocked without their approval. Enforcement depends on the team actually
+# waiting for it, same as the "CI green before merge" rule in CLAUDE.md.
+#
+# If the org upgrades to a plan with branch protection, enable "Require
+# review from Code Owners" on main and stage to make this a real gate.
+
+* @ani-shh @sthasadin
