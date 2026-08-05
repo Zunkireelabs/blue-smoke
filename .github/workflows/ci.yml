@@ -44,8 +44,8 @@ jobs:
               ;;
           esac
 
-  build:
-    name: Build
+  verify:
+    name: Typecheck / Lint / Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,12 +57,14 @@ jobs:
 
       - run: npm ci
 
-      - name: Build
-        run: npm run build
-        env:
-          # Add all build-time env vars required by your framework here.
-          # Use secrets from the repository or environment.
-          # Examples:
-          # VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          # VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          # NEXT_PUBLIC_API_URL: ${{ secrets.STAGING_API_URL }}
+      # React Native app (P0-4.0) — no web `npm run build`. The full EAS build +
+      # privacy-guard + backend gates land in P0-5.0; this runs the code checks the
+      # scaffold actually ships with.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
