@@ -8,7 +8,11 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 0 / 7 tasks · 0 / 62 sub-tasks
+**Progress:** 1 / 7 tasks · 8 / 62 sub-tasks
+
+> **Counter reconciliation:** this branch is cut from `main`, where `P0-4.0` has not yet merged.
+> `P0-4.0` carries 8 more ticked sub-tasks, so the figure becomes **16 / 62** once both land.
+> Whichever merges second should update this line rather than treating it as a conflict.
 
 ---
 
@@ -30,14 +34,21 @@
 > privacy-by-design model (no raw ID/biometric data leaves the device), and the integration
 > blueprint for all later phases.
 
-- [ ] Component architecture documented (spec §2.1)
-- [ ] Trust boundaries defined, incl. the three inviolable rules (spec §2.2)
-- [ ] Data flows A (verification), B (activation), C (unlock) documented (spec §2.3)
-- [ ] Hardware constraints analysed from the YC1012_JD + Cortex-M0+ datasheets (spec §3)
-- [ ] Crypto primitive selected and justified — **AES-128-CMAC, not Ed25519** (spec §3.1)
-- [ ] Key hierarchy designed: `K_dev` (OTP + server) → `K_sess` (app) (spec §4.5)
-- [ ] Offline-unlock model confirmed: device derives `K_sess`, needs no network
-- [ ] **Architecture approved by all stakeholders** ← gate for Phase 1
+- [x] Component architecture documented (spec §2.1)
+- [x] Trust boundaries defined, incl. the three inviolable rules (spec §2.2) *(corrected — audit finding 4)*
+- [x] Data flows A (verification), B (activation), C (unlock) documented (spec §2.3) *(corrected — audit findings 1–3)*
+- [x] Hardware constraints analysed from the YC1012_JD + Cortex-M0+ datasheets (spec §3)
+- [x] Crypto primitive selected and justified — **AES-128-CMAC, not Ed25519** (spec §3.1)
+- [x] Key hierarchy designed: `K_dev` (OTP + server) → `K_sess` (app) (spec §4.5)
+- [x] Offline-unlock model confirmed: device derives `K_sess`, needs no network
+- [x] **Architecture approved by all stakeholders** ← gate for Phase 1 *(approved 2026-08-05; foundational decisions previously confirmed with the client-side stakeholder and recorded in `PROJECT_BRIEF.md` §5)*
+
+**Consistency audit:** [`docs/audits/P0-1.0-consistency-audit.md`](../audits/P0-1.0-consistency-audit.md) — five
+cross-checks, four findings, all corrected. Finding 1 was critical: §2.3 Flow B derived `K_sess`
+with the wrong HKDF parameters, which would have failed every authentication on real hardware.
+
+**Client-facing record:** [`docs/ARCHITECTURE-SIGNOFF.md`](../ARCHITECTURE-SIGNOFF.md) — written, **not yet sent**.
+The Day-1 escalation boxes above become tickable when it goes out.
 
 **Assumption:** client confirms BaaS choice and device hardware. → *Supabase confirmed; YC1012_JD confirmed.*
 **Excludes:** infrastructure procurement / hosting.
