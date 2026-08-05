@@ -8,7 +8,7 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 0 / 7 tasks · 11 / 62 sub-tasks
+**Progress:** 0 / 7 tasks · 8 / 62 sub-tasks
 
 ---
 
@@ -125,9 +125,9 @@
 - [x] Module layout created per spec §9.2
 - [x] React Navigation (native stack) configured
 - [x] TanStack Query + Zustand wired
-- [x] `react-native-ble-plx` integrated, building on both platforms *(installed + configured; not build-verified — no JDK/Android SDK/Xcode on this machine, see P0-4.0 report)*
-- [x] `react-native-vision-camera` integrated, building on both platforms *(installed + configured; not build-verified — same reason)*
-- [x] `react-native-keychain` integrated, hardware-backed verified *(installed; hardware-backed accessibility set at call sites in P1-4.0, not build-verified)*
+- [ ] `react-native-ble-plx` integrated, building on both platforms *(installed + configured; not build-verified — no JDK/Android SDK/Xcode on this machine, see P0-4.0 report)*
+- [ ] `react-native-vision-camera` integrated, building on both platforms *(installed + configured; not build-verified — same reason)*
+- [ ] `react-native-keychain` integrated, hardware-backed verified *(installed; hardware-backed accessibility set at call sites in P1-4.0, not build-verified)*
 - [x] `@supabase/supabase-js` integrated
 - [x] Native ML bridges scaffolded — Swift (Vision) + Kotlin (ML Kit), one shared TS interface *(M2)*
 - [x] `features/ble/protocol.ts` created as the single home for all §4 constants
