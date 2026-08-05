@@ -1,0 +1,57 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "APP_ENV": "development"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
+      "env": {
+        "APP_ENV": "staging"
+      },
+      "ios": {
+        "bundleIdentifier": "com.bluesmoke.app.staging"
+      },
+      "android": {
+        "package": "com.bluesmoke.app.staging"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "env": {
+        "APP_ENV": "production"
+      },
+      "ios": {
+        "bundleIdentifier": "com.bluesmoke.app"
+      },
+      "android": {
+        "package": "com.bluesmoke.app"
+      }
+    }
+  },
+  "submit": {
+    "staging": {
+      "android": {
+        "serviceAccountKeyPath": "./service-account-staging.json",
+        "track": "internal"
+      }
+    },
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./service-account-prod.json",
+        "track": "production",
+        "releaseStatus": "draft"
+      }
+    }
+  }
+}

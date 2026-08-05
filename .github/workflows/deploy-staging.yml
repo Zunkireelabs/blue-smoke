@@ -1,0 +1,62 @@
+name: Deploy to Staging
+
+# P0-5.0: on merge to main, build the staging profile and push it straight to
+# TestFlight + Play Internal Testing (spec §10.3). No manual gate — staging is
+# meant to always reflect the tip of main.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  build-and-submit:
+    name: EAS Build & Submit (Staging)
+    runs-on: ubuntu-latest
+    # Configure this GitHub Environment with the staging secrets listed in
+    # docs/CI_CD_SETUP.md. No required reviewers here — staging deploys are
+    # not gated.
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Materialize Play service account key
+        run: echo '${{ secrets.STAGING_PLAY_SERVICE_ACCOUNT_JSON }}' > service-account-staging.json
+
+      - name: Materialize App Store Connect API key
+        run: |
+          mkdir -p ios/certs
+          echo '${{ secrets.ASC_API_KEY_P8 }}' > ios/certs/AuthKey_staging.p8
+
+      - name: EAS Build (staging, both platforms)
+        run: eas build --profile staging --platform all --non-interactive --wait
+        env:
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+
+      - name: Submit to TestFlight
+        run: eas submit --profile staging --platform ios --non-interactive --latest
+        env:
+          EXPO_ASC_API_KEY_PATH: ios/certs/AuthKey_staging.p8
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+
+      - name: Submit to Play Internal Testing
+        run: eas submit --profile staging --platform android --non-interactive --latest
+
+      - name: Clean up local secret material
+        if: always()
+        run: rm -f service-account-staging.json ios/certs/AuthKey_staging.p8

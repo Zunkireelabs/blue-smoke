@@ -1,0 +1,79 @@
+name: Deploy to Production
+
+# P0-5.0: on a v* tag, build the production profile and submit to the App
+# Store + Google Play, gated behind manual approval (spec §10.3).
+#
+# The approval gate is NOT expressed in this YAML — it comes from the
+# `production` GitHub Environment having required reviewers configured
+# (Settings → Environments → production). Any job with `environment:
+# production` pauses for reviewer sign-off before it runs. See
+# docs/CI_CD_SETUP.md for how to set that up.
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: EAS Build (Production)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Build (production, both platforms)
+        run: eas build --profile production --platform all --non-interactive --wait
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+
+  submit:
+    name: Submit to App Store & Play
+    runs-on: ubuntu-latest
+    needs: build
+    # A second gate on the same environment — reviewers approve the build,
+    # then approve the submission separately. Merge into one job if the team
+    # decides a single sign-off is enough.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Materialize Play service account key
+        run: echo '${{ secrets.PROD_PLAY_SERVICE_ACCOUNT_JSON }}' > service-account-prod.json
+
+      - name: Materialize App Store Connect API key
+        run: |
+          mkdir -p ios/certs
+          echo '${{ secrets.ASC_API_KEY_P8 }}' > ios/certs/AuthKey_prod.p8
+
+      - name: Submit to App Store Connect
+        run: eas submit --profile production --platform ios --non-interactive --latest
+        env:
+          EXPO_ASC_API_KEY_PATH: ios/certs/AuthKey_prod.p8
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+
+      - name: Submit to Google Play (production track)
+        run: eas submit --profile production --platform android --non-interactive --latest
+
+      - name: Clean up local secret material
+        if: always()
+        run: rm -f service-account-prod.json ios/certs/AuthKey_prod.p8

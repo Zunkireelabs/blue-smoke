@@ -1,0 +1,116 @@
+name: CI
+
+# P0-5.0: PR pipeline — secret scan, typecheck, lint, unit tests, build both
+# platforms. All must pass before a PR can merge to main (spec §10.3).
+#
+# The Android/iOS build jobs are debug/simulator compiles, not signed
+# artifacts — they exist to catch native build breakage on every PR without
+# spending EAS build credits. Signed builds happen in deploy-staging.yml and
+# deploy-production.yml via EAS.
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --ci --coverage
+
+  build-android:
+    name: Build (Android)
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+  build-ios:
+    name: Build (iOS)
+    runs-on: macos-14
+    needs: [typecheck, lint]
+    env:
+      # Verify these against the real Xcode project once P0-4.0 scaffolds it —
+      # `react-native init` names the workspace/scheme after the RN project
+      # name, which isn't decided yet.
+      XCODE_WORKSPACE: BlueSmoke.xcworkspace
+      XCODE_SCHEME: BlueSmoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+      - name: Build for simulator (no signing)
+        working-directory: ios
+        run: |
+          xcodebuild build \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
