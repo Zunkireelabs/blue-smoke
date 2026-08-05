@@ -9,6 +9,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  promotion-guard:
+    name: Promotion Source Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce branch promotion order (feature/fix -> stage -> main)
+        run: |
+          BASE="${{ github.base_ref }}"
+          HEAD="${{ github.head_ref }}"
+          case "$BASE" in
+            main)
+              case "$HEAD" in
+                stage|promote/*)
+                  echo "✓ main PR head '$HEAD' is an allowed promotion source." ;;
+                *)
+                  echo "✗ PRs to main may only come from 'stage' or a 'promote/*' branch (got '$HEAD')."
+                  echo "  main is PRODUCTION. Merge feature branches to stage first, then promote"
+                  echo "  stage → main. Direct-to-main merges are how main/stage diverge."
+                  exit 1 ;;
+              esac
+              ;;
+            stage)
+              case "$HEAD" in
+                feature/*|fix/*|hotfix/*)
+                  echo "✓ stage PR head '$HEAD' matches the feature/fix/hotfix naming convention." ;;
+                *)
+                  echo "✗ PRs to stage must come from a 'feature/*', 'fix/*', or 'hotfix/*' branch (got '$HEAD')."
+                  echo "  See CLAUDE.md branch naming: feature/P1-4.0-bonding-flow, fix/P3-3.0-rssi-flapping."
+                  exit 1 ;;
+              esac
+              ;;
+            *)
+              echo "✓ base is '$BASE', not main or stage — nothing to enforce."
+              ;;
+          esac
+
   build:
     name: Build
     runs-on: ubuntu-latest
