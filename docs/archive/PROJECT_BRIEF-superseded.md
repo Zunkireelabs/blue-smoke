@@ -1,3 +1,31 @@
+> # ⚠️ SUPERSEDED — DO NOT BUILD FROM THIS DOCUMENT
+>
+> **Status:** Archived on 2026-08-05. Retained for historical context only.
+>
+> This was an **early internal exploration** written before the client-side stakeholder
+> locked the architecture. Several of its central proposals were **rejected** and must not
+> be reintroduced:
+>
+> | This doc proposed | Actual locked decision | Where it lives now |
+> |---|---|---|
+> | Persona (3rd-party KYC vendor) | **On-device ML only** — Apple Vision + Google ML Kit. No KYC vendor, no data leaves the phone. | `../TECHNICAL_SPEC.md` §6 |
+> | Node + Fastify + PostgreSQL + Redis, self-hosted on Fly.io | **Supabase** (managed BaaS) | `../TECHNICAL_SPEC.md` §5 |
+> | Ed25519 signature verification on the MCU | **AES-128-CMAC** challenge–response. The YC1012_JD has an AES-128 hardware block and no ECC accelerator; Ed25519 is the wrong primitive for this silicon. | `../TECHNICAL_SPEC.md` §4 |
+> | We write the device firmware | **We author the BLE GATT interface spec; the client's firmware team implements it.** Firmware development is an out-of-scope add-on. | `../TECHNICAL_SPEC.md` §4 |
+> | 12 weeks to pilot | **30 days** | `../project-roadmap-todos/ROADMAP.md` |
+> | Backend-signed unlock tokens minted per unlock (device online-dependent) | Server-issued **session key** at activation; unlock works offline in range thereafter | `../TECHNICAL_SPEC.md` §4.5 |
+>
+> **Two ideas from this document did survive** and were carried into the live spec:
+> per-unlock **nonce/challenge replay protection**, and **key rotation** support so a key
+> compromise cannot brick the fleet.
+>
+> The live documents are:
+> - `../PROJECT_BRIEF.md` — client-facing brief
+> - `../TECHNICAL_SPEC.md` — the build contract
+> - `../project-roadmap-todos/ROADMAP.md` — the 30-day plan
+>
+> ---
+
 # Project Brief — Age-Gated BLE Device + Companion App
 
 > Internal discussion document. Not final spec. Goal: align the team on architecture, stack, and phased plan before we cut code.

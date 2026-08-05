@@ -1,6 +1,10 @@
 # Blue Smoke — Project Brief
 
-> Status: client brief captured. Technical plan to follow.
+> Status: client brief captured. **Technical plan complete — see [`TECHNICAL_SPEC.md`](TECHNICAL_SPEC.md).**
+>
+> This document is the client-facing summary. For the build contract (architecture, BLE GATT
+> spec, data model, security model) read [`TECHNICAL_SPEC.md`](TECHNICAL_SPEC.md).
+> For the plan and progress tracking, read [`project-roadmap-todos/ROADMAP.md`](project-roadmap-todos/ROADMAP.md).
 
 ## 1. Product summary
 A cross-platform (iOS + Android) mobile app that controls a **Bluetooth-enabled vape device**.
@@ -49,14 +53,27 @@ device based on Bluetooth proximity.
 |---|---|
 | App framework | **React Native** (single codebase iOS + Android) |
 | Age/identity verification | **On-device ML** — Apple Vision (iOS) + Google ML Kit (Android). No data leaves device, no KYC vendor |
-| Backend / accounts | **Managed BaaS** (Supabase or Firebase): auth, user/device DB, push |
+| Backend / accounts | **Supabase** — auth, user/device DB, push. Postgres RLS enforces device ownership server-side |
+| Device authentication | **AES-128-CMAC** challenge–response. The YC1012_JD has a hardware AES-128 block and no ECC accelerator |
 | Firmware / BLE protocol | **We define** the BLE GATT lock/unlock + dead-man auto-lock spec; **their firmware team implements** it. Firmware dev is out of our base scope |
-| Timeline | **2 months (~8 working weeks)** |
+| Timeline | **30 days** |
 
-See `../../../.claude/plans/now-give-me-a-precious-dusk.md` for the full architecture, WBS, and
-timeline, and `Blue Smoke - WBS - Master Scope.xlsx` for the client-facing work breakdown.
+See [`TECHNICAL_SPEC.md`](TECHNICAL_SPEC.md) for the full architecture, BLE interface spec, and
+security model; [`project-roadmap-todos/ROADMAP.md`](project-roadmap-todos/ROADMAP.md) for the
+30-day plan; and `../Project_Bluesmoke - Nepa.works App - PRD - Master Scope - Internal.xlsx` for
+the client-facing work breakdown.
 
 ## 6. Still-open items to confirm with client
-- Target markets/countries (affects accepted ID types + OCR + privacy law: GDPR/CCPA).
-- Manual-review fallback policy for legitimate verification false-rejects.
-- Physical device + sample government IDs available for testing by ~week 6.
+
+Tracked in full as the open-questions register in
+[`TECHNICAL_SPEC.md` §13](TECHNICAL_SPEC.md#13-open-questions-register). The critical ones:
+
+- **OQ-1** 🔴 Physical device + sample government IDs — needed by **Day 15** (IDs) and **Day 26** (device), not week 6.
+- **OQ-2** 🔴 Manual-review fallback policy for legitimate verification false-rejects.
+- **OQ-4** 🔴 Who burns the per-device root key into OTP at manufacture, and how the key manifest reaches us.
+- **OQ-3** Target markets/countries (affects accepted ID types + OCR + privacy law: GDPR/CCPA).
+- **OQ-8** Apple + Google developer account ownership and signing assets.
+
+⚠️ Also needing agreement in Week 1: **"live on both stores" by Day 30 restated as "submitted
+by Day 30."** Store review is 1–7 days and an age-restricted product draws extra scrutiny — see
+[`ROADMAP.md` §5.1](project-roadmap-todos/ROADMAP.md).
