@@ -160,11 +160,17 @@ Two ideas from it **were carried forward** and are live in this spec: **nonce-ba
 | Boundary | What crosses it | What must never cross it |
 |---|---|---|
 | Camera → Verification engine | Raw ID image, raw selfie (RAM only) | — |
-| Verification engine → rest of app | `{ passed: bool, method, thresholdVersion }` | Images, face embeddings, DOB, name, ID number |
-| App → Supabase | `age_verified` boolean, timestamp, method, device serial **hash** | Images, embeddings, DOB, raw serial |
+| Verification engine → rest of app | `{ passed, method, thresholdVersion, outcomeReason }` — exactly these four (§9.2 rule 2) | Images, face embeddings, DOB, name, ID number, similarity score |
+| App → Supabase | `age_verified`, `verified_at`, `method`, `threshold_version`, `outcome_reason`, `app_version`, `platform` (§5.2.2), device serial **hash** | Images, embeddings, DOB, name, ID number, raw serial |
 | Supabase → App | `K_sess` (derived session key), ownership records | `K_dev` (root device key) — **never leaves the server** |
 | App → Device | Auth handshake, lock/unlock commands | Any PII whatsoever |
 | Device → App | Lock state, battery, fault codes | — (device holds no PII) |
+
+> **Note on `outcome_reason`.** It is deliberately coarse (`pass` · `under_18` · `face_mismatch` ·
+> `ocr_failed` · `liveness_failed`) and it *does* cross to the server (§5.2.2). `under_18` is a
+> derived age fact, not a DOB — it records that a check failed, never by how much and never the
+> underlying date. Keep it coarse: adding granularity here would turn a support signal into
+> stored personal data.
 
 **The three inviolable rules.** Any PR that breaks one of these is rejected on sight:
 
@@ -190,10 +196,12 @@ User → capture selfie → liveness → embed  │
 **Flow B — Device activation (P1→P3, one-time per device, requires network)**
 ```
 App: bond (LE Secure Connections) → read deviceInfo → serial_hash
-App → Supabase Edge Fn: issue-device-session { device_serial_hash }
+App → Supabase Edge Fn: issue-device-session { serial_hash, requested_ttl_days }
      Edge Fn asserts: age_verified == true AND ownership valid
-     Edge Fn: K_sess = HKDF(K_dev, "bluesmoke-session-v1" | user_id | session_id)
-     Edge Fn → App: { session_id, K_sess, expires_at }
+     Edge Fn: K_sess = HKDF-SHA256(ikm  = K_dev,
+                                   salt = session_id,            ← salt, not info
+                                   info = "bluesmoke-session-v1" | user_id | expires_at)
+     Edge Fn → App: { session_id, K_sess, expires_at, key_generation }
 App: store K_sess in Keychain/Keystore (biometric-gated)
 App → Device: auth handshake (§4.5) → ACTIVATE command
 ```
@@ -201,8 +209,10 @@ App → Device: auth handshake (§4.5) → ACTIVATE command
 **Flow C — Routine unlock (P3, works offline)**
 ```
 App: connect → read authChallenge (nonce N)
-App: proof = CMAC(K_sess, 0x01 | protoVer | N | session_id)  → write authResponse
-Device: recompute, compare, open authenticated session
+App: proof = CMAC(K_sess, 0x01 | protoVer | N | session_id[0..3])   ← first 4 bytes only
+App: write authResponse as TWO ordered frames (§4.5) — frame order is mandatory;
+     an out-of-order frame resets the handshake
+Device: recompute, compare in constant time, open authenticated session
 App: write lockCommand UNLOCK (counter-protected, CMAC-tagged)
 Device: unlock, notify lockState
 [phone leaves range] → firmware dead-man timer fires → device locks itself
@@ -1110,3 +1120,4 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
+| 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
