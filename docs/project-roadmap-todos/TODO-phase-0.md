@@ -110,14 +110,14 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 > Not a client deliverable. It is what makes Phases 1 and 3 buildable before hardware exists.
 > See spec §11.1.
 
-- [ ] Peripheral implements the full §4 GATT surface
-- [ ] Auth handshake implemented, incl. the CMAC path
-- [ ] All 7 commands implemented
-- [ ] **All failure paths simulable:** `AUTH_FAILED`, `REPLAY`, `RATE_LIMITED`, `SESSION_EXPIRED`, `NOT_ACTIVATED`, `FAULT`
-- [ ] Dead-man auto-lock timer simulated on disconnect
-- [ ] Battery drain + low-battery flag simulable
-- [ ] RSSI variation simulable for proximity testing
-- [ ] Documented in the repo README so any dev can run it
+- [x] Peripheral implements the full §4 GATT surface
+- [x] Auth handshake implemented, incl. the CMAC path
+- [x] All 7 commands implemented
+- [x] **All failure paths simulable:** `AUTH_FAILED`, `REPLAY`, `RATE_LIMITED`, `SESSION_EXPIRED`, `NOT_ACTIVATED`, `FAULT`
+- [x] Dead-man auto-lock timer simulated on disconnect
+- [x] Battery drain + low-battery flag simulable
+- [x] RSSI variation simulable for proximity testing
+- [x] Documented in the repo README so any dev can run it *(`tools/mock-peripheral/README.md`)*
 
 ---
 

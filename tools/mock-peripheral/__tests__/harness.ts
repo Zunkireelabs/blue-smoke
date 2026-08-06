@@ -1,0 +1,89 @@
+/**
+ * Test-only helper: plays the role of a correctly-implemented app/central
+ * to build valid §4.5 handshake frames and §4.6 command frames.
+ *
+ * Uses the mock's OWN crypto.ts (the "device" side). There is no app-side
+ * CMAC yet — that's P1-4.0 — so this is the only implementation available
+ * to construct fixtures with. It is still the single implementation the
+ * mock validates itself against (brief §3.1(b) is about not sharing CMAC
+ * *between the app and the device*, not about the test harness).
+ */
+
+import { aesCmac, hkdfSha256 } from '../crypto';
+import {
+  AUTH_HKDF_INFO,
+  AUTH_PROOF_FIXED_PREFIX,
+  PROTOCOL_VERSION,
+} from '../../../src/features/ble/protocol';
+
+export function deriveKSess(kDev: Uint8Array, sessionId: Uint8Array, keyGeneration: number): Buffer {
+  return hkdfSha256(
+    kDev,
+    sessionId,
+    Buffer.concat([Buffer.from(AUTH_HKDF_INFO, 'utf8'), Buffer.from([keyGeneration])]),
+    16,
+  );
+}
+
+export interface HandshakeFrames {
+  frame1: Buffer;
+  frame2: Buffer;
+  kSess: Buffer;
+}
+
+export function buildHandshakeFrames(options: {
+  kDev: Uint8Array;
+  sessionId: Uint8Array;
+  keyGeneration: number;
+  nonce: Uint8Array;
+  expiresAtDeltaSeconds: number;
+}): HandshakeFrames {
+  const { kDev, sessionId, keyGeneration, nonce, expiresAtDeltaSeconds } = options;
+  const kSess = deriveKSess(kDev, sessionId, keyGeneration);
+
+  const frame1 = Buffer.alloc(20, 0);
+  Buffer.from(sessionId).copy(frame1, 0);
+  frame1.writeUInt8(keyGeneration, 16);
+
+  const expiresAtDeltaBytes = Buffer.alloc(4);
+  expiresAtDeltaBytes.writeUInt32LE(expiresAtDeltaSeconds >>> 0, 0);
+
+  const proofInput = Buffer.concat([
+    Buffer.from([AUTH_PROOF_FIXED_PREFIX]),
+    Buffer.from([PROTOCOL_VERSION]),
+    Buffer.from(nonce),
+    Buffer.from(sessionId).subarray(0, 4),
+    expiresAtDeltaBytes,
+  ]);
+  const proof = aesCmac(kSess, proofInput).subarray(0, 16);
+
+  const frame2 = Buffer.concat([proof, expiresAtDeltaBytes]);
+
+  return { frame1, frame2, kSess };
+}
+
+export function buildLockCommandFrame(options: {
+  kSess: Uint8Array;
+  nonce: Uint8Array;
+  commandId: number;
+  counter: number;
+  payload?: Uint8Array;
+}): Buffer {
+  const { kSess, nonce, commandId, counter, payload } = options;
+  const frame = Buffer.alloc(20, 0);
+  frame.writeUInt8(commandId, 0);
+  frame.writeUInt32LE(counter >>> 0, 1);
+  if (payload) {
+    Buffer.from(payload).copy(frame, 5, 0, Math.min(payload.length, 7));
+  }
+
+  const tagInput = Buffer.concat([Buffer.from(nonce), frame.subarray(0, 12)]);
+  const tag = aesCmac(kSess, tagInput).subarray(0, 8);
+  tag.copy(frame, 12);
+
+  return frame;
+}
+
+export function randomBytesFixed(seedByte: number, length = 16): Buffer {
+  return Buffer.alloc(length, seedByte);
+}
