@@ -32,7 +32,8 @@ what any task was actually asked to do, and what it was asked *not* to do.
 
 | Brief | Task | Branch | Status |
 |---|---|---|---|
-| [`P0-2.5-mock-ble-peripheral.md`](P0-2.5-mock-ble-peripheral.md) | Mock BLE peripheral implementing §4, incl. failure paths | `feature/P0-2.5-mock-ble-peripheral` | ✅ Ready to execute — no blocking dependencies |
+| [`P0-2.5-mock-ble-peripheral.md`](P0-2.5-mock-ble-peripheral.md) | Mock BLE peripheral implementing §4, incl. failure paths | `feature/P0-2.5-mock-ble-peripheral` | ✅ Built and reviewed — 51 tests green. Superseded in part by the addendum below |
+| [`P0-2.5-addendum-v1.4-frame-discriminator.md`](P0-2.5-addendum-v1.4-frame-discriminator.md) | Revise the mock for §4.5 v1.4 `frameIndex` framing + F12; declare a phantom babel dep | `feature/P0-2.5-mock-ble-peripheral` | ✅ Ready to execute — chip-independent |
 | [`P0-4.0-rn-scaffold.md`](P0-4.0-rn-scaffold.md) | RN app scaffold, navigation, native module wiring | `feature/P0-4.0-rn-scaffold` | ✅ Done — merged to `stage` |
 | [`P1-1.0-signup-login-reset.md`](P1-1.0-signup-login-reset.md) | Signup / login / password reset + phone OTP | `feature/P1-1.0-signup-login-reset` | ⚠️ Partially blocked — `P0-4.0` has landed, `P0-3.0` has not |
 
