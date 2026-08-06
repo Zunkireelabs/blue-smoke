@@ -1,6 +1,6 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** Authoritative build contract
 **Last updated:** 2026-08-06
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
@@ -567,9 +567,16 @@ create table device_ownership (
   device_id   uuid not null references devices(id) on delete cascade,
   nickname    text,
   bonded_at   timestamptz not null default now(),
-  revoked_at  timestamptz,
-  unique (device_id) where (revoked_at is null)   -- one active owner per device
+  revoked_at  timestamptz
 );
+
+-- One active owner per device. This MUST be a partial unique INDEX, not an inline
+-- `unique (...) where (...)` table constraint — Postgres has no such constraint form and
+-- the migration will fail to parse. The index is what makes the §5.4 step-4 ownership
+-- assertion race-safe, so it is load-bearing, not cosmetic.
+create unique index device_ownership_one_active_owner
+  on device_ownership (device_id)
+  where (revoked_at is null);
 
 -- 5.2.5 Root device keys — SERVICE ROLE ONLY. RLS denies every client.
 create table device_keys (
@@ -643,8 +650,29 @@ create policy read_owned_devices on devices for select using (
             and o.revoked_at is null)
 );
 
-create policy manage_own_ownership on device_ownership
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- Ownership: clients may READ their own rows, and may rename or release a device they
+-- already hold. They may NOT create ownership — that is service-role only, because
+-- creating it is exactly the decision §5.4 step 4 exists to make.
+--
+-- The earlier `for all ... with check (user_id = auth.uid())` was unsafe: WITH CHECK only
+-- constrained user_id, so any authenticated user could INSERT a row naming ANY unclaimed
+-- device_id, take the one active-owner slot, and lock the legitimate owner out of the
+-- Edge Function forever — without ever obtaining K_sess. Denying client INSERT closes it.
+create policy read_own_ownership on device_ownership
+  for select using (user_id = auth.uid());
+
+create policy update_own_ownership on device_ownership
+  for update using (user_id = auth.uid() and revoked_at is null)
+           with check (user_id = auth.uid());
+
+-- No INSERT policy and no DELETE policy → both denied for every client role.
+-- Deleting is denied deliberately: releasing a device sets revoked_at, so the history
+-- survives for the audit trail.
+--
+-- WITH CHECK cannot see the OLD row, so it alone cannot stop a user repointing their own
+-- row at someone else's device_id. Column privileges close that at the grant layer:
+revoke update on device_ownership from authenticated;
+grant  update (nickname, revoked_at) on device_ownership to authenticated;
 
 -- device_keys: NO POLICY AT ALL. RLS enabled + zero policies = deny all.
 -- Only the service role (Edge Function) can read it. This is intentional and load-bearing.
@@ -662,7 +690,7 @@ create policy read_own_audit on audit_log
 
 ### 5.4 Edge Function: `issue-device-session`
 
-The **only** privileged operation in the system. It is the server-side chokepoint that makes §2.2 rule 3 real.
+The **only operation that hands out key material**, and the server-side chokepoint that makes §2.2 rule 3 real. Two other endpoints run as service role — `revoke-device-session` (§5.4.1) and the push dispatcher (§5.5) — but neither derives, reads, or returns `K_dev` or `K_sess`. The rule that matters is narrower than "only privileged operation" and worth stating exactly: **`issue-device-session` is the sole path from `K_dev` to anything outside the database.**
 
 ```
 POST /functions/v1/issue-device-session
@@ -675,8 +703,13 @@ Server logic (service role):
      → if none: 403 { error: "AGE_NOT_VERIFIED" }              ← THE GATE
   3. Resolve device by serial_hash (insert if first-seen).
   4. Assert device_ownership: active row for (user_id, device_id),
-     or no active owner at all (first bond → create ownership).
+     or no active owner at all (first bond → INSERT ownership as service role;
+     clients cannot create ownership themselves, see §5.3).
      → else: 403 { error: "DEVICE_OWNED_BY_ANOTHER_USER" }
+     The INSERT races against a concurrent first bond by another user. Do NOT
+     pre-check-then-insert; let device_ownership_one_active_owner arbitrate and
+     translate a 23505 unique violation into the same 403. The index is the
+     authority here, not the SELECT.
   5. Load k_dev_wrapped, unwrap via Supabase Vault.
   6. session_id = randomBytes(16)
      expires_at = now() + min(requested_ttl_days, 90 days)
@@ -698,7 +731,40 @@ Server logic (service role):
      }
 ```
 
-**Revocation:** set `device_sessions.revoked_at`. The device cannot learn this while offline — which is the accepted, documented trade-off for offline unlock. Practical bound on exposure is `expires_at` (≤ 90 days), plus the app refuses to use a revoked session on its next online check.
+### 5.4.1 Edge Function: `revoke-device-session`
+
+Listed in §5.5 but previously unspecified. It runs as service role because `device_sessions`
+has no client UPDATE policy (§5.3), but it handles **no key material** — it only marks rows.
+
+```
+POST /functions/v1/revoke-device-session
+Authorization: Bearer <supabase user JWT>
+Body: { "session_id": "<hex 16B>" }   // omit to revoke every active session for the caller
+
+Server logic (service role):
+  1. Resolve user_id from the JWT. Reject if absent/expired.
+  2. UPDATE device_sessions SET revoked_at = now()
+       WHERE session_id = $1 AND user_id = <caller> AND revoked_at is null
+     The user_id predicate is the authorisation check — a caller can never revoke
+     another user's session, and a session_id they do not own is indistinguishable
+     from one that does not exist.
+  3. Affected 0 rows → 404 { error: "SESSION_NOT_FOUND" }.  Do not leak whether the
+     session_id exists under a different user.
+  4. audit_log: 'session_revoked'
+  5. Respond 200 { revoked: <count>, revoked_at: "<iso8601>" }
+
+Idempotent: revoking an already-revoked session is a 404, not an error state.
+```
+
+**What revocation does and does not do.** It stops the *server* from re-issuing, and the app
+refuses to use a revoked session on its next online check. It does **not** reach the device:
+a device holding a valid `K_sess` keeps honouring it until `sessionExpiry` elapses, because
+the device is offline by design. Re-issuance after revocation is therefore also blocked —
+§5.4 step 4 must treat a revoked ownership row as "no active owner", and a revoked *session*
+does not entitle the holder to a fresh one without passing the §5.4 gate again.
+
+Practical bound on exposure is `expires_at` (≤ 90 days; **30 days recommended**, see §8.5).
+This is the accepted, documented trade-off for offline unlock.
 
 ### 5.5 API contract summary (app ↔ backend)
 
@@ -708,9 +774,9 @@ Server logic (service role):
 | Sign up / sign in via phone OTP *(§1.2.1)* | `supabase.auth` with Twilio Verify as the native phone provider | — |
 | Submit verification result | `INSERT verifications` (RLS) | User JWT |
 | Read own verification status | `SELECT verifications` (RLS) | User JWT |
-| List / rename / unpair devices | CRUD on `device_ownership` (RLS) | User JWT |
-| **Issue device session key** | Edge Function `issue-device-session` | User JWT → service role |
-| Revoke session | Edge Function `revoke-device-session` | User JWT |
+| List / rename / unpair devices | SELECT + UPDATE(`nickname`, `revoked_at`) on `device_ownership` (RLS). **Not INSERT** — ownership is created service-side by `issue-device-session` only (§5.3) | User JWT |
+| **Issue device session key** | Edge Function `issue-device-session` (§5.4) | User JWT → service role |
+| Revoke session | Edge Function `revoke-device-session` (§5.4.1) | User JWT → service role |
 | Register push token | `UPSERT push_tokens` (RLS) | User JWT |
 | Send push | Edge Function → APNs/FCM | Service role |
 
@@ -1173,3 +1239,4 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.3 | 2026-08-06 | **§5 backend corrections.** No protocol change; `protocolVersion` unchanged. **(1) §5.2.4 would not have migrated:** `unique (device_id) where (revoked_at is null)` is not valid Postgres as an inline table constraint. Replaced with the partial unique index `device_ownership_one_active_owner`. **(2) §5.3 ownership-squat hole closed:** `manage_own_ownership … for all` constrained only `user_id` in its `WITH CHECK`, so any authenticated user could INSERT an ownership row for any *unclaimed* `device_id`, take the single active-owner slot and permanently lock out the real owner — without ever obtaining `K_sess`. Client INSERT and DELETE are now denied outright (ownership is created service-side by §5.4 step 4, which is where that decision belongs); SELECT and a column-restricted UPDATE on `nickname`/`revoked_at` remain, with `revoke`/`grant` at the column layer because `WITH CHECK` cannot see the OLD row. **(3) §5.4.1 `revoke-device-session` now specified** — it was listed in the §5.5 API table and defined nowhere. Request shape, the `user_id` authorisation predicate, 404-not-403 to avoid leaking session existence across users, idempotency, and the explicit statement that revocation never reaches an offline device. **(4) §5.4's "only privileged operation" claim narrowed** to the accurate one: `issue-device-session` is the sole path from `K_dev` to anything outside the database. **(5) §5.4 step 4 race** made explicit — let the unique index arbitrate a concurrent first bond and map `23505` to the existing 403, rather than check-then-insert. |
