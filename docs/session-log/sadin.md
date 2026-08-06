@@ -4,6 +4,61 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-06 (later still) — trailers stripped; §4 realigned to Persona across nine sections
+
+**Pushed (batched, five force-pushes with `--force-with-lease`):** the whole stack, trailer-free.
+`docs/correct-stale-workflow-and-denominators` `0efdaa2→2a8b5b4`,
+`fix/P0-2.0-…` `5827b6c→8c1ae85`, `feature/P0-4.5-…` `4246b8c→b89aa45`,
+`docs/hardware-record-client-supplied` `83c4826→66f7dbc`,
+`docs/client-message-architecture-signoff` `d57c6c9→49c21de`.
+Pre-rewrite tips kept at `refs/backup/*`.
+
+**`main` had a commit `stage` could never receive.** `7fce70b` (the no-Claude-attribution rule)
+was committed straight onto `main` — which is the one branch with no `.github/`, so
+`promotion-guard` could not stop it. And `ci.yml` allows only `feature|fix|hotfix|chore|docs/*`
+heads into `stage`, so **`main` cannot open a PR back**. The rule had no route to the branches
+where work actually happens. Re-applied as `2a8b5b4` rather than cherry-picked, because the
+pick conflicted on the adjacent force-push line that the same branch had already rewritten.
+
+**Check descendants before you force-push, not after.** `origin/feature/P2-1.0-persona-capture-flow`
+turned out to be **Anish's branch cut from my `docs/correct-stale-workflow-and-denominators`**,
+not from `stage` — his two commits sit directly on `0efdaa2`. Nothing was lost (his ref is
+independent and keeps `0efdaa2` alive), and his rebase will be clean *by construction*:
+`0efdaa2` and `9b6e62c` have byte-identical trees and **identical patch-ids**, so
+`git rebase origin/stage` drops his copy as already-upstream. But that was luck, not design.
+`git merge-base --is-ancestor <old-sha> <every remote ref>` is now a pre-force-push reflex.
+
+**Verification is Persona now — decided, and the spec has been realigned to it (v1.5).**
+Anish's `P2-1.0` branch replaces the on-device pipeline: `decision.ts`, the Vision/ML Kit
+bridges and the subtree's ESLint guard are all deleted. **He never touched
+`TECHNICAL_SPEC.md`,** so the build contract still described a pipeline that no longer exists.
+
+**The realignment spanned nine sections, and eight of them were nowhere near §6.** §1.1, §1.2,
+§1.3, §1.4, §2.1, §2.2, §2.3, §5.2.2, §5.3, §5.5, §8.1, §8.3, §8.5, §8.6, §9.1, §9.2, §10.2,
+§11.2, §11.3, §12.1, §12.2. Two worth naming:
+
+- **§5.3 was an inverted rule-3.** Pre-v1.5 the client INSERTed its own verification row. Under
+  a vendor flow that is *a user asserting their own `age_verified`*. The client INSERT policy is
+  gone; service role only.
+- **§12's store-review note told us to tell Apple and Google** *"verification happens entirely
+  on-device, no biometric data is collected or transmitted."* Under Persona that is **false**,
+  and it was sitting in the release checklist as advice. A stale doc becomes a
+  misrepresentation the moment someone follows it.
+
+**What I deliberately did not write.** Persona's webhook signature scheme, template config,
+`min_age` enforcement point, inquiry resumption, vendor retention. All five are listed in a new
+**§6.6 "do not guess these"**, and the signature scheme is marked a **ship-blocker** — an
+unverified webhook endpoint is a direct forge of `age_verified`, and it is now the top row of
+the §8.3 threat model.
+
+**Open, and not mine to close:** **OQ-11** — written client acceptance that ID images now leave
+the device, Persona account ownership and the **per-verification cost the fixed-price PRD does
+not contain**, the DPA, and the vendor-side erasure path GDPR now requires. Anish's own commit
+message says written client confirmation is outstanding. `ARCHITECTURE-SIGNOFF.md` contradicts
+the new architecture in five places and **must not be sent as written**.
+
+---
+
 ## 2026-08-06 (later) — mock built and reviewed; §4 defect #11 found by it; nothing pushed
 
 **Branches (all local, deliberately unpushed until EOD):**

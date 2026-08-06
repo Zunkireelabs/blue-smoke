@@ -1,6 +1,6 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.4
+**Version:** 1.5
 **Status:** Authoritative build contract
 **Last updated:** 2026-08-06
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
@@ -23,7 +23,7 @@
 3. [Hardware reality & what it forces](#3-hardware-reality--what-it-forces)
 4. [BLE GATT Interface Spec v1.0 — firmware contract](#4-ble-gatt-interface-spec-v10--firmware-contract)
 5. [Backend — Supabase data model & contract](#5-backend--supabase-data-model--contract)
-6. [On-device age & identity verification pipeline](#6-on-device-age--identity-verification-pipeline)
+6. [Age & identity verification via Persona](#6-age--identity-verification-via-persona)
 7. [Proximity & lock state machine](#7-proximity--lock-state-machine)
 8. [Security & privacy model](#8-security--privacy-model)
 9. [Mobile app architecture](#9-mobile-app-architecture)
@@ -44,7 +44,7 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 | # | Pillar | One-line definition |
 |---|---|---|
 | **P1** | Accounts & multi-device BLE management | A user registers, signs in, and pairs/manages multiple devices; ownership is enforced server-side. |
-| **P2** | On-device 18+ age verification | Gov-ID capture → DOB extraction → selfie + liveness → face match, **entirely on the phone**. No third party, no upload. |
+| **P2** | 18+ age verification via **Persona** *(changed in v1.5)* | Gov-ID + selfie captured and adjudicated by Persona's SDK; the result reaches us by **webhook**. Our code never handles the evidence. ⚠️ Client confirmation outstanding — **OQ-11**. |
 | **P3** | Proximity lock/unlock | Authenticated BLE lock/unlock; the device auto-locks itself when the phone leaves range. |
 
 ### 1.2 Locked decisions
@@ -53,7 +53,7 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 |---|---|---|
 | App framework | **React Native + TypeScript**, bare workflow (Expo Dev Client for tooling only) | Single codebase; native modules required (BLE, camera, ML, secure storage) rule out Expo Go. |
 | Backend | **Supabase** | Postgres + Row Level Security maps 1:1 onto server-side ownership enforcement. Edge Functions for privileged key issuance. No lock-in on the data model. |
-| Verification | **On-device ML only** — Apple Vision (iOS) + Google ML Kit (Android) | Client hard constraint. Also the product's core privacy selling point. |
+| Verification | **Persona** (third-party vendor) *(changed in v1.5; was on-device Apple Vision + Google ML Kit)* | Removes the accuracy risk and the sample-ID dependency, and transfers the evidence-handling liability. **Costs the on-device privacy claim, adds a per-verification fee and a DPA obligation.** See §1.4, §8.6, **OQ-11**. |
 | Device auth crypto | **AES-128-CMAC** challenge–response | The YC1012_JD has an AES-128 **hardware** block and no ECC accelerator. See §3. |
 | Firmware | **We author the BLE spec (§4); the client's firmware team implements it** | Firmware development is an add-on, quoted separately. |
 | Timeline | **30 days** | See `project-roadmap-todos/ROADMAP.md`. |
@@ -95,8 +95,8 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 ### 1.3 Explicit non-goals (base scope)
 
 - ❌ Firmware development on the YC1012_JD / Cortex-M0+ *(add-on; base scope is spec only)*
-- ❌ Any third-party or government ID-validation API
-- ❌ Cloud OCR or server-side biometric matching
+- ❌ ~~Any third-party or government ID-validation API~~ **— reversed in v1.5. Persona is now the verification vendor (§6).** Government ID-validation APIs beyond Persona remain out of scope.
+- ❌ ~~Cloud OCR or server-side biometric matching~~ **— reversed in v1.5.** Both now happen at the vendor. Neither is built *by us*, which is what this line was protecting.
 - ❌ Admin web panel *(add-on)*
 - ❌ Analytics / crash reporting *(add-on)*
 - ❌ Advanced anti-spoofing / presentation-attack detection *(add-on)*
@@ -108,7 +108,18 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 
 ### 1.4 Superseded — do not reintroduce
 
-`PROJECT_BRIEF-temp.md` has been archived to `archive/PROJECT_BRIEF-superseded.md`. These proposals from it are **dead**: Persona/KYC vendor, Node+Fastify+Postgres self-hosted backend, Fly.io, Ed25519 on-MCU verification, per-unlock backend-minted tokens, 12-week timeline, us writing firmware.
+`PROJECT_BRIEF-temp.md` has been archived to `archive/PROJECT_BRIEF-superseded.md`. These proposals from it are **dead**: ~~Persona/KYC vendor,~~ Node+Fastify+Postgres self-hosted backend, Fly.io, Ed25519 on-MCU verification, per-unlock backend-minted tokens, 12-week timeline, us writing firmware.
+
+> **Persona was un-superseded in v1.5 — this is a deliberate reversal, not drift.** The archived
+> brief proposed Persona; v1.0 replaced it with on-device ML (Apple Vision + Google ML Kit); v1.5
+> reverts to Persona. Recorded here so it is not re-litigated a third time, and so the archive's
+> reasoning — vendor comparison, the "liability firewall" framing, and the ~$1–2/verification
+> cost line — is read as **current** rather than historical. §6 is now the authority; the archive
+> remains superseded on every other point (backend, crypto, timeline, firmware).
+>
+> ⚠️ **Written client confirmation is outstanding**, and this reversal contradicts
+> `docs/ARCHITECTURE-SIGNOFF.md`, which claims on-device-only processing in five places. That
+> document must not be sent as written. See **OQ-11**.
 
 Two ideas from it **were carried forward** and are live in this spec: **nonce-based replay protection** (§4.5) and **key rotation without bricking the fleet** (§8.4).
 
@@ -123,13 +134,14 @@ Two ideas from it **were carried forward** and are live in this spec: **nonce-ba
 │                      PHONE  (React Native app)                        │
 │                                                                       │
 │  ┌─────────────────────┐   ┌──────────────────┐   ┌────────────────┐  │
-│  │ Verification engine │   │  BLE controller  │   │ Session store  │  │
-│  │  Vision / ML Kit    │   │  ble-plx         │   │ Keychain/      │  │
-│  │  OCR · liveness ·   │   │  scan · bond ·   │   │ Keystore       │  │
-│  │  face match         │   │  proximity       │   │ (K_sess)       │  │
+│  │  Persona SDK        │   │  BLE controller  │   │ Session store  │  │
+│  │  (own process)      │   │  ble-plx         │   │ Keychain/      │  │
+│  │  capture · upload · │   │  scan · bond ·   │   │ Keystore       │  │
+│  │  adjudication       │   │  proximity       │   │ (K_sess)       │  │
 │  └──────────┬──────────┘   └────────┬─────────┘   └───────┬────────┘  │
 │             │                       │                     │           │
-│      pass/fail ONLY          BLE GATT (§4)          K_sess (§4.5)     │
+│   inquiry_id + status ONLY   BLE GATT (§4)          K_sess (§4.5)     │
+│   (evidence goes vendor-side, never through us — §6)                  │
 │             │                       │                     │           │
 └─────────────┼───────────────────────┼─────────────────────┼───────────┘
               │                       │                     │
@@ -159,38 +171,47 @@ Two ideas from it **were carried forward** and are live in this spec: **nonce-ba
 
 | Boundary | What crosses it | What must never cross it |
 |---|---|---|
-| Camera → Verification engine | Raw ID image, raw selfie (RAM only) | — |
-| Verification engine → rest of app | `{ passed, method, thresholdVersion, outcomeReason }` — exactly these four (§9.2 rule 2) | Images, face embeddings, DOB, name, ID number, similarity score |
-| App → Supabase | `age_verified`, `verified_at`, `method`, `threshold_version`, `outcome_reason`, `app_version`, `platform` (§5.2.2), device serial **hash** | Images, embeddings, DOB, name, ID number, raw serial |
+| Camera → Persona SDK *(v1.5)* | Nothing of ours — the SDK opens the camera in its own process | Our code must never proxy, screenshot, or intercept this |
+| Persona SDK → our app *(v1.5)* | `inquiry_id` + a status string, nothing else | Images, embeddings, DOB, name, ID number, similarity score — none of which we are given, and none of which we may fetch from the vendor API |
+| **Persona → Supabase (webhook)** *(v1.5)* | `inquiry_id`, `provider_status` → `age_verified`. **Signature-verified before the body is trusted (§6.6)** | An unverified webhook body — it would be a direct forge of `age_verified` (§8.3) |
+| App → Supabase | Device serial **hash**, push token, device nickname | Images, embeddings, DOB, name, ID number, raw serial. **As of v1.5 also: the verification result itself** — the client no longer writes it (§5.3) |
 | Supabase → App | `K_sess` (derived session key), ownership records | `K_dev` (root device key) — **never leaves the server** |
 | App → Device | Auth handshake, lock/unlock commands | Any PII whatsoever |
 | Device → App | Lock state, battery, fault codes | — (device holds no PII) |
 
-> **Note on `outcome_reason`.** It is deliberately coarse (`pass` · `under_18` · `face_mismatch` ·
-> `ocr_failed` · `liveness_failed`) and it *does* cross to the server (§5.2.2). `under_18` is a
-> derived age fact, not a DOB — it records that a check failed, never by how much and never the
-> underlying date. Keep it coarse: adding granularity here would turn a support signal into
-> stored personal data.
+> **Note on `outcome_reason`.** It is deliberately coarse and it *does* cross to the server
+> (§5.2.2). It records that a check failed, never by how much and never the underlying date.
+> Keep it coarse: adding granularity here would turn a support signal into stored personal data.
+> **As of v1.5 it is derived from `provider_status` server-side**, and Persona's own decline
+> reasons must not be passed through verbatim if they reveal matching internals (§6.4).
 
 **The three inviolable rules.** Any PR that breaks one of these is rejected on sight:
 
-1. **No image, video frame, or biometric embedding is ever written to disk, logged, or transmitted.** In-memory only, zeroised after the decision.
+1. **No image, video frame, or biometric embedding ever enters our process, is written to disk, logged, or transmitted by us.** *(Restated in v1.5.)* Under the vendor architecture, capture and upload happen inside Persona's SDK — so the rule is no longer "zeroise it" but **"never acquire it"**: do not fetch inquiry payloads from the vendor API, do not add columns for them, do not proxy or screenshot the SDK's UI. The one handle we do hold, `inquiry_id`, must never be logged beside anything that re-identifies the person (§8.1).
 2. **`K_dev` never leaves the server.** The app receives only a derived, scoped, expiring `K_sess`.
 3. **`age_verified` is validated server-side before any privileged action.** A client-side boolean is a hint, never an authority.
 
 ### 2.3 Primary data flows
 
-**Flow A — Age verification (P2, one-time)**
+**Flow A — Age verification (P2, one-time)** *(rewritten in v1.5 — vendor-based, see §6)*
 ```
-User → capture ID → OCR/PDF417 → DOB → age ≥ 18?
-                                          │
-User → capture selfie → liveness → embed  │
-                                          ▼
-       ID face embed ─── cosine sim ≥ τ? ─┴─► PASS/FAIL
-                                              │
-                    zeroise all images+embeds │
-                                              ▼
-                        POST { age_verified, verified_at, method } → Supabase
+App → Edge Fn create-inquiry {}                    ← increment 2 (P2-8.0)
+      Edge Fn creates inquiry server-side, binds it to user_id
+      Edge Fn → App: { inquiry_id / session token }
+
+App → Persona SDK: Inquiry.fromTemplate(...).build().start()
+      ┌──────────────────────────────────────────────────┐
+      │ INSIDE PERSONA'S PROCESS — not ours:             │
+      │ ID capture, barcode/MRZ/OCR, DOB, selfie,        │
+      │ liveness, face match, and the upload of all of it│
+      └──────────────────────────────────────────────────┘
+      SDK → App: onComplete(status)   ← UI HINT ONLY, never authority
+
+Persona ──webhook──► Edge Fn persona-webhook (signature verified, §6.6)
+      writes verifications { inquiry_id, provider_status, age_verified }
+      ← the ONLY writer of verification state
+
+App: SELECT own verifications row (RLS) → shows result
 ```
 
 **Flow B — Device activation (P1→P3, one-time per device, requires network)**
@@ -554,19 +575,26 @@ create table profiles (
 );
 
 -- 5.2.2 Verification result — FLAG ONLY. No images. No DOB. No name.
+--       Revised in v1.5 for the Persona vendor flow (§6).
 create table verifications (
   id                 uuid primary key default gen_random_uuid(),
   user_id            uuid not null references auth.users(id) on delete cascade,
-  age_verified       boolean not null,
+  age_verified       boolean not null default false,
   verified_at        timestamptz not null default now(),
-  method             text not null,          -- 'ondevice-mlkit-v1' | 'ondevice-vision-v1'
-  threshold_version  text not null,          -- e.g. 'facematch-tau-0.62'
+  method             text not null,          -- 'persona-v1'  (was 'ondevice-*' pre-v1.5)
+  inquiry_id         text unique,            -- Persona's opaque handle. NEVER log this beside
+                                             -- anything that could re-identify the person.
+  provider_status    text,                   -- vendor decision string, verbatim.
+                                             -- WRITTEN ONLY BY THE WEBHOOK (§5.3).
+  threshold_version  text,                   -- nullable since v1.5 — vendor owns thresholds now
   app_version        text not null,
   platform           text not null,          -- 'ios' | 'android'
-  outcome_reason     text                    -- 'pass' | 'under_18' | 'face_mismatch' |
-                                             -- 'ocr_failed' | 'liveness_failed'
+  outcome_reason     text                    -- coarse, user-facing category only
   -- DELIBERATELY ABSENT: dob, name, id_number, document_image, selfie_image,
-  --                      face_embedding, similarity_score
+  --                      face_embedding, similarity_score.
+  -- Still absent under the vendor flow, and must stay that way: pulling the full
+  -- inquiry payload from Persona's API into this table would re-create exactly the
+  -- liability the vendor exists to hold (§6.3).
 );
 create index on verifications (user_id, verified_at desc);
 
@@ -656,11 +684,16 @@ alter table audit_log        enable row level security;
 create policy own_profile on profiles
   for all using (id = auth.uid()) with check (id = auth.uid());
 
--- Verifications: users may INSERT their own and READ their own. Never UPDATE or DELETE.
+-- Verifications: READ-ONLY to clients as of v1.5.
+-- Pre-v1.5 the client INSERTed its own on-device result. Under the vendor flow the client
+-- has no result to submit — `create-inquiry` writes the pending row and `persona-webhook`
+-- writes the outcome, both service-role. A client INSERT path would let a user assert
+-- their own `age_verified`, which is inviolable rule 3 inverted.
 create policy read_own_verifications on verifications
   for select using (user_id = auth.uid());
-create policy insert_own_verifications on verifications
-  for insert with check (user_id = auth.uid());
+-- NO client insert/update/delete policy. Deliberate. Service role only.
+-- MUST be tested with a second user's JWT, and with the row's own owner attempting
+-- an UPDATE of `provider_status` / `age_verified` — both must fail.
 
 -- Devices: visible only if you own them.
 create policy read_owned_devices on devices for select using (
@@ -792,8 +825,10 @@ This is the accepted, documented trade-off for offline unlock.
 |---|---|---|
 | Sign up / sign in / password reset | `supabase.auth` | — |
 | Sign up / sign in via phone OTP *(§1.2.1)* | `supabase.auth` with Twilio Verify as the native phone provider | — |
-| Submit verification result | `INSERT verifications` (RLS) | User JWT |
+| **Create verification inquiry** | Edge Function `create-inquiry` (§6.2) | User JWT → service role |
+| **Receive verification outcome** | Edge Function `persona-webhook` — **signature-verified (§6.6)**, sole writer of `provider_status` | Persona → service role |
 | Read own verification status | `SELECT verifications` (RLS) | User JWT |
+| ~~Submit verification result~~ | ~~`INSERT verifications`~~ — **removed in v1.5.** The client has no result to submit; it would be asserting its own `age_verified`. | — |
 | List / rename / unpair devices | SELECT + UPDATE(`nickname`, `revoked_at`) on `device_ownership` (RLS). **Not INSERT** — ownership is created service-side by `issue-device-session` only (§5.3) | User JWT |
 | **Issue device session key** | Edge Function `issue-device-session` (§5.4) | User JWT → service role |
 | Revoke session | Edge Function `revoke-device-session` (§5.4.1) | User JWT → service role |
@@ -802,110 +837,133 @@ This is the accepted, documented trade-off for offline unlock.
 
 ---
 
-## 6. On-device age & identity verification pipeline
+## 6. Age & identity verification via Persona
 
-**Hard constraint:** everything in this section runs on the phone. No network call carries an image, a frame, an embedding, a DOB, a name, or a document number.
+> **This section was replaced in v1.5.** Verification moved from an on-device pipeline
+> (Apple Vision + Google ML Kit) to **Persona**, a third-party identity vendor. The previous
+> §6 is preserved in git history at spec v1.4 and in `archive/PROJECT_BRIEF-superseded.md`,
+> which described this same vendor approach before it was itself superseded. See §1.4 for the
+> reversal record and why it is not a re-litigation.
+>
+> ⚠️ **Written client confirmation of this change is outstanding.** The change moves ID images
+> and selfies off the device to a third party — a materially different privacy posture from the
+> one in `docs/ARCHITECTURE-SIGNOFF.md`. Until the client confirms in writing, this section
+> describes the intended build, not an agreed one.
 
-### 6.1 Pipeline
+**Hard constraint, restated for the new architecture:** *our code* never receives, holds, or
+transmits an ID image, a video frame, a face embedding, a DOB, a name, or a document number.
+Capture and upload happen entirely inside Persona's SDK, in its own process. What crosses back
+into our code is an **`inquiry_id` and a status string** — nothing else. This is a narrower
+guarantee than the old on-device one (evidence now leaves the phone; it just never passes
+through us), and it is enforced by the vendor's architecture rather than by our own ESLint
+guard. See §8.1 for the revised data classification.
+
+### 6.1 Two increments
+
+The flow is deliberately split, because increment 1 has no backend dependency and increment 2
+is what makes the result *authoritative*.
+
+| Increment | Task | What it establishes |
+|---|---|---|
+| **1 — client-initiated** | `P2-1.0` | `Inquiry.fromTemplate(templateId)` launched from the app. Proves capture works on both platforms. **Produces no authoritative result.** |
+| **2 — server-created + webhook** | `P2-8.0` | Backend creates the inquiry, receives Persona's webhook, and is the only writer of verification state. |
+
+**Increment 1 must never gate anything.** The SDK's `onComplete` callback is a UI hint used to
+show a "confirming…" screen; it is not evidence and must not set `age_verified`. That is
+inviolable rule 3 (`age_verified` is validated server-side), unchanged by the vendor switch.
+
+### 6.2 Flow
 
 ```
- ┌─ STAGE 1: ID CAPTURE ──────────────────────────────────────────┐
- │ VisionCamera + rectangle/edge detection overlay                 │
- │ Quality gates: focus (Laplacian variance), glare (blown-highlight│
- │ ratio), fill (doc occupies ≥ 60% of frame), skew (≤ 10°)         │
- │ Output: single high-res frame → RAM only, never to disk          │
+ ┌─ INCREMENT 1 (P2-1.0) ─────────────────────────────────────────┐
+ │ App → Inquiry.fromTemplate(PERSONA_TEMPLATE_ID)                │
+ │         .environment(sandbox | production)                      │
+ │         .build().start()            ← modal native launch       │
+ │                                                                 │
+ │ Persona SDK owns: document classification, barcode/MRZ parsing, │
+ │ DOB extraction, selfie capture, liveness, face match, and the   │
+ │ upload of all of it. None of this touches our process.          │
+ │                                                                 │
+ │ Callbacks → { onComplete | onCanceled | onError }               │
+ │             onComplete carries a status → UI HINT ONLY          │
  └────────────────────────────┬────────────────────────────────────┘
                               ▼
- ┌─ STAGE 2: DOB EXTRACTION ──────────────────────────────────────┐
- │ Path A (preferred): PDF417 barcode (US/CA licences) → AAMVA     │
- │   field DBB/DBL = DOB. Deterministic, near-100% when present.   │
- │ Path B: MRZ (passports/ID cards, TD1/TD2/TD3) → parse + verify  │
- │   the MRZ check digit. Deterministic.                           │
- │ Path C (fallback): OCR text recognition                          │
- │   iOS: Vision VNRecognizeTextRequest (accurate level)            │
- │   Android: ML Kit Text Recognition v2                            │
- │   → regex candidate dates + label proximity scoring              │
- │ Order: A → B → C. First confident hit wins.                     │
- └────────────────────────────┬────────────────────────────────────┘
-                              ▼
- ┌─ STAGE 3: AGE COMPUTATION ─────────────────────────────────────┐
- │ Normalise DOB across formats (§6.2). Compute age at today.      │
- │ HARD GATE: age ≥ 18 (threshold configurable, see §6.2)          │
- └────────────────────────────┬────────────────────────────────────┘
-                              ▼
- ┌─ STAGE 4: ID PORTRAIT EXTRACTION ──────────────────────────────┐
- │ Face detection on the ID image → crop the portrait → embedding  │
- │   iOS: Vision VNDetectFaceRectangles + VNFaceObservation         │
- │   Android: ML Kit Face Detection + face embedding model          │
- └────────────────────────────┬────────────────────────────────────┘
-                              ▼
- ┌─ STAGE 5: SELFIE + LIVENESS ───────────────────────────────────┐
- │ Guided multi-frame capture, Face-ID-enrolment style.            │
- │ Liveness signals (all must pass):                               │
- │   • Blink detected (eye-open probability crosses <0.2 then >0.8)│
- │   • Head yaw challenge (turn left/right, randomised order)      │
- │   • Multi-frame texture variance (rejects a flat printed photo) │
- │   • Face bounding-box stability across frames                    │
- │ Randomised challenge order prevents replaying a recorded video.  │
- └────────────────────────────┬────────────────────────────────────┘
-                              ▼
- ┌─ STAGE 6: FACE MATCH ──────────────────────────────────────────┐
- │ cosine_similarity(embed(ID portrait), embed(selfie)) ≥ τ        │
- │ τ tuned per platform against the internal test set (§6.3)       │
- └────────────────────────────┬────────────────────────────────────┘
-                              ▼
- ┌─ STAGE 7: DECISION + ZEROISATION ──────────────────────────────┐
- │ PASS  ⇔  (age ≥ 18) AND (similarity ≥ τ) AND (liveness passed)  │
- │ Then, UNCONDITIONALLY, in a finally-block:                       │
- │   overwrite + release all image buffers, embeddings, DOB, and    │
- │   any derived strings. Nothing survives the function scope.      │
- │ Emit to backend: { age_verified, verified_at, method,            │
- │                    threshold_version, outcome_reason }           │
+ ┌─ INCREMENT 2 (P2-8.0) ─────────────────────────────────────────┐
+ │ Edge Fn `create-inquiry`  (user JWT → service role)             │
+ │   creates the inquiry server-side, binds it to user_id,         │
+ │   returns an inquiry/session token to the app                   │
+ │                                                                 │
+ │ Persona ──webhook──► Edge Fn `persona-webhook` (service role)   │
+ │   MUST verify the webhook signature before trusting the body    │
+ │   (⚠️ scheme unspecified — see §6.6)                             │
+ │   writes verifications.provider_status  ← ONLY writer           │
+ │                                                                 │
+ │ App polls / subscribes to its own verifications row (RLS)       │
  └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 DOB normalisation rules
+### 6.3 What we store, and what we must never store
 
-Date-format ambiguity is a **correctness bug that fails safe in only one direction**, so the rules are explicit:
+Recorded in `verifications` (§5.2.2):
 
-| Rule | Detail |
+| Column | Why it is safe |
 |---|---|
-| **R1** | Barcode (AAMVA) and MRZ carry unambiguous formats — always prefer them and skip the ambiguity logic entirely. |
-| **R2** | For OCR dates, if either component is > 12 the assignment is forced (e.g. `13/07/1990` → DD/MM). |
-| **R3** | If genuinely ambiguous (e.g. `07/08/1990`), resolve using the document's detected issuing region if known; otherwise **choose the interpretation that yields the YOUNGER age**. Fail safe: never let ambiguity admit a minor. |
-| **R4** | 2-digit years: `YY ≤ (current year mod 100)` → 20YY, else 19YY. Then sanity-check age ∈ [10, 120]; outside → reject the candidate. |
-| **R5** | Reject any date in the future, or an implied age > 120. |
-| **R6** | Prefer a date labelled `DOB` / `Date of Birth` / `Born` / `Naissance` over an unlabelled candidate. Expiry and issue dates must never be mistaken for DOB — explicitly exclude candidates near `EXP` / `ISS` labels. |
-| **R7** | The 18 threshold lives in remote config (`min_age`), so a 21+ region can be served without a rebuild. Default **18**. |
+| `inquiry_id` | Persona's opaque handle. Meaningless without vendor-side access. |
+| `provider_status` | Vendor decision string. Written **only** by the webhook. |
+| `age_verified` | Derived server-side from `provider_status`. |
+| `method` | Now `'persona-v1'` rather than `'ondevice-*'`. |
 
-### 6.3 Accuracy targets & threshold tuning
+**Still deliberately absent, and this has not relaxed:** `dob`, `name`, `id_number`,
+`document_image`, `selfie_image`, `face_embedding`, `similarity_score`. We do not have them and
+must not acquire them — pulling the full inquiry payload from Persona's API into our database
+would re-create exactly the liability the vendor exists to hold.
 
-Face-match threshold tuning is the single largest line item in the plan (P2-5.0, 5 person-days) precisely because "tune it" without a target is not a task.
-
-| Metric | Target | Measured on |
-|---|---|---|
-| **FRR** (genuine user wrongly rejected) | **≤ 5%** | Internal test set, per platform |
-| **FAR** (impostor wrongly accepted) | **≤ 0.1%** | Internal test set, cross-pairs |
-| DOB extraction success | **≥ 95%** | Supported ID types, good lighting |
-| DOB extraction **accuracy when it does extract** | **100%** | A wrong DOB is worse than no DOB — prefer failing to extract |
-| Liveness FRR | ≤ 8% | Includes low-end Android devices |
-| End-to-end verification duration (p50) | ≤ 60 s | Mid-range device |
-
-**Tuning method.** Build a labelled internal set: ≥ 40 genuine (ID + matching selfie) pairs across skin tones, ages, glasses/no-glasses, and lighting; plus all cross-pairs as impostors. Sweep τ, plot the ROC, pick the τ meeting FAR ≤ 0.1% and report the resulting FRR. Record the chosen τ in `threshold_version` so any decision is reproducible after the fact.
-
-> **Dependency risk:** this requires **physical sample IDs**. The PRD assumes availability around week 6 of an 8-week plan — under a 30-day plan that is *after the project ends*. This is escalated as **OQ-1** in §13 and is the top-ranked risk in the roadmap.
+**Never log an `inquiry_id` next to anything that could re-identify the underlying document or
+person.** It is the one handle we hold that points at real evidence.
 
 ### 6.4 Retry & manual-fallback policy
 
+Unchanged in shape from v1.4, because it is a product policy rather than a pipeline detail.
+
 | Attempt | Behaviour |
 |---|---|
-| 1–3 | Retry freely, with progressive coaching ("move to brighter light", "remove glare", "hold steady") |
-| 4–5 | Retry with a stricter capture guide and an explicit "having trouble?" affordance |
+| 1–3 | Retry freely, with progressive coaching |
+| 4–5 | Retry with an explicit "having trouble?" affordance |
 | 6+ | Lock the flow for 30 minutes; surface the **manual fallback** route |
 
-**Manual fallback** = a support contact route (email/in-app form) carrying **only** the user ID and the `outcome_reason`. No images. The client must agree the operational policy behind it — **OQ-2**.
+**Manual fallback** = a support contact route carrying **only** the user ID and the vendor
+status. No images — we could not attach one if we tried. The client must still agree the
+operational policy behind it — **OQ-2**, unaffected by the vendor change.
 
-Failure states must be honest and non-leaky: tell the user *what to fix* ("we couldn't read the date on your ID") but never *why the match failed numerically*, which would help an attacker tune an attack.
+Failure messaging stays coaching, never diagnostic. Persona's own decline reasons must not be
+surfaced verbatim if they reveal matching internals.
+
+### 6.5 What the vendor switch deleted from our scope
+
+Recorded so the effort is not silently re-absorbed, and so nobody rebuilds it:
+
+| Was | Now |
+|---|---|
+| §6.2 DOB normalisation rules R1–R7 | Persona's problem. **The fail-safe intent of R3 (ambiguity resolves to the *younger* age) is no longer ours to enforce — confirm Persona does the equivalent.** |
+| §6.3 FRR ≤ 5% / FAR ≤ 0.1% targets and τ tuning | Vendor-owned. We can no longer measure or tune these. |
+| Labelled internal face-match test set (≥ 40 pairs) | Not needed. |
+| Physical sample IDs for *our* OCR testing | Largely not needed — **materially reduces OQ-1 pressure** (sample IDs were the Day-15 blocker). Some sandbox test documents are still needed. |
+| `decision.ts` as the single outward export | Deleted with the subtree's ESLint guard. See §8.1. |
+
+### 6.6 ⚠️ Unspecified — do not guess these
+
+Per this spec's own rule: these are not filled in with plausible values.
+
+1. **Webhook signature verification scheme.** Header name, algorithm, and secret rotation are
+   *not* recorded here because they have not been verified against Persona's current
+   documentation. `persona-webhook` **must not ship** without this closed. An unverified webhook
+   endpoint is a direct path to forging `age_verified`.
+2. **Template configuration.** Which document types, which regions, and whether the template
+   enforces an 18+ check itself or returns a DOB-derived field we evaluate.
+3. **`min_age` enforcement point.** v1.4 put the 18 threshold in remote config (R7). Whether
+   that now lives in the Persona template or stays ours is undecided.
+4. **Inquiry resumption.** `onCanceled` → resume semantics and session-token lifetime.
+5. **Data residency and retention at the vendor**, required for §8.6. See **OQ-11**.
 
 ---
 
@@ -1001,7 +1059,8 @@ This must be spiked in **Days 1–3**, not discovered at integration.
 
 | Class | Examples | Storage rule |
 |---|---|---|
-| 🔴 **Never persisted** | ID image, selfie frames, face embeddings, DOB, name, ID number | RAM only, zeroised in a `finally` block. Never logged, never in crash reports, never in analytics. |
+| 🔴 **Never in our possession** *(revised v1.5)* | ID image, selfie frames, face embeddings, DOB, name, ID number | **Never enters our process at all.** Persona's SDK captures and uploads these inside its own process (§6). We therefore hold nothing to zeroise — but equally we must never *acquire* any of it: do not pull inquiry payloads from Persona's API, do not add columns for them, do not screenshot or proxy the SDK's UI. |
+| 🔴 **Vendor handle** *(new in v1.5)* | `inquiry_id` | Stored (§5.2.2), but never logged, emitted to analytics, or placed in a crash report **alongside anything that could re-identify the person**. It is the one handle we hold that points at real evidence. |
 | 🟠 **Secret at rest** | `K_sess`, `session_id`, Supabase refresh token | iOS Keychain (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) / Android Keystore, hardware-backed, biometric-gated where available |
 | 🟡 **Server-only secret** | `K_dev` | Supabase Vault, service role only, RLS deny-all. Never transmitted to a client under any circumstance. |
 | 🟢 **Ordinary data** | `age_verified`, device nickname, battery, lock state | Postgres with RLS |
@@ -1021,8 +1080,12 @@ Authorisation is the §4.5 CMAC handshake, which transitively proves the server 
 | Relay / range-extension attack | Not fully mitigated in v1. Reduced by short supervision timeout (4 s), RSSI thresholds, and no Long Range PHY. Documented residual risk — see §8.5. |
 | Stolen phone | `K_sess` is biometric-gated in the Keychain/Keystore; remote session revocation; `sessionExpiry` bounds exposure |
 | Rooted / jailbroken device extracting `K_sess` | Bounded blast radius: `K_sess` is per-device, per-user, expiring, and revocable. `K_dev` is unaffected, so the fleet is unaffected. |
-| Minor using an adult's ID | Liveness + face match is exactly this defence. Advanced PAD is the add-on that hardens it. |
-| Printed-photo spoof of the selfie | Multi-frame texture variance + blink + randomised yaw challenge. Full PAD is an add-on. |
+| Minor using an adult's ID | Persona's liveness + face match (v1.5). **We can no longer measure or tune this** — it is a vendor guarantee we accept rather than a control we operate. See §6.5. |
+| Printed-photo spoof of the selfie | Vendor-owned as of v1.5. Same caveat. |
+| **Forged webhook asserting `age_verified`** *(new in v1.5)* | **The most direct path to defeating the age gate under the vendor architecture.** `persona-webhook` is an unauthenticated public endpoint by nature; anything that can POST to it can grant verification unless the signature is verified. Signature verification is **mandatory before the handler trusts a single field**, and the scheme is deliberately unspecified rather than guessed — see **§6.6 item 1**. |
+| **Replayed valid webhook** *(new in v1.5)* | A captured genuine webhook re-POSTed later. Handler must be idempotent on `inquiry_id` and reject stale timestamps. |
+| **Vendor outage or account suspension** *(new in v1.5)* | No new verifications can complete. Already-verified users are unaffected (`age_verified` is our row, not a live vendor call). Degrades to the §6.4 manual fallback — **which makes OQ-2 more load-bearing than it was**, not less. |
+| **Vendor breach exposing ID images** *(new in v1.5)* | Outside our control and outside our blast radius by design — we hold no images. This is the liability-transfer the vendor exists for, and it is also the reason the client must confirm the change in writing (§1.4). |
 | Tampering with the client-side `age_verified` flag | Irrelevant — the server re-checks in `issue-device-session` before issuing any key (§5.4 step 2) |
 | Firmware key compromise (single device) | Per-device `K_dev`; one device's compromise does not affect any other |
 | Malicious app command flooding | Firmware auth backoff (§4.8 F6) + server rate limit on session issuance |
@@ -1040,13 +1103,30 @@ The OTP is one-time-programmable, so `K_dev` cannot be overwritten in the field.
 
 1. **Relay attack.** An attacker relaying BLE between a distant phone and the device could hold it unlocked. Full mitigation needs cryptographic distance bounding, which this silicon does not support. Accepted for v1; reduced by the short supervision timeout and the deliberate refusal to use Long Range PHY.
 2. **Offline revocation lag.** A revoked session remains usable by an offline device until `sessionExpiry`. This is the direct cost of offline unlock, which the product requires. Bounded at 90 days; recommend 30 days if the client accepts more frequent online check-ins.
-3. **On-device ML accuracy vs. a specialist vendor.** On-device models will not match a dedicated KYC vendor's accuracy. This is a client-mandated trade-off in exchange for the privacy guarantee. Managed via the §6.3 targets and the manual fallback.
+3. ~~**On-device ML accuracy vs. a specialist vendor.**~~ **Retired in v1.5** — we now use the specialist vendor, so this risk is gone. **It is replaced by its mirror image:** we have transferred verification accuracy to a party we cannot measure, tune, or audit. A wrong decision by Persona is now something we can only escalate, not fix (§6.5).
+4. **Third-party evidence handling** *(new in v1.5)*. ID images and selfies now leave the device to Persona. The privacy claim changes from "it never leaves your phone" to "we never hold it". This is a **material change to the product's stated privacy posture** and is not ours to accept unilaterally — **OQ-11**, and `ARCHITECTURE-SIGNOFF.md` must not be sent until it is resolved.
+5. **Vendor dependency** *(new in v1.5)*. Verification cannot complete during a Persona outage or account suspension, and carries a per-verification cost the fixed-price PRD does not contain (§8.3, **OQ-11**).
 
 ### 8.6 Compliance posture
 
-- **GDPR/CCPA:** the architecture minimises exposure to near-zero — no biometric or document data is ever processed by us as a controller/processor, because it never leaves the user's device. `age_verified` + timestamp is the entire personal-data footprint beyond account identity.
-- **Data subject deletion:** cascade-deleting `auth.users` removes everything. There is no image store to purge.
-- Target markets are still unconfirmed (**OQ-3**), which is the one thing that could add requirements here.
+**Materially changed in v1.5.** The old posture rested on "it never leaves the device", which is
+no longer true. The new posture is *"we are not the party holding it"* — weaker, and it carries
+obligations the previous design did not have.
+
+- **GDPR/CCPA:** biometric and document data is now processed by **Persona**. We remain a
+  controller for the account and the `age_verified` flag; Persona is a processor (or an
+  independent controller — **this must be established, not assumed**). Our own personal-data
+  footprint is still small: `age_verified`, timestamp, `inquiry_id`, `provider_status`.
+- **A Data Processing Agreement with Persona is now required** and did not exist as an
+  obligation before v1.5. So are the vendor's data-residency and retention terms. **OQ-11.**
+- **Data subject deletion is no longer complete on our side.** Cascade-deleting `auth.users`
+  removes our rows, but the evidence lives at the vendor. An erasure request must also reach
+  Persona, keyed by `inquiry_id` — **which is now the reason we store it.** There is a deletion
+  path to build here that Phase 2 does not currently budget for.
+- **Privacy policy and in-app consent copy must name the third-party recipient.** Sending ID
+  images to a vendor the user was not told about is the failure mode this bullet exists to stop.
+- Target markets are still unconfirmed (**OQ-3**), which now also determines whether Persona is
+  licensed to operate in them.
 
 ---
 
@@ -1061,8 +1141,8 @@ The OTP is one-time-programmable, so `K_dev` cannot be overwritten in the field.
 | Server state | TanStack Query |
 | Client state | Zustand (small, explicit stores) |
 | BLE | `react-native-ble-plx` |
-| Camera | `react-native-vision-camera` + frame processors |
-| ML | Native modules — Apple Vision (Swift) / ML Kit (Kotlin), one shared TS interface |
+| Camera | `react-native-vision-camera` — **no longer used for verification** as of v1.5; retained only if another feature needs it |
+| Verification | `react-native-persona` *(v1.5; replaced the Apple Vision / ML Kit native modules, now deleted)*. **Uses the modal `Inquiry.fromTemplate(...).build().start()` path, not the inline `PersonaInquiryView`** — that component is registered via `requireNativeComponent` and has no Fabric/codegen support, which crashes on mount under the mandatory New Architecture in RN 0.82+. |
 | Secure storage | `react-native-keychain` (hardware-backed) |
 | Backend client | `@supabase/supabase-js` |
 | Forms | React Hook Form + Zod |
@@ -1076,12 +1156,11 @@ src/
   features/
     auth/              signup, login, reset
     onboarding/        permissions priming + recovery
-    verification/      ⚠️ the 🔴 zone — see rules below
-      capture/         ID + selfie camera UI
-      ocr/             DOB extraction, normalisation (§6.2)
-      facematch/       embedding + threshold
-      liveness/
-      decision.ts      the single PASS/FAIL orchestrator
+    verification/      ⚠️ revised in v1.5 — see rules below
+      PersonaVerificationScreen.tsx   launches the SDK, renders status
+      personaConfig.ts                template id + environment, from env
+      (capture/ ocr/ facematch/ liveness/ decision.ts — DELETED in v1.5;
+       all of it is now vendor-side. Do not recreate them.)
     devices/           scan, pair, list, rename, unpair
     ble/
       connection.ts    lifecycle, reconnect, background
@@ -1091,16 +1170,26 @@ src/
       protocol.ts      §4 constants — ONLY place UUIDs are defined
     lock/              lock/unlock UI + state machine (§7.3)
     profile/
-  native/
-    ios/  VisionVerification.swift
-    android/ MLKitVerification.kt
+  native/               (verification bridges DELETED in v1.5)
   shared/  ui/ · hooks/ · lib/ · config/
 ```
 
-**Rules for `features/verification/`:**
-1. No import of any logging, analytics, or persistence module inside this subtree. Enforced by an ESLint `no-restricted-imports` rule.
-2. Only `decision.ts` may export outward, and its return type is exactly `{ passed: boolean; method: string; thresholdVersion: string; outcomeReason: string }`. Nothing else escapes.
-3. Every buffer-holding function ends in a `finally` block that zeroises and releases.
+**Rules for `features/verification/` — rewritten in v1.5.** The subtree is **no longer a
+no-network zone**, because there is no longer any evidence in it to protect. The old rules 1–3
+assumed we held images and embeddings; we do not. What replaces them:
+
+1. **Never log or persist an `inquiry_id` alongside anything that could re-identify the
+   underlying document or person.** It is the only handle we hold that points at real evidence.
+2. **The SDK's `onComplete` status is a UI hint only.** The §6.2 webhook is the sole writer of
+   verification state. Rendering "verified" from a callback is inviolable rule 3 inverted.
+3. **Do not acquire what the vendor holds.** No fetching inquiry payloads from Persona's API, no
+   columns for DOB/name/images/scores, no proxying or screenshotting the SDK's UI.
+
+> **The ESLint `no-restricted-imports` guard on this subtree was removed in v1.5** along with the
+> on-device pipeline. That was defensible — it existed to stop biometric data reaching a logger,
+> and no biometric data reaches this subtree any more. **But rule 1 above is now unenforced by
+> tooling and rests on review alone.** A narrower guard (blocking analytics/logging imports in
+> the files that touch `inquiry_id`) is worth considering — flagged, not decided.
 
 **Rules for `features/ble/protocol.ts`:** every UUID, command ID, offset, and result code from §4 is defined here once, with a comment citing its §4 subsection. No magic bytes anywhere else in the codebase.
 
@@ -1129,9 +1218,9 @@ Staging must mirror production configuration exactly, including RLS policies. Mi
 
 | Key | Default | Why it's remote |
 |---|---|---|
-| `min_age` | `18` | Region-specific 21+ without a rebuild (§6.2 R7) |
-| `facematch_tau_ios` | TBD after tuning | Tunable post-launch as accuracy data arrives |
-| `facematch_tau_android` | TBD after tuning | Platforms tune independently |
+| `min_age` | `18` | Region-specific 21+ without a rebuild. **v1.5: whether this stays ours or moves into the Persona template is undecided — §6.6 item 3.** |
+| ~~`facematch_tau_ios`~~ | — | **Removed in v1.5** — thresholds are vendor-owned and not ours to tune (§6.5) |
+| ~~`facematch_tau_android`~~ | — | **Removed in v1.5** — same |
 | `rssi_lock_threshold` | `-85` | Tuned per enclosure at integration |
 | `rssi_unlock_threshold` | `-75` | Hysteresis band partner |
 | `autolock_grace_ms` | `5000` | Pushed to firmware via `SET_AUTOLOCK_GRACE` |
@@ -1162,9 +1251,10 @@ This is the highest-leverage item in the entire plan. It de-risks Phases 1 and 3
 
 | Layer | Scope | Tooling |
 |---|---|---|
-| Unit | DOB normalisation (§6.2 — table-driven, every rule R1–R7), CMAC encoding, RSSI hysteresis, state machine transitions | Jest |
+| Unit | CMAC encoding, RSSI hysteresis, state machine transitions. *(DOB normalisation removed in v1.5 — vendor-owned.)* | Jest |
 | Integration | App ↔ mock peripheral: full handshake, all commands, all result codes | Jest + mock peripheral |
-| Verification accuracy | The §6.3 labelled set; ROC sweep; FAR/FRR regression gate | Custom harness |
+| **Webhook** *(new in v1.5)* | `persona-webhook`: **rejects an unsigned/badly-signed body**, is idempotent on `inquiry_id`, rejects replays, and is the only writer of `provider_status`. **This replaces accuracy testing as the verification-side security gate** — see §8.3. | Jest + service-role harness |
+| ~~Verification accuracy~~ | **Removed in v1.5** — FAR/FRR are vendor-owned and not measurable by us (§6.5) | — |
 | E2E | Signup → verify → pair → unlock → walk away → auto-lock | Detox + mock peripheral |
 | Hardware integration | §4.10 `FW-01`–`FW-15` against real firmware | Manual, joint with the firmware team |
 | Security review | RLS policy audit, secret handling, the §2.2 three rules, threat-model walkthrough | Manual checklist |
@@ -1174,7 +1264,7 @@ This is the highest-leverage item in the entire plan. It de-risks Phases 1 and 3
 - **iOS:** latest iPhone, iPhone SE (small screen + older silicon), one iOS-1 device
 - **Android:** Pixel (reference), Samsung (largest install base), one budget device ≤ 4 GB RAM, one aggressive-battery-management OEM (Xiaomi/OnePlus)
 
-Android budget devices are where on-device ML latency and liveness FRR will hurt. Test there early, not at the end.
+Android budget devices are where BLE background reliability and aggressive-OEM process kills will hurt. Test there early, not at the end. *(Pre-v1.5 this line was about on-device ML latency and liveness FRR — both now vendor-side. **Persona's own SDK performance on budget Android is now the thing to check, and it is not something we can profile or fix.**)*
 
 ---
 
@@ -1202,13 +1292,23 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | Gate | Requirement |
 |---|---|
 | G1 | All §4.10 firmware acceptance tests pass on real hardware |
-| G2 | §6.3 accuracy targets met and recorded, with `threshold_version` pinned |
+| G2 | **`persona-webhook` signature verification implemented and tested against a forged body** (§6.6 item 1, §8.3). *(Replaces the pre-v1.5 accuracy-target gate, which is no longer ours to meet.)* |
+| G2b | **Persona DPA signed; data-residency and retention terms recorded; vendor-side erasure path built** (§8.6, **OQ-11**) |
 | G3 | Security review checklist complete; RLS audited against a second-user JWT |
 | G4 | Full device matrix (§11.3) exercised |
 | G5 | Store listings, privacy nutrition labels, and age-rating declarations complete |
-| G6 | Privacy policy accurately describes the on-device model |
+| G6 | Privacy policy accurately describes the **vendor** model and **names Persona as a third-party recipient** *(changed in v1.5)* |
 
-> **Store-review note:** an age-restricted product in a regulated category will attract additional scrutiny from both stores. Budget for at least one rejection round and lead with the privacy story — "verification happens entirely on-device, no biometric data is collected or transmitted" is a strong position with both reviewers. Submit as early as the build allows.
+> **⚠️ Store-review note — rewritten in v1.5, and the previous version is now a liability.** It
+> advised leading with *"verification happens entirely on-device, no biometric data is collected
+> or transmitted."* **That statement is false under the vendor architecture**, and repeating it
+> to Apple, Google, or in a privacy nutrition label would be a misrepresentation, not merely a
+> stale doc.
+>
+> The accurate position: ID and selfie capture is performed by **Persona**, a specialist identity
+> vendor; **we** neither receive nor store the images. Privacy nutrition labels and the Play Data
+> Safety form must declare the third-party data sharing. An age-restricted product in a regulated
+> category attracts extra scrutiny — budget for at least one rejection round and submit early.
 
 ---
 
@@ -1216,15 +1316,16 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 
 | ID | Question | Blocks | Owner | Severity |
 |---|---|---|---|---|
-| **OQ-1** | When are **physical sample IDs** and a **physical device** available? The PRD assumes ~week 6 of 8 — under a 30-day plan that is after delivery. | §6.3 threshold tuning; all §4.10 firmware acceptance tests | Client | 🔴 **Critical** |
+| **OQ-1** | When are **physical sample IDs** and a **physical device** available? The PRD assumes ~week 6 of 8 — under a 30-day plan that is after delivery. **Reduced in scope by v1.5:** sample IDs were needed for *our* OCR/face-match tuning, which no longer exists (§6.5). Some sandbox test documents are still required. **The physical device half is untouched and still critical.** | All §4.10 firmware acceptance tests | Client | 🔴 **Critical** |
 | **OQ-2** | What is the **manual-review fallback policy** for legitimate false rejects? Who handles it, through what channel, with what SLA? | §6.4 | Client | 🔴 Critical |
-| **OQ-3** | **Target markets / countries** at launch? Determines accepted ID types, OCR coverage, and privacy regime. | §6.2 OCR scope; §8.6 | Client | 🟠 High |
+| **OQ-3** | **Target markets / countries** at launch? Determines accepted ID types, Persona template coverage, whether the vendor is licensed to operate there, and the privacy regime. | §6.6 template config; §8.6 | Client | 🟠 High |
 | **OQ-4** | Who **provisions `K_dev` into OTP** at manufacture, and how is the key manifest securely delivered to us for `device_keys`? | §5.2.5; the whole §4.5 trust chain | Client + factory | 🔴 **Critical** |
 | **OQ-5** | Is there a **re-verification cadence**, or is `age_verified` permanent once set? (Currently out of scope.) | §5.2.2 | Client | 🟠 High |
 | **OQ-6** | Confirmed **firmware team availability** for spec review (Days 3–5) and joint integration (Days 25–29)? | §4; integration | Client | 🟠 High |
 | **OQ-7** | **Brand assets** — logo, palette, app name, store copy. | Design system | Client | 🟡 Medium |
 | **OQ-8** | Who owns the **Apple and Google developer accounts** and signing assets? | §10.3 CI/CD | Client | 🟠 High |
 | **OQ-9** | Is the ~5 s default `autolock_grace_ms` right for the product's real-world use? Needs a physical trial. | §4.8 F2 | Both | 🟡 Medium |
+| **OQ-11** | **The Persona switch itself (v1.5).** Four things, none answered: **(a)** does the client accept that ID images and selfies now leave the device to a third party — *in writing*, since it contradicts `ARCHITECTURE-SIGNOFF.md` in five places; **(b)** who owns and pays for the Persona account (~$1–2/verification per the archived brief — a **per-user recurring cost the fixed-price PRD does not contain**); **(c)** who signs the **DPA**, and what are the vendor's data-residency and retention terms; **(d)** who builds the **vendor-side erasure path** that GDPR now requires (§8.6) and which Phase 2 does not budget for. | §6 in its entirety; §8.6; the client sign-off | Client | 🔴 **Critical** |
 
 > **OQ-1 and OQ-4 are the two that can break the 30-day plan.** Without OTP-provisioned keys there is no §4.5 trust chain to test, and without sample IDs there is no defensible §6.3 tuning. Both must be answered in Days 1–3.
 
@@ -1259,6 +1360,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.5 | 2026-08-06 | **Verification moved from on-device ML to Persona.** No protocol change; `protocolVersion` unchanged at `0x01`; §4 and §7 untouched. **This is a reversal of a v1.0 decision, not drift** — the archived `PROJECT_BRIEF-superseded.md` proposed Persona, v1.0 replaced it with Apple Vision + Google ML Kit, and v1.5 reverts. Recorded in §1.4 so it is not re-litigated a third time. **§6 replaced in full**: two increments (client-initiated capture `P2-1.0`, server-created inquiry + webhook `P2-8.0`), with the SDK's `onComplete` explicitly a UI hint and the webhook the sole authority. **§2.3 Flow A rewritten.** **§5.2.2** gains `inquiry_id` + `provider_status`, `threshold_version` becomes nullable, and the absent-column list is reaffirmed with an explicit prohibition on pulling inquiry payloads back from the vendor. **§5.3: the client INSERT policy on `verifications` is removed** — under the vendor flow a client INSERT is a user asserting their own `age_verified`, which inverts inviolable rule 3. **§8.1** 🔴 class restated from "never persisted" to "never in our possession", plus a new 🔴 row for `inquiry_id`. **§8.3** gains four threats that did not exist before: forged webhook (the most direct path to defeating the age gate), replayed webhook, vendor outage, vendor breach. **§8.6 materially weakened and honest about it** — a DPA is now required, and data-subject erasure is no longer complete on our side because the evidence lives at the vendor. **§6.5** records what the switch deleted from our scope so the effort is not silently re-absorbed; **§6.6** lists five things deliberately left unspecified rather than guessed, of which the **webhook signature scheme is a ship-blocker**. New **OQ-11** covers written client confirmation, account ownership and per-verification cost, the DPA, and the erasure path. **⚠️ Client confirmation is outstanding and `ARCHITECTURE-SIGNOFF.md` must not be sent as written.** |
 | 1.4 | 2026-08-06 | **§4.5 `authResponse` framing — an unenforceable obligation made enforceable.** `protocolVersion` **unchanged at `0x01`** under the v1.2 pre-M2 exemption: §4 still has not been handed to the firmware team, so nothing implements `0x01` and a bump would mint a version no party speaks. **This is the last change that gets that exemption** — it is being made deliberately *before* the walkthrough for exactly that reason. **The defect:** step 4 mandated that "an out-of-order frame resets the handshake", but both frames were 20 opaque bytes written to the same characteristic with no discriminator. Firmware could only track position with an internal cursor, so it could not *detect* an out-of-order frame at all — the mandated behaviour was **not implementable**, and a buggy or hostile central could desynchronise that cursor with no defined recovery. Found while building the `P0-2.5` mock, which had to invent a cursor convention to proceed and flagged it rather than guessing silently. **The fix:** byte 0 of both frames is now `frameIndex` (`0x01`/`0x02`), making each frame self-describing. To free that byte inside the unchanged 20-byte ATT payload, `expiresAtDelta` narrows from uint32 to **uint24 LE seconds** — max ≈194 days against the 90-day `SESSION_EXPIRY_MAX_DAYS` cap, 2.1× headroom, clamped rather than rejected. `frameIndex` is deliberately **outside** the proof CMAC: it is framing, not a security parameter, and forging it without `K_sess` achieves nothing beyond a reset. New obligation **F12**, which also settles that a framing reset is *not* an F6 auth failure and does *not* invalidate `N`. New acceptance tests **FW-19/FW-20**. §2.3 Flow C updated in the same change, since it restates the frame contract. |
 | 1.3.1 | 2026-08-06 | **Editorial only — no normative change, no protocol change, `protocolVersion` unchanged at `0x01`.** §4.8 `F11` was inserted between `F5` and `F6` when it was added in v1.2, leaving the firmware obligation table numbered `F1…F5, F11, F6…F10`. Moved to its correct position after `F10`. The firmware team reads §4.8 as a numbered obligation list and will work through it in order; an out-of-sequence row invites `F11` being read as a sub-clause of `F5` (session expiry) rather than as the independent replay-resistance requirement it is. Wording of every row is byte-identical to v1.3 — this is a row move. Landed before the §4 walkthrough (M2) deliberately, so the version the firmware team first reads is the correctly ordered one. |
 | 1.3 | 2026-08-06 | **§5 backend corrections.** No protocol change; `protocolVersion` unchanged. **(1) §5.2.4 would not have migrated:** `unique (device_id) where (revoked_at is null)` is not valid Postgres as an inline table constraint. Replaced with the partial unique index `device_ownership_one_active_owner`. **(2) §5.3 ownership-squat hole closed:** `manage_own_ownership … for all` constrained only `user_id` in its `WITH CHECK`, so any authenticated user could INSERT an ownership row for any *unclaimed* `device_id`, take the single active-owner slot and permanently lock out the real owner — without ever obtaining `K_sess`. Client INSERT and DELETE are now denied outright (ownership is created service-side by §5.4 step 4, which is where that decision belongs); SELECT and a column-restricted UPDATE on `nickname`/`revoked_at` remain, with `revoke`/`grant` at the column layer because `WITH CHECK` cannot see the OLD row. **(3) §5.4.1 `revoke-device-session` now specified** — it was listed in the §5.5 API table and defined nowhere. Request shape, the `user_id` authorisation predicate, 404-not-403 to avoid leaking session existence across users, idempotency, and the explicit statement that revocation never reaches an offline device. **(4) §5.4's "only privileged operation" claim narrowed** to the accurate one: `issue-device-session` is the sole path from `K_dev` to anything outside the database. **(5) §5.4 step 4 race** made explicit — let the unique index arbitrate a concurrent first bond and map `23505` to the existing 403, rather than check-then-insert. |

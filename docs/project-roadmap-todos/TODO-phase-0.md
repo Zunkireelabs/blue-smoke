@@ -8,7 +8,7 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 1 / 7 tasks · 26 / 76 sub-tasks
+**Progress:** 1 / 7 tasks · 24 / 76 sub-tasks *(down 2 — see the v1.5 note)*
 
 > **Denominator corrected — it was never 62.** Counting the boxes under the seven PRD tasks
 > (`P0-1.0`, `2.0`, `3.0`, `4.0`, `5.0`, `6.0`, `7.0`) gives **76**, and has since this file was
@@ -16,10 +16,18 @@
 > The two *added* tasks — `P0-2.5` and `P0-4.5`, neither of which is a PRD line item — are
 > deliberately outside this count and tracked in their own sections.
 >
-> **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 8 · `P0-2.0` 10 → 26. Only `P0-1.0` is a *completed
+> **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 6 · `P0-2.0` 10 → 24. Only `P0-1.0` is a *completed
 > task*. `P0-4.0` holds two physical-device boxes open (no Android toolchain, no iOS simulator
 > runtime on the machine it was built on) and `P0-2.0` holds three open pending the firmware
 > team (OQ-6).
+>
+> **Two `P0-4.0` boxes unticked by the v1.5 Persona switch — recorded, not silently patched.**
+> The native ML bridges and the verification-subtree ESLint guard were both built and both
+> **deleted** on `feature/P2-1.0-persona-capture-flow`. **This is not two units of outstanding
+> work** — it is completed work whose scope was removed, and the denominator stays 76 because
+> the PRD line items have not changed. Counting them as "done" would misreport what exists in
+> the codebase; counting them as "to do" would misreport the remaining effort. They are open
+> boxes with a strikethrough and an explanation, which is the only honest option of the three.
 
 ---
 
@@ -29,6 +37,7 @@
 - [ ] **OQ-1** raised with client in writing: dates for physical device + physical sample IDs 🔴
 - [ ] **OQ-2** raised: manual-review fallback policy — owner, channel, SLA 🔴
 - [ ] **OQ-6** raised: who is our firmware counterpart, and when can they take a 60-minute §4 walkthrough? 🔴 *(blocks the last three `P0-2.0` boxes and milestone **M2**, which has already slipped — see below)*
+- [ ] **OQ-11** raised: **the Persona switch itself** — written client acceptance that ID images now leave the device, who owns/pays the account (a **per-verification recurring cost the fixed-price PRD does not contain**), who signs the DPA, and who builds the vendor-side erasure path 🔴 *(new — spec v1.5 §13. Gates `ARCHITECTURE-SIGNOFF.md`, which contradicts the new architecture in five places and **must not be sent as written**.)*
 - [ ] **OQ-8** raised: Apple + Google developer account ownership and signing assets
 - [ ] **§5.1 of the roadmap** raised: "live on stores by Day 30" restated as "submitted by Day 30"
 - [ ] Started collecting the labelled face-match test set (§6.3) — do not wait for Day 13
@@ -158,12 +167,12 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 - [x] React Navigation (native stack) configured
 - [x] TanStack Query + Zustand wired
 - [ ] `react-native-ble-plx` integrated, building on both platforms *(installed + configured; not build-verified — no JDK/Android SDK/Xcode on this machine, see P0-4.0 report)*
-- [ ] `react-native-vision-camera` integrated, building on both platforms *(installed + configured; not build-verified — same reason)*
+- [ ] `react-native-vision-camera` integrated, building on both platforms *(installed + configured; not build-verified — same reason.* **No longer on the verification path as of spec v1.5** — retained only if another feature needs it.*)*
 - [ ] `react-native-keychain` integrated, hardware-backed verified *(installed; hardware-backed accessibility set at call sites in P1-4.0, not build-verified)*
 - [x] `@supabase/supabase-js` integrated
-- [x] Native ML bridges scaffolded — Swift (Vision) + Kotlin (ML Kit), one shared TS interface *(M2)*
+- [ ] ~~Native ML bridges scaffolded — Swift (Vision) + Kotlin (ML Kit), one shared TS interface~~ **UNTICKED — falsified by the Persona switch.** `VisionVerification.swift`, `MLKitVerification.kt` and `verificationModule.ts` were **deleted** on `feature/P2-1.0-persona-capture-flow`. The work was done and is now scope that no longer exists; it is not outstanding work. Not re-counted as incomplete — see the note below.
 - [x] `features/ble/protocol.ts` created as the single home for all §4 constants
-- [x] **ESLint `no-restricted-imports` rule blocking logging/analytics/persistence inside `features/verification/`** (spec §9.2)
+- [ ] ~~**ESLint `no-restricted-imports` rule blocking logging/analytics/persistence inside `features/verification/`**~~ **UNTICKED — the rule was removed** with the on-device pipeline (`.eslintrc.js` cut from 64 lines). Defensible: no biometric data reaches the subtree any more. **But spec §9.2's replacement rule 1 — never log `inquiry_id` beside re-identifying data — now rests on review alone.** A narrower guard is flagged in §9.2, not decided.
 - [ ] Runs on a physical iOS device
 - [ ] Runs on a physical Android device
 
@@ -231,8 +240,8 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 - [ ] GDPR/CCPA posture documented (spec §8.6)
 - [ ] Security review checklist drafted for use in Block E
 
-**Assumption:** on-device ML is sufficient for the verification flow (no KYC vendor).
-**Excludes:** third-party / government ID validation APIs.
+**Assumption:** ~~on-device ML is sufficient for the verification flow (no KYC vendor)~~ — **void as of spec v1.5.** Verification is Persona. Several boxes above change meaning: the data classification, the threat model (four new threats, incl. **webhook forgery**), the residual-risk list, and the GDPR posture (a **DPA** is now required and erasure is no longer complete on our side). The zeroisation-policy box is largely moot — we hold nothing to zeroise.
+**Excludes:** ~~third-party / government ID validation APIs~~ — **Persona is now in scope.** Government ID-validation APIs beyond Persona remain excluded.
 **Risk:** mishandling of sensitive data if the deletion policy is incomplete.
 
 ---
