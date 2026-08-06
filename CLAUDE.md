@@ -141,6 +141,7 @@ frame order is mandatory per spec. Constant-time CMAC comparison.
 - **Git is not on PATH.** Prefix: `$env:PATH = "C:\Program Files\Git\cmd;$env:PATH"`
 - **PowerShell 5.1 mangles `-m` messages containing double quotes.** Write the message to a file and use `git commit -F <file>`.
 - Never `--no-verify`. **Never force-push `main` or `stage`** — everyone's work lives on `stage`.
+- **No Claude co-authorship on commits or pushes.** Do not add a `Co-Authored-By: Claude ...` trailer, "Generated with Claude Code" line, or any other Claude/Anthropic attribution to commit messages. Commits are authored under the developer's own git identity (`git config user.name` / `user.email`) only, same as if they'd typed it themselves.
 
 ---
 
