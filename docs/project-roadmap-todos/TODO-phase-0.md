@@ -78,9 +78,9 @@ The Day-1 escalation boxes above become tickable when it goes out.
 - [x] Auth challenge–response handshake specified (spec §4.5) *(corrected in v1.2 — `info` no longer binds values the device is never sent; `expiresAtDelta` now inside the proof CMAC)*
 - [x] `lockCommand` format + all 7 command IDs specified (spec §4.6) *(corrected in v1.2 — tag input is now `N ‖ bytes[0..11]`)*
 - [x] `commandResult` + all 10 result codes specified (spec §4.7)
-- [x] **Firmware obligations F1–F11 specified** — locked-by-default, dead-man timer, fail-closed, backoff, constant-time compare, connection-scoped command tags (spec §4.8) *(F11 added in v1.2)*
+- [x] **Firmware obligations F1–F12 specified** — locked-by-default, dead-man timer, fail-closed, backoff, constant-time compare, connection-scoped command tags, `frameIndex`-validated handshake frames (spec §4.8) *(F11 added in v1.2, F12 in v1.4)*
 - [x] Connection parameters specified, incl. the deliberate refusal of Long Range PHY (spec §4.9)
-- [x] Acceptance tests `FW-01`–`FW-18` written (spec §4.10) *(FW-16/17/18 added in v1.2)*
+- [x] Acceptance tests `FW-01`–`FW-20` written (spec §4.10) *(FW-16/17/18 added in v1.2, FW-19/20 in v1.4)*
 - [ ] Spec walkthrough session held with the client's firmware team ← **blocked on OQ-6**
 - [ ] **Written acknowledgement received from the firmware team** ← M2 milestone — **⚠️ MISSED, was Day 6**
 - [ ] `protocolVersion 0x01` frozen; change process agreed ← the change process is written into §4's header; the *freeze* is bilateral and has not happened
