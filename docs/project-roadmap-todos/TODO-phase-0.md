@@ -8,12 +8,18 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 1 / 7 tasks · 16 / 62 sub-tasks
+**Progress:** 1 / 7 tasks · 26 / 76 sub-tasks
 
-> **Counter reconciled on rebase onto `stage`:** `P0-4.0` contributed 8 ticked sub-tasks and
-> `P0-1.0` another 8, in disjoint sections — hence 16. `P0-4.0` is not counted as a completed
-> *task*: two physical-device boxes remain unticked because no Android toolchain or iOS
-> simulator is available on the machine it was built on.
+> **Denominator corrected — it was never 62.** Counting the boxes under the seven PRD tasks
+> (`P0-1.0`, `2.0`, `3.0`, `4.0`, `5.0`, `6.0`, `7.0`) gives **76**, and has since this file was
+> written; `62` appears to have been an estimate that was never reconciled against the list.
+> The two *added* tasks — `P0-2.5` and `P0-4.5`, neither of which is a PRD line item — are
+> deliberately outside this count and tracked in their own sections.
+>
+> **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 8 · `P0-2.0` 10 → 26. Only `P0-1.0` is a *completed
+> task*. `P0-4.0` holds two physical-device boxes open (no Android toolchain, no iOS simulator
+> runtime on the machine it was built on) and `P0-2.0` holds three open pending the firmware
+> team (OQ-6).
 
 ---
 
@@ -22,6 +28,7 @@
 - [ ] **OQ-4** raised with client in writing: who burns `K_dev` into device OTP at manufacture, and how is the key manifest delivered to us? 🔴
 - [ ] **OQ-1** raised with client in writing: dates for physical device + physical sample IDs 🔴
 - [ ] **OQ-2** raised: manual-review fallback policy — owner, channel, SLA 🔴
+- [ ] **OQ-6** raised: who is our firmware counterpart, and when can they take a 60-minute §4 walkthrough? 🔴 *(blocks the last three `P0-2.0` boxes and milestone **M2**, which has already slipped — see below)*
 - [ ] **OQ-8** raised: Apple + Google developer account ownership and signing assets
 - [ ] **§5.1 of the roadmap** raised: "live on stores by Day 30" restated as "submitted by Day 30"
 - [ ] Started collecting the labelled face-match test set (§6.3) — do not wait for Day 13
@@ -64,23 +71,36 @@ The Day-1 escalation boxes above become tickable when it goes out.
 > lockCommand (authenticated write), and auth/session pairing token, plus the firmware-side
 > auto-lock-on-disconnect behaviour.
 
-- [ ] Service + characteristic UUIDs allocated (spec §4.2)
-- [ ] Advertising format defined, incl. manufacturer data and TX power (spec §4.1)
-- [ ] `deviceInfo` byte layout defined (spec §4.3)
-- [ ] `lockState` byte layout defined, incl. battery + lock reason (spec §4.4)
-- [ ] Auth challenge–response handshake specified (spec §4.5)
-- [ ] `lockCommand` format + all 7 command IDs specified (spec §4.6)
-- [ ] `commandResult` + all 10 result codes specified (spec §4.7)
-- [ ] **Firmware obligations F1–F10 specified** — locked-by-default, dead-man timer, fail-closed, backoff, constant-time compare (spec §4.8)
-- [ ] Connection parameters specified, incl. the deliberate refusal of Long Range PHY (spec §4.9)
-- [ ] Acceptance tests `FW-01`–`FW-15` written (spec §4.10)
-- [ ] Spec walkthrough session held with the client's firmware team
-- [ ] **Written acknowledgement received from the firmware team** ← M2 milestone
-- [ ] `protocolVersion 0x01` frozen; change process agreed
+- [x] Service + characteristic UUIDs allocated (spec §4.2)
+- [x] Advertising format defined, incl. manufacturer data and TX power (spec §4.1)
+- [x] `deviceInfo` byte layout defined (spec §4.3)
+- [x] `lockState` byte layout defined, incl. battery + lock reason (spec §4.4)
+- [x] Auth challenge–response handshake specified (spec §4.5) *(corrected in v1.2 — `info` no longer binds values the device is never sent; `expiresAtDelta` now inside the proof CMAC)*
+- [x] `lockCommand` format + all 7 command IDs specified (spec §4.6) *(corrected in v1.2 — tag input is now `N ‖ bytes[0..11]`)*
+- [x] `commandResult` + all 10 result codes specified (spec §4.7)
+- [x] **Firmware obligations F1–F11 specified** — locked-by-default, dead-man timer, fail-closed, backoff, constant-time compare, connection-scoped command tags (spec §4.8) *(F11 added in v1.2)*
+- [x] Connection parameters specified, incl. the deliberate refusal of Long Range PHY (spec §4.9)
+- [x] Acceptance tests `FW-01`–`FW-18` written (spec §4.10) *(FW-16/17/18 added in v1.2)*
+- [ ] Spec walkthrough session held with the client's firmware team ← **blocked on OQ-6**
+- [ ] **Written acknowledgement received from the firmware team** ← M2 milestone — **⚠️ MISSED, was Day 6**
+- [ ] `protocolVersion 0x01` frozen; change process agreed ← the change process is written into §4's header; the *freeze* is bilateral and has not happened
 
-**Assumption:** firmware team will implement to our spec and is available for review.
+**Status: 10 / 13 — the spec is written; the handoff has not happened.**
+
+The ten authoring boxes are ticked against real §4 content, verified section by section. The three
+open boxes all need a firmware counterpart nobody has contacted yet — that is **OQ-6**, now added
+to the Day-1 escalations above. The review window the roadmap allocated (Days 3–5) has passed
+unused, so **M2 has slipped**; it is not recoverable by working harder on our side.
+
+**§4 is not frozen, and that is currently load-bearing.** Version 1.2 corrected three auth defects
+in place at `protocolVersion 0x01` — legitimately, because nothing implements `0x01` yet, so a bump
+would mint a version no party speaks. **That exemption ends at M2.** Once the firmware team
+acknowledges §4, any change requires a version bump and written notice, per §4's header.
+
+**Assumption:** firmware team will implement to our spec and is available for review. *(Unvalidated — OQ-6.)*
 **Excludes:** firmware development on the device itself.
-**Risk:** spec ambiguity causing firmware/app mismatch at integration.
+**Risk:** spec ambiguity causing firmware/app mismatch at integration. **Now compounded:** every day
+§4 goes unacknowledged is a day `P0-2.5`, `P1-4.0` and `P3-2.0` build against an unratified contract.
 
 ---
 

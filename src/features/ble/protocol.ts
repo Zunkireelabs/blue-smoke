@@ -14,7 +14,10 @@
 
 // ── §4 — protocol version ───────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = 0x01; // §4 — frozen per P0-2.0
+// §4 — NOT yet frozen. The freeze is milestone M2 (Day 6), after the firmware team's spec
+// review (OQ-6). Until then §4 may be corrected in place at 0x01. After M2, any §4 change
+// requires bumping this value and notifying the firmware team in writing.
+export const PROTOCOL_VERSION = 0x01;
 
 // ── §4.2 — byte order ────────────────────────────────────────────────────────
 
@@ -126,7 +129,10 @@ export const AUTH_NONCE_LENGTH_BYTES = 16; // §4.5 — single-use
 export const AUTH_NONCE_TTL_MS = 30_000; // §4.5 — invalidated after one use or 30s
 
 export const AUTH_PROOF_LENGTH_BYTES = 16; // §4.5 — AES-128-CMAC(K_sess, ...) truncated to 16B
-export const AUTH_PROOF_FIXED_PREFIX = 0x01; // §4.5 — proof = CMAC(K_sess, 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3])
+// §4.5 — proof = CMAC(K_sess, 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3] ‖ expiresAtDelta).
+// expiresAtDelta is inside the CMAC input: it sets sessionExpiry device-side, so an
+// unauthenticated copy would let a compromised app self-extend to SESSION_EXPIRY_MAX_DAYS.
+export const AUTH_PROOF_FIXED_PREFIX = 0x01;
 
 /** §4.5 — written to C3 (authResponse) first. Frame order is mandatory. */
 export const AUTH_RESPONSE_FRAME_1_LAYOUT = {
@@ -141,7 +147,11 @@ export const AUTH_RESPONSE_FRAME_2_LAYOUT = {
   expiresAtDelta: { offset: 16, length: 4 }, // §4.5 — uint32
 } as const;
 
-export const AUTH_HKDF_INFO = 'bluesmoke-session-v1'; // §4.5
+// §4.5 — K_sess = HKDF(ikm = K_dev, salt = session_id, info = AUTH_HKDF_INFO ‖ keyGeneration).
+// Every input is either burned into the device (K_dev) or sent in authResponse frame 1.
+// Do NOT add user_id or an absolute expires_at to `info`: the device is offline, has no wall
+// clock, and is never told either — binding them makes K_sess underivable device-side.
+export const AUTH_HKDF_INFO = 'bluesmoke-session-v1';
 export const SESSION_EXPIRY_MAX_DAYS = 90; // §4.5 — hard cap on session expiry
 
 // ── §4.6 — lockCommand layout ────────────────────────────────────────────────
@@ -150,7 +160,11 @@ export const LOCK_COMMAND_LAYOUT = {
   commandId: { offset: 0, length: 1 }, // §4.6
   counter: { offset: 1, length: 4 }, // §4.6 — uint32, strictly increasing
   payload: { offset: 5, length: 7 }, // §4.6 — zero-padded
-  tag: { offset: 12, length: 8 }, // §4.6 — first 8B of AES-128-CMAC(K_sess, bytes[0..11])
+  // §4.6 — first 8B of AES-128-CMAC(K_sess, N ‖ bytes[0..11]), where N is THIS connection's
+  // authChallenge nonce. N is not carried in the frame (both sides hold it), so the frame
+  // stays 20B. Binding N scopes the tag to one connection, which is what stops a command
+  // captured in an earlier session from replaying — the counter alone cannot (it resets).
+  tag: { offset: 12, length: 8 },
 } as const;
 
 export const CommandId = {

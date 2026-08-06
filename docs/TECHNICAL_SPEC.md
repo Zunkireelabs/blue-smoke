@@ -1,8 +1,8 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.0
+**Version:** 1.3
 **Status:** Authoritative build contract
-**Last updated:** 2026-08-05
+**Last updated:** 2026-08-06
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
 
 > This document is the **single source of technical truth** for Blue Smoke. If this document
@@ -200,7 +200,9 @@ App → Supabase Edge Fn: issue-device-session { serial_hash, requested_ttl_days
      Edge Fn asserts: age_verified == true AND ownership valid
      Edge Fn: K_sess = HKDF-SHA256(ikm  = K_dev,
                                    salt = session_id,            ← salt, not info
-                                   info = "bluesmoke-session-v1" | user_id | expires_at)
+                                   info = "bluesmoke-session-v1" | key_generation)
+              ↑ info holds ONLY what the device also receives in the handshake (§4.5).
+                user_id / expires_at must never enter it — the device is never told them.
      Edge Fn → App: { session_id, K_sess, expires_at, key_generation }
 App: store K_sess in Keychain/Keystore (biometric-gated)
 App → Device: auth handshake (§4.5) → ACTIVATE command
@@ -209,11 +211,14 @@ App → Device: auth handshake (§4.5) → ACTIVATE command
 **Flow C — Routine unlock (P3, works offline)**
 ```
 App: connect → read authChallenge (nonce N)
-App: proof = CMAC(K_sess, 0x01 | protoVer | N | session_id[0..3])   ← first 4 bytes only
+App: proof = CMAC(K_sess, 0x01 | protoVer | N | session_id[0..3] | expiresAtDelta)
+                                                 ↑ first 4 bytes only
 App: write authResponse as TWO ordered frames (§4.5) — frame order is mandatory;
      an out-of-order frame resets the handshake
-Device: recompute, compare in constant time, open authenticated session
-App: write lockCommand UNLOCK (counter-protected, CMAC-tagged)
+Device: derive K_sess from K_dev + session_id + key_generation (all in frame 1),
+        recompute, compare in constant time, open authenticated session
+App: write lockCommand UNLOCK (counter-protected; tag = CMAC over N | bytes[0..11],
+     so the frame is valid for THIS connection only)
 Device: unlock, notify lockState
 [phone leaves range] → firmware dead-man timer fires → device locks itself
 ```
@@ -325,7 +330,7 @@ K_dev  (16 B, AES-128)
 K_sess (16 B, AES-128)
   = HKDF(ikm = K_dev,
          salt = session_id (16 B random),
-         info = "bluesmoke-session-v1" ‖ user_id ‖ expires_at)
+         info = "bluesmoke-session-v1" ‖ keyGeneration (1 B))
   ├── Issued to the app over TLS by the `issue-device-session` Edge Function
   ├── Stored in iOS Keychain / Android Keystore (hardware-backed, biometric-gated)
   └── Device derives the SAME K_sess on demand from K_dev + the parameters the app
@@ -333,6 +338,18 @@ K_sess (16 B, AES-128)
 ```
 
 This is the load-bearing idea: the phone gets a **scoped, expiring, revocable** key; the device holds only the **root** key and can re-derive. Unlock therefore works offline, indefinitely, in range — while revocation and rotation stay a server-side decision.
+
+> **Derivation inputs are exactly what the handshake transmits — this is a hard constraint,
+> not a style note.** Every term in the HKDF call above is either burned into the device
+> (`K_dev`) or sent by the app in §4.5's handshake (`session_id` as the salt, `keyGeneration`
+> in frame 1). Nothing else may enter `info`. In particular `user_id` and an absolute
+> `expires_at` **must not** be bound into the derivation: the device is offline, has no
+> wall clock, and cannot be told either value — binding them would make `K_sess` underivable
+> device-side and the handshake would fail with no diagnostic. Which *user* a `K_sess` belongs
+> to is enforced by the server at issuance (§5.4), which is the only party that can check it;
+> the device cannot distinguish users and gains nothing from the binding. Session lifetime is
+> carried instead by the authenticated `expiresAtDelta` (§4.5), expressed as **seconds relative
+> to the handshake** so that a monotonic uptime counter suffices and no time sync is required.
 
 #### Handshake (per BLE connection)
 
@@ -343,8 +360,13 @@ This is the load-bearing idea: the phone gets a **scoped, expiring, revocable** 
       and MUST invalidate it after one use or after 30 s, whichever is first.
 
 3. App computes:
-      proof = AES-128-CMAC(K_sess, 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3])
+      proof = AES-128-CMAC(K_sess,
+                 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3] ‖ expiresAtDelta)
       (truncated to 16 bytes)
+
+      → expiresAtDelta is INSIDE the CMAC input. It sets sessionExpiry in step 5c,
+        so leaving it unauthenticated would let a compromised app self-extend its
+        own session to the 90-day cap regardless of what the server issued.
 
 4. App writes to authResponse (C3), 20 bytes:
       [ session_id (16 B) | keyGeneration (1 B) | reserved (3 B) ]
@@ -353,19 +375,34 @@ This is the load-bearing idea: the phone gets a **scoped, expiring, revocable** 
 
       → Implemented as a 2-frame write to stay inside the 20-byte ATT payload.
         Frame order is mandatory; an out-of-order frame resets the handshake.
+        Both terms the proof covers from frame 2 travel in frame 2, so the
+        firmware holds everything it needs the moment frame 2 lands.
 
 5. Firmware:
-      a. Derives K_sess' = HKDF(K_dev, session_id, "bluesmoke-session-v1" ‖ ...)
+      a. Derives K_sess' = HKDF(ikm  = K_dev,
+                                salt = session_id,          ← frame 1
+                                info = "bluesmoke-session-v1" ‖ keyGeneration)
+                                                            ← frame 1
+         Every input is either in OTP or in frame 1. No network, no clock.
       b. Recomputes proof' and compares in CONSTANT TIME
       c. On match → opens an authenticated session for this connection,
-         records sessionExpiry = RTC_now + expiresAtDelta (capped at 90 days)
+         records sessionExpiry = uptime_now + expiresAtDelta (capped at 90 days).
+         uptime_now is the monotonic RTC/LPTIM counter — NOT wall-clock time.
+         The device never learns the absolute date and does not need to.
       d. On mismatch → writes AUTH_FAILED to commandResult, applies backoff (§4.8)
 
 6. Session is valid for the connection lifetime OR until sessionExpiry, whichever first.
    Disconnect ALWAYS ends the session. There is no session resumption in v1.
 ```
 
-**Replay protection is three-layered:** (a) per-connection single-use nonce, (b) a strictly-increasing command counter inside the session (§4.6), (c) `sessionExpiry` enforced against the device RTC.
+**Replay protection is three-layered:** (a) per-connection single-use nonce `N`, which is bound into both the handshake proof above **and** every subsequent command tag (§4.6) — so a command captured in one session is cryptographically useless in any other; (b) a strictly-increasing command counter inside the session (§4.6), which stops replay *within* a connection; (c) `sessionExpiry` enforced against the device's monotonic counter.
+
+> **Why (a) must cover commands, not just the handshake.** `K_sess` is stable for up to 90 days
+> and the command counter only ever increases *within* a session, resetting on each new
+> connection. Without `N` in the command tag, an `UNLOCK` frame captured at counter 7 today
+> would verify perfectly in any later session whose counter has not yet passed 7 — the sniffer
+> would not need the key at all. Binding `N` makes every command frame valid for exactly one
+> connection.
 
 ### 4.6 `lockCommand` (C5) — 20 bytes, write, authenticated
 
@@ -374,7 +411,12 @@ This is the load-bearing idea: the phone gets a **scoped, expiring, revocable** 
 | 0 | 1 | `commandId` |
 | 1 | 4 | `counter` (uint32, **strictly increasing** within the session) |
 | 5 | 7 | `payload` (command-specific, zero-padded) |
-| 12 | 8 | `tag` = first 8 bytes of `AES-128-CMAC(K_sess, bytes[0..11])` |
+| 12 | 8 | `tag` = first 8 bytes of `AES-128-CMAC(K_sess, N ‖ bytes[0..11])` |
+
+> `N` is the 16-byte `authChallenge` nonce from **this** connection's handshake (§4.5). It is
+> not transmitted in the frame — both sides already hold it — so the frame stays 20 bytes and
+> the ATT MTU budget in §4.9 is unchanged. Its only job here is to scope the tag to one
+> connection, which is what defeats cross-session replay (§4.5).
 
 **Command IDs**
 
@@ -427,7 +469,8 @@ These are **firmware obligations**, not app behaviour. The app cannot enforce th
 | **F2** | **Dead-man auto-lock** | On BLE disconnect (any cause, including link supervision timeout) start a countdown of `autoLockGraceMs` (default **5000 ms**, range 1000–30000). On expiry → `LOCKED`, `lastLockReason = 1`. The timer runs off the RTC/LPTIM and **must survive sleep**. |
 | **F3** | **Timer is not cancellable by disconnect-reconnect alone** | Reconnection only cancels the countdown after a **successful auth handshake**. An attacker who forces a reconnect without the key cannot keep the device unlocked. |
 | **F4** | **Fail closed** | Watchdog reset, fault, or unhandled exception → `LOCKED`, `lastLockReason = 4`, `state = 3` if unrecoverable. |
-| **F5** | **Session expiry enforced** | If `RTC_now > sessionExpiry` → immediate `LOCKED`, `lastLockReason = 2`, session dropped. |
+| **F5** | **Session expiry enforced** | If `uptime_now > sessionExpiry` → immediate `LOCKED`, `lastLockReason = 2`, session dropped. `uptime_now` is the monotonic RTC/LPTIM counter, not wall-clock time — the device has no time source and none is required (§4.5). |
+| **F11** | **Command tags are connection-scoped** | The `lockCommand` tag is verified against `N ‖ bytes[0..11]` using **this** connection's nonce (§4.6). A command frame captured in an earlier connection must fail tag verification here, even if its `counter` is higher than the current one. |
 | **F6** | **Auth backoff** | After 5 consecutive auth failures: reject all auth attempts for 30 s. After 10: 5 min. Counter resets on success or power cycle. Return `RATE_LIMITED`. |
 | **F7** | **Constant-time comparison** | All CMAC/tag comparisons must be constant-time. No early-exit `memcmp`. |
 | **F8** | **RNG quality** | `authChallenge` nonces come from the hardware RNG. Never a counter, never RTC-seeded PRNG alone. |
@@ -465,6 +508,9 @@ The firmware is accepted against §4 when all of the following pass on real hard
 - [ ] `FW-13` Battery percentage tracks a discharging cell; low-battery flag latches at 15%, clears at 20%
 - [ ] `FW-14` Reconnect without a valid handshake does **not** cancel the dead-man countdown
 - [ ] `FW-15` Watchdog-forced reset leaves the device `LOCKED` with `lastLockReason = 4`
+- [ ] `FW-16` A `lockCommand` frame **captured in one connection and replayed in a later one** returns `AUTH_FAILED` — even when its `counter` exceeds the current session's last accepted counter (proves F11; `FW-06` only covers replay *within* a session)
+- [ ] `FW-17` An `authResponse` whose `expiresAtDelta` is altered in transit returns `AUTH_FAILED` and opens no session (proves `expiresAtDelta` is inside the proof CMAC, §4.5)
+- [ ] `FW-18` A device that has never had a time sync completes a full handshake and enforces `sessionExpiry` correctly (proves the derivation needs no wall clock, §4.5)
 
 ---
 
@@ -521,9 +567,16 @@ create table device_ownership (
   device_id   uuid not null references devices(id) on delete cascade,
   nickname    text,
   bonded_at   timestamptz not null default now(),
-  revoked_at  timestamptz,
-  unique (device_id) where (revoked_at is null)   -- one active owner per device
+  revoked_at  timestamptz
 );
+
+-- One active owner per device. This MUST be a partial unique INDEX, not an inline
+-- `unique (...) where (...)` table constraint — Postgres has no such constraint form and
+-- the migration will fail to parse. The index is what makes the §5.4 step-4 ownership
+-- assertion race-safe, so it is load-bearing, not cosmetic.
+create unique index device_ownership_one_active_owner
+  on device_ownership (device_id)
+  where (revoked_at is null);
 
 -- 5.2.5 Root device keys — SERVICE ROLE ONLY. RLS denies every client.
 create table device_keys (
@@ -597,8 +650,29 @@ create policy read_owned_devices on devices for select using (
             and o.revoked_at is null)
 );
 
-create policy manage_own_ownership on device_ownership
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- Ownership: clients may READ their own rows, and may rename or release a device they
+-- already hold. They may NOT create ownership — that is service-role only, because
+-- creating it is exactly the decision §5.4 step 4 exists to make.
+--
+-- The earlier `for all ... with check (user_id = auth.uid())` was unsafe: WITH CHECK only
+-- constrained user_id, so any authenticated user could INSERT a row naming ANY unclaimed
+-- device_id, take the one active-owner slot, and lock the legitimate owner out of the
+-- Edge Function forever — without ever obtaining K_sess. Denying client INSERT closes it.
+create policy read_own_ownership on device_ownership
+  for select using (user_id = auth.uid());
+
+create policy update_own_ownership on device_ownership
+  for update using (user_id = auth.uid() and revoked_at is null)
+           with check (user_id = auth.uid());
+
+-- No INSERT policy and no DELETE policy → both denied for every client role.
+-- Deleting is denied deliberately: releasing a device sets revoked_at, so the history
+-- survives for the audit trail.
+--
+-- WITH CHECK cannot see the OLD row, so it alone cannot stop a user repointing their own
+-- row at someone else's device_id. Column privileges close that at the grant layer:
+revoke update on device_ownership from authenticated;
+grant  update (nickname, revoked_at) on device_ownership to authenticated;
 
 -- device_keys: NO POLICY AT ALL. RLS enabled + zero policies = deny all.
 -- Only the service role (Edge Function) can read it. This is intentional and load-bearing.
@@ -616,7 +690,7 @@ create policy read_own_audit on audit_log
 
 ### 5.4 Edge Function: `issue-device-session`
 
-The **only** privileged operation in the system. It is the server-side chokepoint that makes §2.2 rule 3 real.
+The **only operation that hands out key material**, and the server-side chokepoint that makes §2.2 rule 3 real. Two other endpoints run as service role — `revoke-device-session` (§5.4.1) and the push dispatcher (§5.5) — but neither derives, reads, or returns `K_dev` or `K_sess`. The rule that matters is narrower than "only privileged operation" and worth stating exactly: **`issue-device-session` is the sole path from `K_dev` to anything outside the database.**
 
 ```
 POST /functions/v1/issue-device-session
@@ -629,13 +703,23 @@ Server logic (service role):
      → if none: 403 { error: "AGE_NOT_VERIFIED" }              ← THE GATE
   3. Resolve device by serial_hash (insert if first-seen).
   4. Assert device_ownership: active row for (user_id, device_id),
-     or no active owner at all (first bond → create ownership).
+     or no active owner at all (first bond → INSERT ownership as service role;
+     clients cannot create ownership themselves, see §5.3).
      → else: 403 { error: "DEVICE_OWNED_BY_ANOTHER_USER" }
+     The INSERT races against a concurrent first bond by another user. Do NOT
+     pre-check-then-insert; let device_ownership_one_active_owner arbitrate and
+     translate a 23505 unique violation into the same 403. The index is the
+     authority here, not the SELECT.
   5. Load k_dev_wrapped, unwrap via Supabase Vault.
   6. session_id = randomBytes(16)
      expires_at = now() + min(requested_ttl_days, 90 days)
      K_sess = HKDF-SHA256(ikm=K_dev, salt=session_id,
-                          info="bluesmoke-session-v1" || user_id || expires_at)
+                          info="bluesmoke-session-v1" || key_generation)
+     // info binds ONLY values the device can also see (§4.5). user_id and expires_at
+     // are enforced HERE, at issuance — the server is the only party that can check
+     // them, and the offline device could never verify them anyway. expires_at is
+     // still returned to the app and still recorded in device_sessions; it reaches
+     // the device as the authenticated RELATIVE expiresAtDelta in the handshake.
   7. INSERT device_sessions (metadata only — K_sess is NOT stored).
   8. Rate limit: max 10 issuances per user per hour.
   9. audit_log: 'session_issued'
@@ -647,7 +731,40 @@ Server logic (service role):
      }
 ```
 
-**Revocation:** set `device_sessions.revoked_at`. The device cannot learn this while offline — which is the accepted, documented trade-off for offline unlock. Practical bound on exposure is `expires_at` (≤ 90 days), plus the app refuses to use a revoked session on its next online check.
+### 5.4.1 Edge Function: `revoke-device-session`
+
+Listed in §5.5 but previously unspecified. It runs as service role because `device_sessions`
+has no client UPDATE policy (§5.3), but it handles **no key material** — it only marks rows.
+
+```
+POST /functions/v1/revoke-device-session
+Authorization: Bearer <supabase user JWT>
+Body: { "session_id": "<hex 16B>" }   // omit to revoke every active session for the caller
+
+Server logic (service role):
+  1. Resolve user_id from the JWT. Reject if absent/expired.
+  2. UPDATE device_sessions SET revoked_at = now()
+       WHERE session_id = $1 AND user_id = <caller> AND revoked_at is null
+     The user_id predicate is the authorisation check — a caller can never revoke
+     another user's session, and a session_id they do not own is indistinguishable
+     from one that does not exist.
+  3. Affected 0 rows → 404 { error: "SESSION_NOT_FOUND" }.  Do not leak whether the
+     session_id exists under a different user.
+  4. audit_log: 'session_revoked'
+  5. Respond 200 { revoked: <count>, revoked_at: "<iso8601>" }
+
+Idempotent: revoking an already-revoked session is a 404, not an error state.
+```
+
+**What revocation does and does not do.** It stops the *server* from re-issuing, and the app
+refuses to use a revoked session on its next online check. It does **not** reach the device:
+a device holding a valid `K_sess` keeps honouring it until `sessionExpiry` elapses, because
+the device is offline by design. Re-issuance after revocation is therefore also blocked —
+§5.4 step 4 must treat a revoked ownership row as "no active owner", and a revoked *session*
+does not entitle the holder to a fresh one without passing the §5.4 gate again.
+
+Practical bound on exposure is `expires_at` (≤ 90 days; **30 days recommended**, see §8.5).
+This is the accepted, documented trade-off for offline unlock.
 
 ### 5.5 API contract summary (app ↔ backend)
 
@@ -657,9 +774,9 @@ Server logic (service role):
 | Sign up / sign in via phone OTP *(§1.2.1)* | `supabase.auth` with Twilio Verify as the native phone provider | — |
 | Submit verification result | `INSERT verifications` (RLS) | User JWT |
 | Read own verification status | `SELECT verifications` (RLS) | User JWT |
-| List / rename / unpair devices | CRUD on `device_ownership` (RLS) | User JWT |
-| **Issue device session key** | Edge Function `issue-device-session` | User JWT → service role |
-| Revoke session | Edge Function `revoke-device-session` | User JWT |
+| List / rename / unpair devices | SELECT + UPDATE(`nickname`, `revoked_at`) on `device_ownership` (RLS). **Not INSERT** — ownership is created service-side by `issue-device-session` only (§5.3) | User JWT |
+| **Issue device session key** | Edge Function `issue-device-session` (§5.4) | User JWT → service role |
+| Revoke session | Edge Function `revoke-device-session` (§5.4.1) | User JWT → service role |
 | Register push token | `UPSERT push_tokens` (RLS) | User JWT |
 | Send push | Edge Function → APNs/FCM | Service role |
 
@@ -880,7 +997,7 @@ Authorisation is the §4.5 CMAC handshake, which transitively proves the server 
 | Threat | Mitigation |
 |---|---|
 | Passive BLE sniffing | LE Secure Connections encryption; and nothing sensitive traverses BLE regardless |
-| Replay of a captured unlock command | Per-connection single-use nonce + strictly-increasing counter + `sessionExpiry` (§4.5) |
+| Replay of a captured unlock command | The connection nonce `N` is bound into the command tag itself (§4.6 F11), so a captured frame is valid only inside the connection that produced it; plus a strictly-increasing counter within the session and `sessionExpiry` (§4.5) |
 | Relay / range-extension attack | Not fully mitigated in v1. Reduced by short supervision timeout (4 s), RSSI thresholds, and no Long Range PHY. Documented residual risk — see §8.5. |
 | Stolen phone | `K_sess` is biometric-gated in the Keychain/Keystore; remote session revocation; `sessionExpiry` bounds exposure |
 | Rooted / jailbroken device extracting `K_sess` | Bounded blast radius: `K_sess` is per-device, per-user, expiring, and revocable. `K_dev` is unaffected, so the fleet is unaffected. |
@@ -1121,3 +1238,5 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 |---|---|---|
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
+| 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.3 | 2026-08-06 | **§5 backend corrections.** No protocol change; `protocolVersion` unchanged. **(1) §5.2.4 would not have migrated:** `unique (device_id) where (revoked_at is null)` is not valid Postgres as an inline table constraint. Replaced with the partial unique index `device_ownership_one_active_owner`. **(2) §5.3 ownership-squat hole closed:** `manage_own_ownership … for all` constrained only `user_id` in its `WITH CHECK`, so any authenticated user could INSERT an ownership row for any *unclaimed* `device_id`, take the single active-owner slot and permanently lock out the real owner — without ever obtaining `K_sess`. Client INSERT and DELETE are now denied outright (ownership is created service-side by §5.4 step 4, which is where that decision belongs); SELECT and a column-restricted UPDATE on `nickname`/`revoked_at` remain, with `revoke`/`grant` at the column layer because `WITH CHECK` cannot see the OLD row. **(3) §5.4.1 `revoke-device-session` now specified** — it was listed in the §5.5 API table and defined nowhere. Request shape, the `user_id` authorisation predicate, 404-not-403 to avoid leaking session existence across users, idempotency, and the explicit statement that revocation never reaches an offline device. **(4) §5.4's "only privileged operation" claim narrowed** to the accurate one: `issue-device-session` is the sole path from `K_dev` to anything outside the database. **(5) §5.4 step 4 race** made explicit — let the unique index arbitrate a concurrent first bond and map `23505` to the existing 403, rather than check-then-insert. |

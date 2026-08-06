@@ -161,8 +161,9 @@ region — not yet assessed for target markets (relates to OQ-3).
 > survives reinstalls and new devices.
 
 - [ ] `devices` row created/resolved on first bond by `serial_hash`
-- [ ] `device_ownership` row created, enforcing one active owner per device
-- [ ] Unique constraint `unique (device_id) where (revoked_at is null)` verified under concurrency
+- [ ] `device_ownership` row created **service-side by `issue-device-session`** (§5.4 step 4) — clients have no INSERT policy (§5.3)
+- [ ] Partial unique index `device_ownership_one_active_owner` verified under concurrency — two simultaneous first bonds, one wins, the loser gets 403 `DEVICE_OWNED_BY_ANOTHER_USER` from a translated `23505`, not a 500
+- [ ] **Ownership-squat path tested with user B's JWT:** B cannot INSERT an ownership row for a device B has never bonded, and cannot repoint their own row's `device_id` (column grants, §5.3)
 - [ ] Unpair sets `revoked_at` rather than deleting — preserves the audit trail
 - [ ] Device list hydrated from the backend on login / reinstall
 - [ ] **Reinstall flow tested:** devices reappear; `K_sess` must be re-issued (it is not restored)
