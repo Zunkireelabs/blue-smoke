@@ -9,7 +9,7 @@ Guidance for Claude Code when working in this repository.
 A React Native (iOS + Android) app controlling a **Bluetooth-enabled vape device**. Three pillars:
 
 1. **Accounts & multi-device BLE pairing** — ownership enforced server-side via Supabase RLS
-2. **On-device 18+ age verification** — ID OCR + selfie face match, entirely on the phone, no KYC vendor
+2. **18+ age verification via Persona** (third-party vendor) — ID scan + selfie captured by Persona's SDK, verified off-device, result confirmed to us by webhook. Changed from the original on-device (ID OCR + face match) design — **written client confirmation is still outstanding**, see `docs/session-log/anish.md` (commit `6bbe150`).
 3. **Proximity lock/unlock** — authenticated BLE commands; the device auto-locks itself when the phone leaves range
 
 **Timeline: 30 days.** Aggressive. Scope is fixed by a client PRD.
@@ -63,7 +63,7 @@ Not assignments — a map, so you can tell whose in-flight branch your diff migh
 | Area | Paths | Notes |
 |---|---|---|
 | **BLE & Lock** | `src/features/ble/**`, `src/features/lock/**` | Scan, bonding, auth handshake, lock/unlock, proximity, background BLE. **Critical path** — most likely to block others. |
-| **Verification** | `src/features/verification/**`, `src/native/**` | ID capture, OCR/DOB, liveness, face match. **The 🔴 zone** — extra rules below. Most self-contained area; easiest to work in without collisions. |
+| **Verification** | `src/features/verification/**` | Persona SDK integration (capture flow), the create-inquiry + webhook Edge Functions. No longer a no-network zone — see rules below. Most self-contained area; easiest to work in without collisions. |
 | **App & Backend** | `src/features/auth|onboarding|profile|devices/**`, `supabase/**`, `.github/**` | Auth, onboarding, device UI, Supabase schema + RLS + Edge Functions, CI/CD. Broadest surface, so most likely to touch shared files. |
 
 **When work spans two areas:** say so, and prefer splitting it into two PRs over one wide diff.
@@ -177,9 +177,15 @@ npx supabase db push     # migrations
 
 ### `src/features/verification/**` — extra rules
 
-1. No logging, analytics, or persistence imports. ESLint-enforced (`no-restricted-imports`).
-2. Only `decision.ts` exports outward, returning exactly `{ passed, method, thresholdVersion, outcomeReason }`.
-3. Nothing else escapes the subtree. Not the DOB, not the score, not the crop.
+Persona's SDK captures and uploads the ID/selfie itself — our code never receives the raw image,
+DOB, or a biometric score, so the old no-network ESLint guard for this subtree has been removed
+(nothing left to protect). The rule that still applies:
+
+1. Never log or persist an `inquiry_id` alongside anything that could re-identify the underlying
+   document or selfie — we only ever have the ID and a status string to begin with, keep it that
+   way.
+2. `PersonaInquiryView`'s `onComplete` status is a UI hint only. The server-side webhook is the
+   only thing allowed to write `verifications.provider_status` (inviolable rule 3 below).
 
 ---
 
@@ -199,7 +205,7 @@ From spec §12.1. All of it, not the happy path:
 
 ## Do not
 
-- **Reintroduce superseded decisions.** No Persona/KYC vendor, no self-hosted Node backend, no Ed25519 on the MCU, no us writing firmware. All rejected — see `docs/archive/`.
+- **Reintroduce superseded decisions.** No self-hosted Node backend, no Ed25519 on the MCU, no us writing firmware. All rejected — see `docs/archive/`. (Persona/KYC-vendor was on this list too — reversed, see pillar 2 above and `docs/session-log/anish.md`. Written client confirmation is still pending, so treat the vendor decision as provisional until that lands.)
 - **Build add-ons.** Admin panel, analytics/Sentry, firmware, advanced PAD are out of scope. If asked, name it as an add-on and point at `TODO-addons.md`.
 - **Add analytics or crash reporting to the verification subtree.** Ever. A crash during ID capture must not produce a report containing the ID.
 - **Commit secrets.** The Supabase service-role key bypasses every RLS policy. `.gitignore` guards this; don't defeat it.
