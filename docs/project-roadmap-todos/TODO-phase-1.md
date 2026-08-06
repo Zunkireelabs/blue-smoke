@@ -7,7 +7,13 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
+**Progress:** 0 / 8 tasks · 0 / 91 sub-tasks
+
+> **Denominator corrected — it was never 77.** Counting the boxes under the eight PRD tasks gives
+> **91**: `P1-1.0` 17 · `2.0` 9 · `3.0` 9 · `4.0` 13 · `5.0` 12 · `6.0` 11 · `7.0` 12 · `8.0` 8.
+> The `77` came from the same unreconciled estimate as Phase 0's `62` (see `TODO-phase-0.md`), and
+> the "+6 for phone OTP" adjustment was applied on top of a number that was already wrong. Boxes in
+> the Exit Criteria section are deliberately outside this count, matching the Phase 0 convention.
 
 **Depends on:** `P0-3.0` (Supabase + RLS), `P0-4.0` (RN scaffold), `P0-2.0` + mock peripheral
 
