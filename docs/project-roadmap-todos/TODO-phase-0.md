@@ -116,7 +116,7 @@ The Day-1 escalation boxes above become tickable when it goes out.
 - [x] RLS policies written for all tables
 - [x] **`device_keys` has RLS enabled and zero policies** (deny-all to clients) — verified
 - [x] RLS **tested with a second user's JWT** — cross-user reads must fail — `supabase/tests/rls_ownership_proof.sql`, run against dev 2026-08-05, all 8 checks pass
-- [ ] Supabase Vault configured for `K_dev` wrapping
+- [x] Supabase Vault configured for `K_dev` wrapping — `device_keys.k_dev_secret_id` references `vault.secrets`; round-trip + client-denial proven in `supabase/tests/vault_k_dev_proof.sql` (dev, 2026-08-05). Mechanism only — no real `K_dev` exists yet, blocked on OQ-4
 - [ ] APNs + FCM credentials configured
 - [x] Migration workflow documented; no dashboard schema edits
 

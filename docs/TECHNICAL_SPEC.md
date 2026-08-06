@@ -526,9 +526,17 @@ create table device_ownership (
 );
 
 -- 5.2.5 Root device keys — SERVICE ROLE ONLY. RLS denies every client.
+--
+-- CORRECTION (P0-3.0, 2026-08-05): the column below was originally k_dev_wrapped bytea —
+-- K_dev encrypted in place via pgsodium column encryption. Supabase now explicitly advises
+-- against new use of pgsodium's Transparent Column Encryption ("high level of operational
+-- complexity and misconfiguration risk" — https://supabase.com/docs/guides/database/extensions/pgsodium),
+-- in favour of vault.create_secret() / vault.decrypted_secrets. K_dev is therefore stored as
+-- a Vault secret; this table holds only the reference. See migration
+-- 20260806060300_device_keys_vault_secret.sql.
 create table device_keys (
   device_id      uuid primary key references devices(id) on delete cascade,
-  k_dev_wrapped  bytea not null,      -- K_dev, encrypted at rest with Supabase Vault
+  k_dev_secret_id uuid not null references vault.secrets(id),  -- K_dev, held in Supabase Vault
   key_generation int not null default 1,
   provisioned_at timestamptz not null default now()
 );
@@ -631,7 +639,8 @@ Server logic (service role):
   4. Assert device_ownership: active row for (user_id, device_id),
      or no active owner at all (first bond → create ownership).
      → else: 403 { error: "DEVICE_OWNED_BY_ANOTHER_USER" }
-  5. Load k_dev_wrapped, unwrap via Supabase Vault.
+  5. Load device_keys.k_dev_secret_id, read K_dev from vault.decrypted_secrets
+     (service role only — see 5.2.5 correction).
   6. session_id = randomBytes(16)
      expires_at = now() + min(requested_ttl_days, 90 days)
      K_sess = HKDF-SHA256(ikm=K_dev, salt=session_id,

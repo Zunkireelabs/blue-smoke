@@ -38,8 +38,13 @@ Never skip dev to push straight to staging.
 
 - `20260806060100_core_schema.sql` — the 8 tables from spec §5.2.
 - `20260806060200_rls_policies.sql` — RLS enable + policies from spec §5.3.
+- `20260806060300_device_keys_vault_secret.sql` — corrects `device_keys` to store `K_dev` as
+  a `vault.secrets` reference (`k_dev_secret_id uuid`) instead of a raw `k_dev_wrapped bytea`
+  column. Supabase advises against new use of pgsodium's Transparent Column Encryption; this
+  switches to the currently-recommended `vault.create_secret()` / `vault.decrypted_secrets`
+  pattern. `docs/TECHNICAL_SPEC.md` §5.2.5 and §5.4 step 5 updated to match.
 
-Both incorporate two corrections from PR #6 (`feature/P0-2.0-ble-protocol`, open at the time
+The first two incorporate two corrections from PR #6 (`feature/P0-2.0-ble-protocol`, open at the time
 of writing, spec v1.3 pending merge to `stage`) rather than the version currently merged:
 
 1. `device_ownership`'s "one active owner per device" rule is a **partial unique index**,
@@ -56,18 +61,19 @@ follow-up migration should be needed for that reconciliation.
 
 ## Applied
 
-- Both migrations applied to **dev** (`hejwrhijrztgdysycvto`) via the Supabase MCP server's
-  `apply_migration`, 2026-08-05. Confirmed via `list_tables`: all 8 tables have
+- All three migrations applied to **dev** (`hejwrhijrztgdysycvto`) via the Supabase MCP
+  server's `apply_migration`, 2026-08-05. Confirmed via `list_tables`: all 8 tables have
   `rls_enabled: true`. Security advisor (`get_advisors`) shows only the expected
   `device_keys` "RLS enabled, no policy" INFO (intentional deny-all) and two WARNs on
   `public.rls_auto_enable` — a Supabase-platform event trigger (not part of this migration,
   pre-existing on the project) that auto-enables RLS on any new table; it returns
   `event_trigger`, which Postgres cannot invoke via RPC regardless of the grant the linter
-  flags, so the WARN doesn't correspond to an exploitable endpoint. Left untouched.
+  flags, so the WARN doesn't correspond to an exploitable endpoint. Left untouched. Re-ran
+  advisors after the vault-secret migration too — unchanged, nothing new introduced.
 - **Not yet applied to staging** (`rwhawlvigzakmjwpzvnc`). Per the sequencing below, do this
   next via `npx supabase link --project-ref rwhawlvigzakmjwpzvnc && npx supabase db push` (or
-  by repointing `.mcp.json`'s `project_ref` and re-running `apply_migration`), then re-run the
-  RLS proof against staging too.
+  by repointing `.mcp.json`'s `project_ref` and re-running `apply_migration`), then re-run
+  both proofs below against staging too.
 - RLS proof (`supabase/tests/rls_ownership_proof.sql`) run against dev, 2026-08-05 — all 8
   checks PASS, including the PR #6 hijack scenario: a second user's simulated JWT cannot
   read `device_ownership`/`devices`/`verifications`/`push_tokens` rows it doesn't own, cannot
@@ -77,16 +83,29 @@ follow-up migration should be needed for that reconciliation.
   JWT claims rather than a live signup (SMTP isn't configured yet, so the project's default
   auth email rate limit throttles scripted signups immediately) and what should supersede it
   once SMTP is configured.
+- Vault proof (`supabase/tests/vault_k_dev_proof.sql`) run against dev, 2026-08-05 — all 4
+  checks PASS: a dummy K_dev-sized secret wraps via `vault.create_secret()` and unwraps
+  correctly via `vault.decrypted_secrets` as service role; a client role can read neither
+  `device_keys` (RLS deny-all) nor `vault.decrypted_secrets` directly (`permission denied for
+  schema vault` — a second, independent layer, so even a leaked `k_dev_secret_id` is useless
+  to a client). This proves the storage **mechanism** only — no real `K_dev` exists in any
+  environment yet; that's blocked on OQ-4.
 
 ## Not yet done (tracked in `docs/project-roadmap-todos/TODO-phase-0.md`, P0-3.0)
 
 - Third Supabase project (prod) — not created yet
-- Auth config: email/password + reset email (dashboard, both projects)
+- Auth config: email/password + reset email (dashboard, both projects) — no MCP tool covers
+  this, it's Dashboard/Management-API territory. Also blocked in practice: no custom SMTP is
+  configured, so the default project email sender is rate-limited almost immediately (hit
+  `429 over_email_send_rate_limit` on a single test signup).
 - Phone + OTP: Twilio Verify as the native provider — **blocked**, no Twilio account
   provisioned yet (same class of external dependency as OQ-8)
-- Supabase Vault config for wrapping `K_dev` (`device_keys.k_dev_wrapped`)
-- Edge Functions `issue-device-session` (§5.4) and `revoke-device-session` (§5.4.1)
+- Edge Functions `issue-device-session` (§5.4) and `revoke-device-session` (§5.4.1) — not a
+  checkbox in `TODO-phase-0.md`'s P0-3.0 list, but this is where Vault unwrapping and the
+  server-side `age_verified` check both actually happen; flagging the gap rather than
+  building it silently under this task.
 - APNs / FCM credentials for push
 - Staging migrated to match dev, once dev is verified (dev is now verified — see above)
 - Once SMTP is configured: replace the RLS proof with a live-HTTP version using two real
   signups and their actual access tokens
+- Once OQ-4 is answered: populate `device_keys` with real, Vault-wrapped `K_dev` material
