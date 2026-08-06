@@ -131,6 +131,11 @@ build/
 out/
 *.tsbuildinfo
 
+# ══ Claude Code ══
+# .claude/settings.json (if ever added) is shared team config; settings.local.json is
+# per-session/per-user (enabled MCP servers, local permissions) and never shared.
+.claude/settings.local.json
+
 # ══ Editors & OS ══
 .vscode/*
 !.vscode/extensions.json

@@ -54,13 +54,39 @@ of writing, spec v1.3 pending merge to `stage`) rather than the version currentl
 Once PR #6 merges, `docs/TECHNICAL_SPEC.md` and these migrations will already agree — no
 follow-up migration should be needed for that reconciliation.
 
+## Applied
+
+- Both migrations applied to **dev** (`hejwrhijrztgdysycvto`) via the Supabase MCP server's
+  `apply_migration`, 2026-08-05. Confirmed via `list_tables`: all 8 tables have
+  `rls_enabled: true`. Security advisor (`get_advisors`) shows only the expected
+  `device_keys` "RLS enabled, no policy" INFO (intentional deny-all) and two WARNs on
+  `public.rls_auto_enable` — a Supabase-platform event trigger (not part of this migration,
+  pre-existing on the project) that auto-enables RLS on any new table; it returns
+  `event_trigger`, which Postgres cannot invoke via RPC regardless of the grant the linter
+  flags, so the WARN doesn't correspond to an exploitable endpoint. Left untouched.
+- **Not yet applied to staging** (`rwhawlvigzakmjwpzvnc`). Per the sequencing below, do this
+  next via `npx supabase link --project-ref rwhawlvigzakmjwpzvnc && npx supabase db push` (or
+  by repointing `.mcp.json`'s `project_ref` and re-running `apply_migration`), then re-run the
+  RLS proof against staging too.
+- RLS proof (`supabase/tests/rls_ownership_proof.sql`) run against dev, 2026-08-05 — all 8
+  checks PASS, including the PR #6 hijack scenario: a second user's simulated JWT cannot
+  read `device_ownership`/`devices`/`verifications`/`push_tokens` rows it doesn't own, cannot
+  self-insert ownership over another user's device (`new row violates row-level security
+  policy for table "device_ownership"`), and cannot repoint an ownership row it doesn't own
+  via the column-restricted `UPDATE`. See the test file's header for why this uses simulated
+  JWT claims rather than a live signup (SMTP isn't configured yet, so the project's default
+  auth email rate limit throttles scripted signups immediately) and what should supersede it
+  once SMTP is configured.
+
 ## Not yet done (tracked in `docs/project-roadmap-todos/TODO-phase-0.md`, P0-3.0)
 
+- Third Supabase project (prod) — not created yet
 - Auth config: email/password + reset email (dashboard, both projects)
 - Phone + OTP: Twilio Verify as the native provider — **blocked**, no Twilio account
   provisioned yet (same class of external dependency as OQ-8)
 - Supabase Vault config for wrapping `K_dev` (`device_keys.k_dev_wrapped`)
 - Edge Functions `issue-device-session` (§5.4) and `revoke-device-session` (§5.4.1)
 - APNs / FCM credentials for push
-- RLS proof: a script that signs up two throwaway users and confirms cross-user reads fail
-- Staging migrated to match dev, once dev is verified
+- Staging migrated to match dev, once dev is verified (dev is now verified — see above)
+- Once SMTP is configured: replace the RLS proof with a live-HTTP version using two real
+  signups and their actual access tokens

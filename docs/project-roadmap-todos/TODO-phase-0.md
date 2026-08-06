@@ -110,15 +110,15 @@ The Day-1 escalation boxes above become tickable when it goes out.
 
 - [ ] Three Supabase projects provisioned: dev / staging / prod
 - [ ] Auth configured: email/password + password-reset email flow
-- [ ] Schema written as versioned migrations (spec §5.2) — `profiles`, `verifications`, `devices`, `device_ownership`, `device_keys`, `device_sessions`, `push_tokens`, `audit_log`
-- [ ] **`verifications` contains no DOB, name, ID number, image, or embedding column** — verified by schema review
-- [ ] RLS enabled on **every** table (spec §5.3)
-- [ ] RLS policies written for all tables
-- [ ] **`device_keys` has RLS enabled and zero policies** (deny-all to clients) — verified
-- [ ] RLS **tested with a second user's JWT** — cross-user reads must fail
+- [x] Schema written as versioned migrations (spec §5.2) — `profiles`, `verifications`, `devices`, `device_ownership`, `device_keys`, `device_sessions`, `push_tokens`, `audit_log`
+- [x] **`verifications` contains no DOB, name, ID number, image, or embedding column** — verified by schema review
+- [x] RLS enabled on **every** table (spec §5.3) — applied to dev, confirmed via advisors
+- [x] RLS policies written for all tables
+- [x] **`device_keys` has RLS enabled and zero policies** (deny-all to clients) — verified
+- [x] RLS **tested with a second user's JWT** — cross-user reads must fail — `supabase/tests/rls_ownership_proof.sql`, run against dev 2026-08-05, all 8 checks pass
 - [ ] Supabase Vault configured for `K_dev` wrapping
 - [ ] APNs + FCM credentials configured
-- [ ] Migration workflow documented; no dashboard schema edits
+- [x] Migration workflow documented; no dashboard schema edits
 
 **Assumption:** client provides or approves the BaaS account and billing.
 **Excludes:** self-hosted backend infrastructure.
