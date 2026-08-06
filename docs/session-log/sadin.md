@@ -4,6 +4,62 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-06 (later) — mock built and reviewed; §4 defect #11 found by it; nothing pushed
+
+**Branches (all local, deliberately unpushed until EOD):**
+`docs/hardware-record-client-supplied`, `docs/correct-stale-workflow-and-denominators`,
+`docs/client-message-architecture-signoff` (these three *are* on the remote, pushed before the
+batch-at-EOD rule was set), `fix/P0-2.0-authresponse-frame-discriminator` (local only),
+`feature/P0-2.5-mock-ble-peripheral` (executor's, pushed by them).
+
+**`P0-2.5` is built and independently reviewed.** 51 tests, 7 suites; typecheck/lint/test re-run
+against the diff rather than trusted from the report. RFC 4493 vectors verified correct against the
+published values. All three v1.2 crypto corrections implemented exactly — HKDF `info`, the
+`N ‖ bytes[0..11]` tag, `expiresAtDelta` inside the proof. ESLint config not weakened, app BLE stubs
+untouched, no real timers, mock CMAC genuinely isolated from `src/`.
+
+**The mock found §4 defect #11, which is the whole point of building it.** The executor reported six
+§4 ambiguities rather than guessing. #1 was not an ambiguity: §4.5 step 4 mandated that "an
+out-of-order frame resets the handshake", but both `authResponse` frames were 20 opaque bytes on one
+characteristic with no discriminator — **the device could not detect an out-of-order frame at all.**
+The spec required behaviour its own wire format made impossible. Fixed in **v1.4**: `frameIndex` in
+byte 0 of both frames, `expiresAtDelta` narrowed uint32 → uint24 to pay for it (194 days of range
+against a 90-day cap). New obligation **F12**, new tests **FW-19/FW-20**. `protocolVersion` stays
+`0x01` — this is the **last** change that gets the pre-M2 exemption.
+
+**One real defect in the returned work:** `@babel/plugin-transform-typescript` is required by the
+mock's babel config but never declared — it resolves transitively, so CI passes today and breaks
+silently later. Folded into the addendum brief.
+
+**Gotchas worth stealing:**
+
+- **`git commit -F -` via a Bash heredoc sidesteps the PowerShell BOM problem entirely.** No temp
+  file, no `WriteAllText` dance. This is the better mechanic on Windows.
+- **The Claude CLI broke mid-session** with "not a valid application for this OS platform". Cause: a
+  Windows auto-update cannot overwrite a *running* `.exe`, so it renames the running binary into a
+  staging dir and leaves a 500-byte stub behind. Repair is to copy the real binary back from
+  `node_modules/@anthropic-ai/.claude-code-*/`. It re-breaks until every session is closed.
+- **Root `tsconfig.json` now excludes `tools/mock-peripheral/**`**, and its type coverage depends
+  entirely on `npm run typecheck` staying a two-`tsc` script. **`P0-5.0` is rewriting `ci.yml` — if
+  it calls `tsc --noEmit` directly, the mock silently stops being typechecked.**
+
+**Blocked / needs a human, unchanged and now seven days old:**
+
+- **The client message is still unsent**, and is now *gated*: `P0-6.0` records a third-party
+  verification vendor as under consideration, which contradicts the sign-off attachment's
+  on-device-only claim in five places — including a request that the client accept a **permanent**
+  loss of auditability. Three exits recorded in `docs/client-messages/`.
+- **Two hardware checks nobody has done:** macro photos of the PCB chip markings, and an nRF Connect
+  scan. §3 sources the whole silicon story from *datasheets*, not from the board we now physically
+  hold. If it is not a YC1012_JD, §4.5's AES-CMAC choice and §4.8 F2's dead-man timer both inherit
+  the error — and we are about to walk a firmware team through it.
+
+**The ceiling worth naming:** nothing we can do verifies that §4 is *implementable*. The mock and the
+spec share an author, so a green suite proves internal consistency, not correctness. Only a firmware
+engineer reading §4 closes that, and that is **OQ-6** — still unsent, still the critical path.
+
+---
+
 ## 2026-08-06 — §4 and §5 audited before anyone builds against them; P0-1.0 landed
 
 **Branches:** `feature/P0-1.0-architecture-signoff`, `feature/P0-2.0-ble-protocol`,
