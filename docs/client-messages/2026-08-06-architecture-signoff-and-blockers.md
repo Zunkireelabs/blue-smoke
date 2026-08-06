@@ -1,9 +1,46 @@
 # Client message — architecture sign-off + six blocking questions
 
-**Drafted:** 2026-08-06 (Day 6 of 30) · **Status:** 🔴 **NOT YET SENT**
+**Drafted:** 2026-08-06 (Day 6 of 30) · **Status:** 🔴 **NOT YET SENT — and currently gated, see below**
 **Carries:** [`../ARCHITECTURE-SIGNOFF.md`](../ARCHITECTURE-SIGNOFF.md) as the attachment
 **Also carries:** the Day-30 wording change and the hardware questions, **neither of which the
 sign-off document covers**
+
+---
+
+## ⛔ Do not send until the verification-vendor question is resolved
+
+`feature/P0-6.0-security-design` (commit `6bbe150`, 2026-08-06) records that a **third-party
+verification provider** is under consideration, reversing the on-device-only assumption. **Anish is
+actively working that question.** It is not settled either way.
+
+**This message cannot go out while that is open**, because the attachment asserts the opposite in
+terms that are hard to walk back:
+
+| Attachment says | Where |
+|---|---|
+| *"entirely on the phone. No third party, nothing uploaded"* | §2, pillar P2 |
+| *"Nothing leaves the phone except the word 'pass'"* | §4, Flow A |
+| *"No ID image, selfie, or face data is ever saved, logged, or transmitted"* | §5, rule 1 |
+| *"there is no audit trail of who was verified … **It cannot be added retroactively**"* | §5, boxed warning |
+| *"❌ Any third-party or government ID-verification service"* — listed as out of scope | §8 |
+
+The boxed warning in §5 is the dangerous one. It asks the client to accept a **permanent** loss of
+auditability as the price of the privacy guarantee. If we then adopt a vendor, we will have
+extracted a concession for a constraint we did not keep — and the client will reasonably ask why
+they were told it was permanent.
+
+**Three ways forward, once Anish's work lands:**
+
+1. **Vendor rejected** → send exactly as drafted. Nothing here changes.
+2. **Vendor adopted** → the attachment needs reworking before it is fit to send; §5, §8 and the
+   Flow A diagram all invert. Do not send the current version with a verbal caveat.
+3. **Still genuinely open at send time** → send the six questions and the wording change, but
+   **hold the attachment**, and say the architecture summary follows once one open item closes.
+   The six asks do not depend on the verification approach, and OQ-6 and OQ-4 are too urgent to sit
+   behind an internal decision.
+
+> Option 3 is the one that preserves schedule. OQ-6 has already cost us milestone M2; it should not
+> also wait on this.
 
 ---
 
