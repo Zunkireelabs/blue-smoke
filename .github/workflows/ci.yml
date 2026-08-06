@@ -31,11 +31,13 @@ jobs:
               ;;
             stage)
               case "$HEAD" in
-                feature/*|fix/*|hotfix/*)
-                  echo "✓ stage PR head '$HEAD' matches the feature/fix/hotfix naming convention." ;;
+                feature/*|fix/*|hotfix/*|chore/*|docs/*)
+                  echo "✓ stage PR head '$HEAD' matches an allowed naming convention." ;;
                 *)
-                  echo "✗ PRs to stage must come from a 'feature/*', 'fix/*', or 'hotfix/*' branch (got '$HEAD')."
+                  echo "✗ PRs to stage must come from a 'feature/*', 'fix/*', 'hotfix/*', 'chore/*',"
+                  echo "  or 'docs/*' branch (got '$HEAD')."
                   echo "  See CLAUDE.md branch naming: feature/P1-4.0-bonding-flow, fix/P3-3.0-rssi-flapping."
+                  echo "  Use chore/* for tooling and repo housekeeping, docs/* for documentation-only work."
                   exit 1 ;;
               esac
               ;;
