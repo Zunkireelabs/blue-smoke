@@ -242,8 +242,20 @@ Six findings. Three verified, three partial, five open. F2/F3/F5 fixed in the sa
 
 **Denominator: this task grew 10 → 11 boxes,** so Phase 0's total is now **77**, not 76.
 
-**Assumption:** on-device ML is sufficient for the verification flow (no KYC vendor). → *Confirmed
-as a **client-mandated** trade-off, spec §8.5 residual risk 3 + §1.3 non-goals. Do not reopen.*
+**Assumption:** on-device ML is sufficient for the verification flow (no KYC vendor). → 🔴 **REVERSED
+2026-08-06 — this assumption no longer holds.** Anish + Sadin agreed to use a third-party
+verification provider. My earlier note here said "client-mandated, do not reopen" on the strength of
+§8.5 residual risk 3; that was correct about the *record* and is now out of date about the *plan*.
+
+**This invalidates part of P0-6.0 and needs redoing, not patching.** If 🔴 data leaves the device:
+§8.3's threat model gains a whole transport-and-processor class, §8.6's GDPR posture inverts (we
+become a controller/processor of Article 9 data — DPA, likely a DPIA, data residency), the
+zeroisation policy changes scope, and **audit F1 becomes moot** because the DOB would never enter
+our app. Boxes 4, 6, 7, 8 and 9 are all affected.
+
+**Still open:** the written client confirmation. §1.2/§1.3/§1.4, §8.5, §8.6, `CLAUDE.md`'s
+"do not reintroduce" list and the client-facing `PROJECT_BRIEF.md` all still state the opposite, and
+none of them should be edited on an internal decision alone.
 **Excludes:** third-party / government ID validation APIs.
 **Risk:** mishandling of sensitive data if the deletion policy is incomplete. **Now concrete:** the
 deletion policy is unwritable as specified until F1 is decided.

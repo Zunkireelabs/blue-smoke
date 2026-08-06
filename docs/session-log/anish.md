@@ -4,6 +4,45 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-06 (later) — the no-vendor assumption I called settled has been reversed
+
+**Branches:** `feature/P0-6.0-security-design`
+
+**I was wrong in the entry below.** I wrote that the no-KYC-vendor question was closed and recorded
+it in `TODO-phase-0.md` as "client-mandated, do not reopen," on the strength of §8.5 residual risk 3
+and §1.3. That was an accurate reading of the *record* and the wrong call on the *plan*: Sadin and I
+have since agreed to use a third-party verification provider. Not editing the entry below — leaving
+it visible so the sequence is honest.
+
+**What this does to P0-6.0, which is more than a doc edit.** If 🔴 data leaves the device, three of
+the boxes I ticked or scoped today change shape:
+
+- **§8.3 threat model** gains an entire class it doesn't have — data in transit, vendor-side breach,
+  vendor account compromise, processor sub-processing. Ten threats become materially incomplete.
+- **§8.6 GDPR posture inverts.** Today it claims exposure "near-zero" because nothing leaves the
+  device. With a provider we are a controller/processor of **Article 9 special-category** data:
+  DPA, probably a DPIA under Art 35, data-residency, retention terms.
+- **Audit F1 becomes moot.** If the DOB never enters our app, there's no JS string to zeroise. The
+  finding was real and is now likely irrelevant — worth knowing before anyone spends time on it.
+
+**Blocked / needs someone else — the written client confirmation.** §1.2/§1.3/§1.4, §8.5, §8.6,
+CLAUDE.md's "do not reintroduce" list and **the client-facing `PROJECT_BRIEF.md`** all still say
+on-device-only, and §8.5 attributes that to the client specifically. I'm deliberately **not** editing
+any of them on an internal decision: reversing a documented client mandate needs the client, and it
+carries per-verification cost and legal obligations with it. Flagged in the TODO instead.
+
+**Gotcha worth stealing — check what your own committed docs assert before you assert it twice.**
+I put "do not reopen" into a shared TODO roughly four hours before the opposite was decided. The
+lesson isn't "don't record decisions" — it's that a locked decision is worth citing (§8.5), not
+restating in imperative mood in a second place.
+
+**Sadin — schema warning stands and is now urgent.** `feature/P0-3.0-baas-setup` is scaffolding
+§5.2's `verifications` table, built deliberately to hold no evidence. A provider adds an inquiry ID,
+provider status, and webhook events, and the flow becomes **asynchronous**, which §5.4
+`issue-device-session` currently isn't. Worth pausing that table before it's written twice.
+
+---
+
 ## 2026-08-06 — P0-6.0 audited instead of authored; the DOB can't be zeroised
 
 **Branches:** `feature/P0-6.0-security-design`
