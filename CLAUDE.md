@@ -20,7 +20,7 @@ A React Native (iOS + Android) app controlling a **Bluetooth-enabled vape device
 
 Check these on **every** change. A breach is an automatic block, not a review comment.
 
-1. **No image, video frame, or biometric embedding is ever written to disk, logged, sent to a crash reporter, or transmitted.** RAM only, zeroised in a `finally` block.
+1. **No image, video frame, or biometric embedding ever enters our process, is written to disk, logged, sent to a crash reporter, or transmitted by us.** *(Restated for the Persona architecture — spec v1.5 §6.)* Capture and upload happen inside Persona's SDK, in its own process, so the rule is no longer "zeroise it" but **"never acquire it"**: do not fetch inquiry payloads from the vendor API, do not add DB columns for them, do not proxy or screenshot the SDK's UI. The one handle we hold, `inquiry_id`, must never be logged beside anything that re-identifies the person.
 2. **`K_dev` never leaves the server.** The app receives only a derived, scoped, expiring `K_sess`.
 3. **`age_verified` is validated server-side before any privileged action.** A client-side boolean is a UX hint, never an authority.
 
@@ -35,7 +35,7 @@ Check these on **every** change. A breach is an automatic block, not a review co
 | Anything architectural | [`docs/TECHNICAL_SPEC.md`](docs/TECHNICAL_SPEC.md) — the build contract |
 | BLE UUIDs, byte layouts, commands, result codes | Spec **§4** — and `src/features/ble/protocol.ts` once it exists |
 | DB schema, RLS, Edge Functions | Spec **§5** |
-| OCR / DOB rules / face-match thresholds | Spec **§6** |
+| Persona flow, webhook, what we may/may not store | Spec **§6** *(rewritten in v1.5 — OCR/DOB/face-match thresholds are gone, vendor-owned)* |
 | Proximity, hysteresis, state machine | Spec **§7** |
 | Security, threat model, data classes | Spec **§8** |
 | What am I building today | [`docs/project-roadmap-todos/`](docs/project-roadmap-todos/) — ROADMAP + per-phase TODOs |
