@@ -1,6 +1,6 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.3.1
+**Version:** 1.4
 **Status:** Authoritative build contract
 **Last updated:** 2026-08-06
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
@@ -213,8 +213,9 @@ App → Device: auth handshake (§4.5) → ACTIVATE command
 App: connect → read authChallenge (nonce N)
 App: proof = CMAC(K_sess, 0x01 | protoVer | N | session_id[0..3] | expiresAtDelta)
                                                  ↑ first 4 bytes only
-App: write authResponse as TWO ordered frames (§4.5) — frame order is mandatory;
-     an out-of-order frame resets the handshake
+App: write authResponse as TWO frames (§4.5), each tagged with frameIndex in
+     byte 0 (0x01 then 0x02) — the device validates that tag, never arrival
+     order; an unexpected frameIndex discards pending handshake state (F12)
 Device: derive K_sess from K_dev + session_id + key_generation (all in frame 1),
         recompute, compare in constant time, open authenticated session
 App: write lockCommand UNLOCK (counter-protected; tag = CMAC over N | bytes[0..11],
@@ -368,15 +369,31 @@ This is the load-bearing idea: the phone gets a **scoped, expiring, revocable** 
         so leaving it unauthenticated would let a compromised app self-extend its
         own session to the 90-day cap regardless of what the server issued.
 
-4. App writes to authResponse (C3), 20 bytes:
-      [ session_id (16 B) | keyGeneration (1 B) | reserved (3 B) ]
-   ...then a second write with:
-      [ proof (16 B) | expiresAtDelta (4 B, uint32 seconds from now) ]
+4. App writes to authResponse (C3) twice, 20 bytes each. Byte 0 of every frame
+   is frameIndex, so each frame is self-describing on the wire:
+
+      frame 1: [ frameIndex = 0x01 (1 B) | session_id (16 B) | keyGeneration (1 B) | reserved (2 B) ]
+      frame 2: [ frameIndex = 0x02 (1 B) | proof (16 B)      | expiresAtDelta (3 B, uint24 LE sec) ]
 
       → Implemented as a 2-frame write to stay inside the 20-byte ATT payload.
-        Frame order is mandatory; an out-of-order frame resets the handshake.
         Both terms the proof covers from frame 2 travel in frame 2, so the
         firmware holds everything it needs the moment frame 2 lands.
+
+      → frameIndex is what makes "an out-of-order frame resets the handshake"
+        ENFORCEABLE. Without it both frames are 20 opaque bytes written to the
+        same characteristic, and the firmware has no way to tell them apart —
+        it could only track position with an internal cursor, which a buggy or
+        hostile central desynchronises at will with no defined recovery. The
+        obligation is now F12, and it is testable (FW-19).
+
+      → frameIndex is deliberately NOT inside the proof CMAC. It is framing,
+        not a security parameter: the proof already binds N and session_id, and
+        tampering with frameIndex without K_sess achieves nothing beyond a
+        handshake reset.
+
+      → expiresAtDelta is uint24, not uint32, to free byte 0. Max 16,777,215 s
+        ≈ 194 days against the 90-day SESSION_EXPIRY_MAX_DAYS cap — 2.1x
+        headroom. Values above the cap are clamped (step 5c), never rejected.
 
 5. Firmware:
       a. Derives K_sess' = HKDF(ikm  = K_dev,
@@ -476,6 +493,7 @@ These are **firmware obligations**, not app behaviour. The app cannot enforce th
 | **F9** | **One bond at a time** | v1 supports a single bonded central. A new bond requires `FACTORY_UNPAIR` or a physical button sequence. |
 | **F10** | **No PII storage** | The device stores no name, DOB, email, or biometric material. Ever. |
 | **F11** | **Command tags are connection-scoped** | The `lockCommand` tag is verified against `N ‖ bytes[0..11]` using **this** connection's nonce (§4.6). A command frame captured in an earlier connection must fail tag verification here, even if its `counter` is higher than the current one. |
+| **F12** | **`authResponse` frames are validated by `frameIndex`, never by position** | Frame 1 must carry `frameIndex = 0x01`, frame 2 `0x02` (§4.5). A frame whose `frameIndex` is not the one expected next — a repeated frame 1, a frame 2 arriving first, or any other value — **discards all pending handshake state**; the device then awaits a fresh frame 1. A reset is a **framing** error, not a cryptographic one: it does **not** increment the F6 failure counter and does **not** invalidate `N`, which continues to expire on its own §4.5 schedule. Never infer frame identity from arrival order alone. |
 
 ### 4.9 Connection parameters
 
@@ -511,6 +529,8 @@ The firmware is accepted against §4 when all of the following pass on real hard
 - [ ] `FW-16` A `lockCommand` frame **captured in one connection and replayed in a later one** returns `AUTH_FAILED` — even when its `counter` exceeds the current session's last accepted counter (proves F11; `FW-06` only covers replay *within* a session)
 - [ ] `FW-17` An `authResponse` whose `expiresAtDelta` is altered in transit returns `AUTH_FAILED` and opens no session (proves `expiresAtDelta` is inside the proof CMAC, §4.5)
 - [ ] `FW-18` A device that has never had a time sync completes a full handshake and enforces `sessionExpiry` correctly (proves the derivation needs no wall clock, §4.5)
+- [ ] `FW-19` `authResponse` frame ordering is enforced by `frameIndex` (proves F12). All three cases: (a) frame 2 sent first is discarded and no session opens; (b) frame 1 sent twice discards the first and leaves the device awaiting frame 2; (c) after any such reset, a clean frame 1 → frame 2 sequence still succeeds **without** a reconnect, and the reset did **not** consume an F6 backoff attempt
+- [ ] `FW-20` An `expiresAtDelta` of `0xFFFFFF` (uint24 max, ≈194 days) is **clamped to 90 days**, not rejected and not honoured (§4.5 step 5c)
 
 ---
 
@@ -1239,5 +1259,6 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.4 | 2026-08-06 | **§4.5 `authResponse` framing — an unenforceable obligation made enforceable.** `protocolVersion` **unchanged at `0x01`** under the v1.2 pre-M2 exemption: §4 still has not been handed to the firmware team, so nothing implements `0x01` and a bump would mint a version no party speaks. **This is the last change that gets that exemption** — it is being made deliberately *before* the walkthrough for exactly that reason. **The defect:** step 4 mandated that "an out-of-order frame resets the handshake", but both frames were 20 opaque bytes written to the same characteristic with no discriminator. Firmware could only track position with an internal cursor, so it could not *detect* an out-of-order frame at all — the mandated behaviour was **not implementable**, and a buggy or hostile central could desynchronise that cursor with no defined recovery. Found while building the `P0-2.5` mock, which had to invent a cursor convention to proceed and flagged it rather than guessing silently. **The fix:** byte 0 of both frames is now `frameIndex` (`0x01`/`0x02`), making each frame self-describing. To free that byte inside the unchanged 20-byte ATT payload, `expiresAtDelta` narrows from uint32 to **uint24 LE seconds** — max ≈194 days against the 90-day `SESSION_EXPIRY_MAX_DAYS` cap, 2.1× headroom, clamped rather than rejected. `frameIndex` is deliberately **outside** the proof CMAC: it is framing, not a security parameter, and forging it without `K_sess` achieves nothing beyond a reset. New obligation **F12**, which also settles that a framing reset is *not* an F6 auth failure and does *not* invalidate `N`. New acceptance tests **FW-19/FW-20**. §2.3 Flow C updated in the same change, since it restates the frame contract. |
 | 1.3.1 | 2026-08-06 | **Editorial only — no normative change, no protocol change, `protocolVersion` unchanged at `0x01`.** §4.8 `F11` was inserted between `F5` and `F6` when it was added in v1.2, leaving the firmware obligation table numbered `F1…F5, F11, F6…F10`. Moved to its correct position after `F10`. The firmware team reads §4.8 as a numbered obligation list and will work through it in order; an out-of-sequence row invites `F11` being read as a sub-clause of `F5` (session expiry) rather than as the independent replay-resistance requirement it is. Wording of every row is byte-identical to v1.3 — this is a row move. Landed before the §4 walkthrough (M2) deliberately, so the version the firmware team first reads is the correctly ordered one. |
 | 1.3 | 2026-08-06 | **§5 backend corrections.** No protocol change; `protocolVersion` unchanged. **(1) §5.2.4 would not have migrated:** `unique (device_id) where (revoked_at is null)` is not valid Postgres as an inline table constraint. Replaced with the partial unique index `device_ownership_one_active_owner`. **(2) §5.3 ownership-squat hole closed:** `manage_own_ownership … for all` constrained only `user_id` in its `WITH CHECK`, so any authenticated user could INSERT an ownership row for any *unclaimed* `device_id`, take the single active-owner slot and permanently lock out the real owner — without ever obtaining `K_sess`. Client INSERT and DELETE are now denied outright (ownership is created service-side by §5.4 step 4, which is where that decision belongs); SELECT and a column-restricted UPDATE on `nickname`/`revoked_at` remain, with `revoke`/`grant` at the column layer because `WITH CHECK` cannot see the OLD row. **(3) §5.4.1 `revoke-device-session` now specified** — it was listed in the §5.5 API table and defined nowhere. Request shape, the `user_id` authorisation predicate, 404-not-403 to avoid leaking session existence across users, idempotency, and the explicit statement that revocation never reaches an offline device. **(4) §5.4's "only privileged operation" claim narrowed** to the accurate one: `issue-device-session` is the sole path from `K_dev` to anything outside the database. **(5) §5.4 step 4 race** made explicit — let the unique index arbitrate a concurrent first bond and map `23505` to the existing 403, rather than check-then-insert. |
