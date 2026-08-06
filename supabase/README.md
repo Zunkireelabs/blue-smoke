@@ -70,26 +70,27 @@ follow-up migration should be needed for that reconciliation.
   `event_trigger`, which Postgres cannot invoke via RPC regardless of the grant the linter
   flags, so the WARN doesn't correspond to an exploitable endpoint. Left untouched. Re-ran
   advisors after the vault-secret migration too — unchanged, nothing new introduced.
-- **Not yet applied to staging** (`rwhawlvigzakmjwpzvnc`). Per the sequencing below, do this
-  next via `npx supabase link --project-ref rwhawlvigzakmjwpzvnc && npx supabase db push` (or
-  by repointing `.mcp.json`'s `project_ref` and re-running `apply_migration`), then re-run
-  both proofs below against staging too.
-- RLS proof (`supabase/tests/rls_ownership_proof.sql`) run against dev, 2026-08-05 — all 8
-  checks PASS, including the PR #6 hijack scenario: a second user's simulated JWT cannot
-  read `device_ownership`/`devices`/`verifications`/`push_tokens` rows it doesn't own, cannot
+- All three migrations applied to **staging** (`rwhawlvigzakmjwpzvnc`) too, 2026-08-06, via
+  `npx supabase db push` (user's own credentials, run outside chat). Confirmed via
+  `npx supabase migration list --linked`: all three timestamps show matching Local/Remote.
+- RLS proof (`supabase/tests/rls_ownership_proof.sql`) run against dev, 2026-08-05, and
+  re-run against staging, 2026-08-06 — all 8 checks PASS on both, including the PR #6 hijack
+  scenario: a second user's simulated JWT cannot read
+  `device_ownership`/`devices`/`verifications`/`push_tokens` rows it doesn't own, cannot
   self-insert ownership over another user's device (`new row violates row-level security
   policy for table "device_ownership"`), and cannot repoint an ownership row it doesn't own
   via the column-restricted `UPDATE`. See the test file's header for why this uses simulated
   JWT claims rather than a live signup (SMTP isn't configured yet, so the project's default
   auth email rate limit throttles scripted signups immediately) and what should supersede it
   once SMTP is configured.
-- Vault proof (`supabase/tests/vault_k_dev_proof.sql`) run against dev, 2026-08-05 — all 4
-  checks PASS: a dummy K_dev-sized secret wraps via `vault.create_secret()` and unwraps
-  correctly via `vault.decrypted_secrets` as service role; a client role can read neither
-  `device_keys` (RLS deny-all) nor `vault.decrypted_secrets` directly (`permission denied for
-  schema vault` — a second, independent layer, so even a leaked `k_dev_secret_id` is useless
-  to a client). This proves the storage **mechanism** only — no real `K_dev` exists in any
-  environment yet; that's blocked on OQ-4.
+- Vault proof (`supabase/tests/vault_k_dev_proof.sql`) run against dev, 2026-08-05, and
+  re-run against staging, 2026-08-06 — all 4 checks PASS on both: a dummy K_dev-sized secret
+  wraps via `vault.create_secret()` and unwraps correctly via `vault.decrypted_secrets` as
+  service role; a client role can read neither `device_keys` (RLS deny-all) nor
+  `vault.decrypted_secrets` directly (`permission denied for schema vault` — a second,
+  independent layer, so even a leaked `k_dev_secret_id` is useless to a client). This proves
+  the storage **mechanism** only — no real `K_dev` exists in any environment yet; that's
+  blocked on OQ-4.
 
 ## Not yet done (tracked in `docs/project-roadmap-todos/TODO-phase-0.md`, P0-3.0)
 
@@ -105,7 +106,6 @@ follow-up migration should be needed for that reconciliation.
   server-side `age_verified` check both actually happen; flagging the gap rather than
   building it silently under this task.
 - APNs / FCM credentials for push
-- Staging migrated to match dev, once dev is verified (dev is now verified — see above)
 - Once SMTP is configured: replace the RLS proof with a live-HTTP version using two real
   signups and their actual access tokens
 - Once OQ-4 is answered: populate `device_keys` with real, Vault-wrapped `K_dev` material
