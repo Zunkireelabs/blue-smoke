@@ -58,7 +58,7 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 | Firmware | **We author the BLE spec (§4); the client's firmware team implements it** | Firmware development is an add-on, quoted separately. |
 | Timeline | **30 days** | See `project-roadmap-todos/ROADMAP.md`. |
 | Push | **Supabase → FCM (Android) / APNs (iOS)** via Edge Function | Avoids adding Firebase as a second BaaS. |
-| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1 | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. |
+| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1 | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. A third method, **Email + Code** (passwordless), is proposed — see §1.2.2, not yet confirmed. |
 
 > ### 1.2.1 Phone + OTP authentication — second auth method
 > **Status: confirmed in team meeting, 2026-08-05.** Raised during Phase 1 auth planning as a
@@ -91,6 +91,45 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 >
 > **Does not affect:** §2–§14 of this spec. This is additive to the account/auth layer only —
 > device trust model, verification pipeline, BLE spec, and crypto are all untouched.
+
+> ### ⚠️ 1.2.2 Proposed scope addition — Email + Code (passwordless) authentication
+> **Status: proposed, not yet team/client-confirmed.** Raised after §1.2.1 was locked in.
+>
+> Adds a **third** first-class auth method alongside the two confirmed in §1.2.1 — users choose
+> **any one** of the three at signup/login:
+>
+> | | |
+> |---|---|
+> | **Method A — Email + password** | Existing, confirmed. Unchanged by this proposal. |
+> | **Method B — Phone + OTP** | Existing, confirmed (§1.2.1). Unchanged by this proposal. |
+> | **Method C — Email + Code** *(new)* | **Passwordless.** User enters only their email; Supabase Auth (`signInWithOtp`, email) sends a 6-digit code through the **same SMTP path** Method A's password-reset email already uses, just a different email template. User enters the code to authenticate. No password is ever set or required for an account that only ever uses this path. |
+>
+> **Relationship to Method A's password reset:** shares SMTP as the delivery mechanism, but is a
+> fully independent login path — Method C requires no password, and using it does not create one.
+> Whether Method A's *own* password-reset email should also switch from a link to a code (for UX
+> consistency with Method C's code-entry screen) is a **separate, still-open question**, not
+> decided by this proposal — today Method A stays link-based.
+>
+> **Unified identity:** resolves to the same `auth.users.id` as Methods A and B. The same
+> account-linking policy from §1.2.1 applies unchanged: a first-time login via Method C with no
+> existing link creates a new account; linking to an existing identity is only ever a deliberate
+> already-authenticated action, never an automatic merge at verify time.
+>
+> **New dependency:** none beyond what Method A already requires. This is the same Supabase Auth
+> + SMTP path as Method A's emails, just a different template (OTP code instead of a
+> confirmation/magic link). Does **not** need Twilio or any other new service.
+>
+> **SMTP impact:** raises SMTP from blocking 1 of 2 confirmed methods to blocking 2 of 3 methods
+> if this is confirmed (Methods A and C both depend on it; Method B does not — it uses Twilio).
+>
+> **Effort impact:** not yet estimated — pending confirmation, so not counted in `P1-1.0`'s
+> ~4.5 person-day figure. Rough shape: a new code-entry screen (near-identical to Method B's OTP
+> screen, so low incremental UI cost), one new `supabase.auth.signInWithOtp` (email) call, and the
+> existing no-enumeration error-handling pattern extended to a third path. See the proposed
+> sub-tasks in `project-roadmap-todos/TODO-phase-1.md`.
+>
+> **Does not affect:** §2–§14 of this spec, same as §1.2.1. Additive to the account/auth layer
+> only.
 
 ### 1.3 Explicit non-goals (base scope)
 
@@ -772,6 +811,7 @@ This is the accepted, documented trade-off for offline unlock.
 |---|---|---|
 | Sign up / sign in / password reset | `supabase.auth` | — |
 | Sign up / sign in via phone OTP *(§1.2.1)* | `supabase.auth` with Twilio Verify as the native phone provider | — |
+| *(proposed, §1.2.2)* Sign up / sign in via email code | `supabase.auth.signInWithOtp` (email) | — |
 | Submit verification result | `INSERT verifications` (RLS) | User JWT |
 | Read own verification status | `SELECT verifications` (RLS) | User JWT |
 | List / rename / unpair devices | SELECT + UPDATE(`nickname`, `revoked_at`) on `device_ownership` (RLS). **Not INSERT** — ownership is created service-side by `issue-device-session` only (§5.3) | User JWT |

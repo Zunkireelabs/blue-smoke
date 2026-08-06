@@ -7,22 +7,30 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
+**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP
+addition, spec §1.2.1. A further email-code method is proposed, spec §1.2.2 — not yet confirmed,
+its sub-tasks below are not counted in this denominator.)*
 
 **Depends on:** `P0-3.0` (Supabase + RLS), `P0-4.0` (RN scaffold), `P0-2.0` + mock peripheral
 
 ---
 
-## P1-1.0 — Signup / Login / Password Reset + Phone OTP
-`Auth` · `Mobile (iOS+Android)` · **Medium** · **~4.5 d** *(was 2.5 d — see spec §1.2.1)* · Owner: M3
+## P1-1.0 — Signup / Login / Password Reset + Phone OTP ⚠️ THIRD METHOD PROPOSED
+`Auth` · `Mobile (iOS+Android)` · **Medium** · **~4.5 d** *(was 2.5 d — see spec §1.2.1; +TBD if
+§1.2.2 confirmed)* · Owner: M3
 
-> Account creation and secure login via **two** first-class methods — email + password, or phone
-> number + OTP — plus email-based password reset. Establishes the verified identity that device
-> ownership and age status attach to. Both auth methods resolve to the same `user_id`; business
-> logic never branches on which one was used.
+> Account creation and secure login via **two confirmed** first-class methods — email + password,
+> or phone number + OTP — plus email-based password reset. Establishes the verified identity that
+> device ownership and age status attach to. All auth methods resolve to the same `user_id`;
+> business logic never branches on which one was used.
 >
 > Phone OTP was raised as a proposal and **confirmed in team meeting, 2026-08-05** — the ~4.5
 > person-day estimate (was 2.5 d, see spec §1.2.1) is the locked figure for this task.
+>
+> **⚠️ A third method, Email + Code (passwordless), is proposed** (spec §1.2.2) but **not yet
+> confirmed** — its sub-tasks below are marked separately and not counted in the ~4.5 d estimate
+> above. Needs team/client confirmation before it counts against the roadmap, same process phone
+> OTP went through.
 
 **Method A — Email + password** *(original scope)*
 - [ ] Signup screen — email + password, Zod validation
@@ -38,23 +46,41 @@
 - [ ] OTP entry screen — segmented 6-digit input, resend cooldown timer
 - [ ] Error handling mirrors the email flow — no enumeration, no leaking account existence
 
-**Shared — both methods**
+**Method C — Email + Code (passwordless)** *(⚠️ proposed addition, spec §1.2.2 — not yet
+confirmed; do not build until confirmed)*
+- [ ] Auth method choice screen extended to three options — Email+Password, Email+Code, Phone+OTP
+- [ ] Email-only entry point for Method C (same validation as Method A's email field, no password
+      field shown)
+- [ ] Code entry screen — segmented 6-digit input, resend cooldown timer (shares the component
+      built for Method B's OTP screen)
+- [ ] `supabase.auth.signInWithOtp` (email) wired for send + verify
+- [ ] Error handling mirrors Methods A/B — no enumeration, no leaking account existence
+- [ ] Open question to resolve: does Method A's password-reset email switch from a link to a code
+      for UX consistency with Method C, or stay link-based? (spec §1.2.2 — explicitly not decided
+      by the proposal itself)
+
+**Shared — all methods** *(Method C rows apply only if §1.2.2 is confirmed)*
 - [ ] Session persistence — refresh token in Keychain/Keystore (🟠 secret-at-rest, spec §8.1)
 - [ ] Auto-refresh + graceful expiry handling
 - [ ] Sign-out clears all local secrets, including any `K_sess`
 - [ ] `profiles` row created on signup, regardless of method
 - [ ] Email verification flow (if enabled) handled
 - [ ] Account-linking policy enforced: a first-time method with no existing link always creates a
-      new account; linking email + phone to one identity only happens as a deliberate
-      already-authenticated action, never an automatic merge at verify time (spec §1.2.1)
-- [ ] Tested on both platforms, both methods
+      new account; linking email + phone (+ email-code, if confirmed) to one identity only
+      happens as a deliberate already-authenticated action, never an automatic merge at verify
+      time (spec §1.2.1, §1.2.2)
+- [ ] Tested on both platforms, all confirmed methods
 
 **Assumption:** BaaS auth supports email/password and reset email flow; Twilio Verify account
-provisioned for the phone method (§1.2.1, confirmed 2026-08-05).
+provisioned for the phone method (§1.2.1, confirmed 2026-08-05). Method C assumes SMTP is
+configured (§1.2.2, proposed — SMTP already required by Method A, so no new provisioning if
+confirmed).
 **Excludes:** social / SSO login.
 **Risk:** email deliverability for reset links. → *Verify Supabase SMTP config early; consider a
 custom SMTP provider for prod.* **New risk:** Twilio Verify cost/volume and SMS deliverability by
-region — not yet assessed for target markets (relates to OQ-3).
+region — not yet assessed for target markets (relates to OQ-3). **If §1.2.2 confirmed:** SMTP
+becomes a dependency for two of three methods instead of one — raises the priority of resolving
+SMTP deliverability early.
 
 ---
 
