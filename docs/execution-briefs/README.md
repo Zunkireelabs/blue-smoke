@@ -32,9 +32,15 @@ what any task was actually asked to do, and what it was asked *not* to do.
 
 | Brief | Task | Branch | Status |
 |---|---|---|---|
-| [`P0-4.0-rn-scaffold.md`](P0-4.0-rn-scaffold.md) | RN app scaffold, navigation, native module wiring | `feature/P0-4.0-rn-scaffold` | Ready to execute *(as of its own writing — not yet merged to `main`)* |
-| [`P1-1.0-signup-login-reset.md`](P1-1.0-signup-login-reset.md) | Signup / login / password reset + proposed phone OTP | `feature/P1-1.0-signup-login-reset` | ⚠️ Blocked — depends on `P0-4.0` and `P0-3.0` landing first |
+| [`P0-2.5-mock-ble-peripheral.md`](P0-2.5-mock-ble-peripheral.md) | Mock BLE peripheral implementing §4, incl. failure paths | `feature/P0-2.5-mock-ble-peripheral` | ✅ Ready to execute — no blocking dependencies |
+| [`P0-4.0-rn-scaffold.md`](P0-4.0-rn-scaffold.md) | RN app scaffold, navigation, native module wiring | `feature/P0-4.0-rn-scaffold` | ✅ Done — merged to `stage` |
+| [`P1-1.0-signup-login-reset.md`](P1-1.0-signup-login-reset.md) | Signup / login / password reset + phone OTP | `feature/P1-1.0-signup-login-reset` | ⚠️ Partially blocked — `P0-4.0` has landed, `P0-3.0` has not |
 
-> **Note:** this index will need reconciling with whatever version lands on `main` first out of
-> `P0-4.0` and `P1-1.0` — both branches independently added this file. That's expected; `docs/**`
-> is shared truth per `CLAUDE.md`, and a merge here is additive, not a real conflict.
+> **⚠️ The `P0-4.0` and `P1-1.0` briefs describe a machine that no longer exists.** Section 2 of
+> each documents Windows / PowerShell 5.1 / BOM-encoding / `git`-not-on-`PATH` constraints. The
+> build machine is now macOS. Per the convention above, a brief is not edited to match what
+> happened — but if you are executing from either of those, read `docs/session-log/sadin.md`
+> (2026-08-06) for the current environment before trusting their §2.
+>
+> Those two briefs also predate the `feature/* → stage → main` promotion flow and target `main`.
+> **PR into `stage`.**
