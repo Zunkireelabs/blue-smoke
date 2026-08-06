@@ -16,6 +16,7 @@
 | [`team-cicd-briefing.md`](team-cicd-briefing.md) | The plain-language version: branches, daily steps, golden rules | You just want to know how to ship |
 | [`ARCHITECTURE-SIGNOFF.md`](ARCHITECTURE-SIGNOFF.md) | Client-facing architecture record — privacy model, commitments needed from the client, accepted risks | You need the ten-minute version of the spec |
 | [`audits/`](audits/) | Consistency audits of the spec against itself | Before trusting a spec section you're about to implement |
+| [`hardware/`](hardware/) | What the client physically gave us — identification, pinout, 🔴 safety prohibitions, what it does and doesn't unblock | Before touching the PW200 or the PCB; before assuming hardware unblocks §4 |
 | [`archive/PROJECT_BRIEF-superseded.md`](archive/PROJECT_BRIEF-superseded.md) | ⚠️ Dead. Early exploration, kept for history | Never, except to understand why a decision was rejected |
 
 Commercial source of truth for scope and deliverable wording:
