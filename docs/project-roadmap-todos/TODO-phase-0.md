@@ -8,7 +8,7 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 1 / 7 tasks · 26 / 76 sub-tasks
+**Progress:** 1 / 7 tasks · 29 / 77 sub-tasks
 
 > **Denominator corrected — it was never 62.** Counting the boxes under the seven PRD tasks
 > (`P0-1.0`, `2.0`, `3.0`, `4.0`, `5.0`, `6.0`, `7.0`) gives **76**, and has since this file was
@@ -16,7 +16,11 @@
 > The two *added* tasks — `P0-2.5` and `P0-4.5`, neither of which is a PRD line item — are
 > deliberately outside this count and tracked in their own sections.
 >
-> **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 8 · `P0-2.0` 10 → 26. Only `P0-1.0` is a *completed
+> **Denominator moved again — 76 → 77.** `P0-6.0` grew from 10 boxes to 11 when the P0-6.0 audit
+> found that the face-match test set, the one place the project deliberately retains 🔴 data, had
+> no handling policy anywhere. Recorded here rather than absorbed silently.
+>
+> **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 8 · `P0-2.0` 10 · `P0-6.0` 3 → 29. Only `P0-1.0` is a *completed
 > task*. `P0-4.0` holds two physical-device boxes open (no Android toolchain, no iOS simulator
 > runtime on the machine it was built on) and `P0-2.0` holds three open pending the firmware
 > team (OQ-6).
@@ -220,20 +224,29 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 > secure storage of tokens, HTTPS everywhere, and the deletion policy that runs after each
 > verification decision.
 
-- [ ] Data classification defined — 🔴 never-persisted / 🟠 secret-at-rest / 🟡 server-only / 🟢 ordinary (spec §8.1)
-- [ ] Secure storage design: Keychain `WhenUnlockedThisDeviceOnly` / Android Keystore, biometric-gated
-- [ ] **"Bonding is not authorisation" documented and understood by the whole team** (spec §8.2)
-- [ ] Threat model completed (spec §8.3)
-- [ ] Key rotation strategy defined given one-time-programmable OTP (spec §8.4)
-- [ ] **Residual risks documented and accepted:** relay attack, offline revocation lag, on-device ML accuracy (spec §8.5)
-- [ ] Zeroisation policy defined — `finally`-block, no disk, no logs, no crash reports
-- [ ] TLS 1.3 enforced; certificate handling reviewed
-- [ ] GDPR/CCPA posture documented (spec §8.6)
+- [x] Data classification defined — 🔴 never-persisted / 🟠 secret-at-rest / 🟡 server-only / 🟢 ordinary (spec §8.1) *(verified against §5.2, §4.5, §6.1 — audit check 1)*
+- [x] Secure storage design: Keychain `WhenUnlockedThisDeviceOnly` / Android Keystore, biometric-gated *(design verified; **call-site** verification is a P1-1.0/P1-4.0 claim on a physical device, not this task's)*
+- [ ] **"Bonding is not authorisation" documented and understood by the whole team** (spec §8.2) *(§8.2 written and correct; the box says **understood by the whole team** — needs the session, which cannot be closed by writing)*
+- [ ] Threat model completed (spec §8.3) *(ten threats verified; one class missing — the OS app-switcher snapshot writing 🔴 data to disk, audit F6)*
+- [x] Key rotation strategy defined given one-time-programmable OTP (spec §8.4) *(verified against §4.3 `keyGeneration` and §5.2 — audit check 5)*
+- [ ] **Residual risks documented and accepted:** relay attack, offline revocation lag, on-device ML accuracy (spec §8.5) *(all three documented; "accepted" needs a client signature — folding into the `ARCHITECTURE-SIGNOFF.md` package)*
+- [ ] Zeroisation policy defined — `finally`-block, no disk, no logs, no crash reports *(**blocked on audit F1** — the DOB crosses the native bridge as an unzeroisable JS string, so the policy cannot be written honestly until that is resolved)*
+- [ ] TLS 1.3 enforced; certificate handling reviewed *(**the box as written is unachievable** — platform TLS 1.3 needs Android API 29 and `minSdkVersion` is 24, audit F4)*
+- [ ] GDPR/CCPA posture documented (spec §8.6) *(written, but §8.6 itself names **OQ-3** target markets as the open dependency — cannot honestly tick while OQ-3 is open)*
 - [ ] Security review checklist drafted for use in Block E
+- [ ] **Face-match test-set handling policy** — consent, storage, access, destruction date *(added — the test set is the one place the project deliberately retains 🔴 data; `.gitignore` blocks it from the repo but no handling policy exists)*
 
-**Assumption:** on-device ML is sufficient for the verification flow (no KYC vendor).
+**Status: 3 / 11 — [`docs/audits/P0-6.0-security-audit.md`](../audits/P0-6.0-security-audit.md).**
+Six findings. Three verified, three partial, five open. F2/F3/F5 fixed in the same branch;
+**F1 is the one that matters** and needs a team decision — it changes P2-2.0/P2-3.0 scope.
+
+**Denominator: this task grew 10 → 11 boxes,** so Phase 0's total is now **77**, not 76.
+
+**Assumption:** on-device ML is sufficient for the verification flow (no KYC vendor). → *Confirmed
+as a **client-mandated** trade-off, spec §8.5 residual risk 3 + §1.3 non-goals. Do not reopen.*
 **Excludes:** third-party / government ID validation APIs.
-**Risk:** mishandling of sensitive data if the deletion policy is incomplete.
+**Risk:** mishandling of sensitive data if the deletion policy is incomplete. **Now concrete:** the
+deletion policy is unwritable as specified until F1 is decided.
 
 ---
 
