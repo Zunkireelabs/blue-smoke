@@ -1,6 +1,7 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, Text, View } from 'react-native';
+import { SignupScreen } from '@/features/auth/SignupScreen';
 
 /**
  * Root param list — spec §9.2 app/navigation.tsx. Contested shared file
@@ -9,6 +10,7 @@ import { StyleSheet, Text, View } from 'react-native';
  */
 export type RootStackParamList = {
   Home: undefined;
+  Signup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,6 +36,7 @@ export function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Home">
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="Signup" component={SignupScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
