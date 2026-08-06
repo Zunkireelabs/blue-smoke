@@ -5,6 +5,8 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
+# Persona's SDK requires iOS 13.0+; React Native 0.86's own floor is already
+# higher, so min_ios_version_supported (below) satisfies it without change.
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 

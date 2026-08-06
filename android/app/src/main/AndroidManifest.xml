@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- react-native-vision-camera — ID capture + selfie, spec §6. -->
+    <!-- react-native-persona (P2-1.0) — ID capture + selfie, its SDK owns the camera UI. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application

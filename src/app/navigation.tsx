@@ -1,6 +1,9 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, Text, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Button, StyleSheet, Text, View } from 'react-native';
+
+import { PersonaVerificationScreen } from '../features/verification/PersonaVerificationScreen';
 
 /**
  * Root param list — spec §9.2 app/navigation.tsx. Contested shared file
@@ -9,14 +12,18 @@ import { StyleSheet, Text, View } from 'react-native';
  */
 export type RootStackParamList = {
   Home: undefined;
+  VerifyAge: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-function HomeScreen() {
+function HomeScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Home'>) {
   return (
     <View style={styles.container}>
       <Text>BlueSmoke</Text>
+      {/* Temporary entry point — P2-1.0 has no post-signup slot yet (Hardik's
+          auth branch is unmerged). Becomes a real post-signup step once it lands. */}
+      <Button title="Verify your age" onPress={() => navigation.navigate('VerifyAge')} />
     </View>
   );
 }
@@ -26,6 +33,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 16,
   },
 });
 
@@ -34,6 +42,11 @@ export function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Home">
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen
+          name="VerifyAge"
+          component={PersonaVerificationScreen}
+          options={{ title: 'Age Verification' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

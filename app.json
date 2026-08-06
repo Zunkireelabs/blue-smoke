@@ -1,4 +1,9 @@
 {
   "name": "BlueSmoke",
-  "displayName": "BlueSmoke"
+  "displayName": "BlueSmoke",
+  "extra": {
+    "eas": {
+      "projectId": "6ed350b4-21c8-47b8-a3e5-1d65dad8e7d0"
+    }
+  }
 }
