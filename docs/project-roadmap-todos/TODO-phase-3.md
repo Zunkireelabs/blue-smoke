@@ -8,7 +8,13 @@
 > the phone leaves BLE range; the app is the controller and never relies on the phone alone to keep
 > the device locked.
 
-**Progress:** 0 / 8 tasks · 0 / 84 sub-tasks
+**Progress:** 0 / 8 tasks · 0 / 119 sub-tasks
+
+> **Denominator corrected — it was never 84.** Counting the boxes under the eight PRD tasks gives
+> **119**: `P3-1.0` 11 · `2.0` 16 · `3.0` 15 · `4.0` 13 · `5.0` 10 · `6.0` 19 · `7.0` 21 · `8.0` 14.
+> This is the largest error of the four phase files — **35 boxes, 42% under** — and it lands on the
+> phase with the least schedule slack behind it. Boxes in the Exit Criteria section are deliberately
+> outside this count, matching the Phase 0 convention.
 
 ---
 

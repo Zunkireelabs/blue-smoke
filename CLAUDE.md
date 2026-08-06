@@ -88,10 +88,25 @@ These cause 90% of merge pain. No owner, so the rule is **single-writer at a tim
 Everyone works apart, so the discipline is about **merging cleanly** and **staying visible** — not about review gates.
 
 ```
-main        ← integration branch. All PRs target this. CI green to merge.
+main        ← PRODUCTION. Nothing merges here directly.
+              Only `stage` or a `promote/*` branch may open a PR into main.
               Releases are cut by tagging a commit on main (v1.0.0).
+stage       ← INTEGRATION. All feature work targets this. CI green to merge.
 feature/*   ← your work. One branch per task.
+fix/*  hotfix/*  chore/*  docs/*   ← also accepted into stage
 ```
+
+**The flow is `feature|fix|hotfix|chore|docs/* → stage → main`**, and it is
+**enforced by the `promotion-guard` job** in `.github/workflows/ci.yml` — a PR with the wrong
+base or a branch name outside that list fails CI before anything else runs. `chore/*` is for
+tooling and repo housekeeping, `docs/*` for documentation-only work.
+
+Two consequences people trip over:
+
+- **A PR based on `main` is blocked, not merged-with-a-warning.** If you branched before this
+  was written down, retarget the PR to `stage` — that is the whole fix.
+- **`main` is stale by design between promotions.** Reading `main` to see current state will
+  mislead you. `stage` is where the work is.
 
 **Branch naming carries the PRD ID** so a branch maps to committed scope:
 
@@ -106,7 +121,7 @@ fix/P3-3.0-rssi-flapping
 
 1. **Check `git fetch && git branch -r` before starting a task.** Remote branches are the live claim list. If a `feature/P2-2.0-*` branch exists, that task is taken.
 2. **Push your branch on day one**, empty if need be. That is how you claim the task. An unpushed branch claims nothing.
-3. **Rebase on `main` every morning.** `git pull --rebase origin main`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `main`, staying current matters more, not less.
+3. **Rebase on `stage` every morning.** `git pull --rebase origin stage`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `stage`, staying current matters more, not less. (Rebasing on `main` will silently give you a stale base.)
 4. **Small PRs.** One task, one PR. A 2000-line PR nobody has seen in progress is unreviewable and unmergeable.
 5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
 6. **CI green before merge.** No exceptions.
@@ -125,7 +140,7 @@ frame order is mandatory per spec. Constant-time CMAC comparison.
 
 - **Git is not on PATH.** Prefix: `$env:PATH = "C:\Program Files\Git\cmd;$env:PATH"`
 - **PowerShell 5.1 mangles `-m` messages containing double quotes.** Write the message to a file and use `git commit -F <file>`.
-- Never `--no-verify`. **Never force-push `main`** — everyone's work lives there.
+- Never `--no-verify`. **Never force-push `main` or `stage`** — everyone's work lives on `stage`.
 
 ---
 
@@ -172,7 +187,7 @@ npx supabase db push     # migrations
 
 From spec §12.1. All of it, not the happy path:
 
-- [ ] Merged to `main` via PR; CI green
+- [ ] Merged to `stage` via PR; CI green
 - [ ] Works on **both** iOS and Android, on a **physical** device
 - [ ] Touches 🔴 data → verified no disk write, no log, no network payload
 - [ ] Touches BLE → tested against the mock, **failure paths included**

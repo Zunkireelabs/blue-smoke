@@ -7,7 +7,12 @@
 > birth plus a selfie-vs-ID face match, with no third-party KYC vendor and no raw data leaving the
 > phone. This is the highest-risk phase and includes dedicated accuracy-tuning time.
 
-**Progress:** 0 / 8 tasks · 0 / 74 sub-tasks
+**Progress:** 0 / 8 tasks · 0 / 97 sub-tasks
+
+> **Denominator corrected — it was never 74.** Counting the boxes under the eight PRD tasks gives
+> **97**: `P2-1.0` 12 · `2.0` 14 · `3.0` 12 · `4.0` 12 · `5.0` 15 · `6.0` 12 · `7.0` 12 · `8.0` 8.
+> Boxes in the Exit Criteria section and in the 🔴 preamble are deliberately outside this count,
+> matching the Phase 0 convention.
 
 ---
 

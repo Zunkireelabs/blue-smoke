@@ -268,7 +268,7 @@ why M1 carries no secondary responsibilities.
 - **Daily standup**, 15 min, tracks report blockers only. Open questions are read aloud every day until closed.
 - **Definition of Done** is §12.1 of the technical spec. A ticked box means every criterion, not "the happy path works."
 - **Ticking a box here is a claim.** Milestones M0–M8 are demonstrated live or on video, never asserted.
-- **Branching:** `feature/*` → PR → `main` → tag for release. CI must be green to merge.
+- **Branching:** `feature|fix|hotfix|chore|docs/*` → PR → **`stage`** → promote `stage` → `main` → tag for release. CI must be green to merge; `promotion-guard` enforces the order. See `CLAUDE.md`.
 - **The three inviolable rules** (§2.2 of the spec) are checked in every PR touching verification. A breach is an automatic block, not a review comment.
 - **Scope changes** go through the PRD. Add-ons stay in [`TODO-addons.md`](TODO-addons.md) and do not leak into the base build.
 
@@ -280,12 +280,31 @@ Update this table at the end of each block.
 
 | Block | Days | Phase | Tasks | Done | Status |
 |---|---|---|---:|---:|---|
-| A | 1–6 | Phase 0 | 7 | 0 | ⬜ Not started |
+| A | 1–6 | Phase 0 | 7 | 1 | 🟡 In progress — `P0-1.0` done; `P0-2.0` and `P0-4.0` part-done |
 | B | 7–12 | Phase 1 | 8 | 0 | ⬜ Not started |
 | C | 13–19 | Phase 2 | 8 | 0 | ⬜ Not started |
 | D | 20–25 | Phase 3 (build) | 5 | 0 | ⬜ Not started |
 | E | 26–30 | Phase 3 (harden) | 3 | 0 | ⬜ Not started |
-| | | **Total** | **31** | **0** | |
+| | | **Total** | **31** | **1** | |
+
+### 8.1 ⚠️ Sub-task totals were understated by 23%
+
+Re-counting the boxes under the PRD tasks in each phase file, against the method audited in
+`TODO-phase-0.md`:
+
+| Phase | Header claimed | Actual | Delta |
+|---|---:|---:|---:|
+| 0 | 76 | **76** ✅ | — *(corrected earlier, was `62`)* |
+| 1 | 77 | **91** | +14 |
+| 2 | 74 | **97** | +23 |
+| 3 | 84 | **119** | +35 |
+| **Total** | **311** | **383** | **+72 (+23%)** |
+
+All four originals appear to trace to the same unreconciled estimate. **This does not change the
+PRD's 83.7 person-days** — the person-day figures are the commercial commitment and are unaffected.
+What it changes is the *granularity signal*: a burn-down against 311 would have read ~23% ahead of
+reality throughout, and the error is worst in **Phase 3**, which carries the least slack and the
+hardware dependency. Treat sub-task progress as a completeness check, not a schedule forecast.
 
 **Open questions:** 9 open / 0 closed — see [`../TECHNICAL_SPEC.md` §13](../TECHNICAL_SPEC.md#13-open-questions-register)
 **Critical open questions:** OQ-1, OQ-2, OQ-4 🔴
