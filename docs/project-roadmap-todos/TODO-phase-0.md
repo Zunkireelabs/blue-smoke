@@ -8,18 +8,22 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 1 / 7 tasks · 26 / 76 sub-tasks
+**Progress:** 1 / 7 tasks · 26 / 78 sub-tasks
 
 > **Denominator corrected — it was never 62.** Counting the boxes under the seven PRD tasks
 > (`P0-1.0`, `2.0`, `3.0`, `4.0`, `5.0`, `6.0`, `7.0`) gives **76**, and has since this file was
 > written; `62` appears to have been an estimate that was never reconciled against the list.
 > The two *added* tasks — `P0-2.5` and `P0-4.5`, neither of which is a PRD line item — are
-> deliberately outside this count and tracked in their own sections.
+> deliberately outside this count and tracked in their own sections. **`P0-3.0` grew +2** —
+> the two Edge Functions (spec §5.4/§5.4.1) were always in scope but missing from this list;
+> now **78**.
 >
 > **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 8 · `P0-2.0` 10 → 26. Only `P0-1.0` is a *completed
 > task*. `P0-4.0` holds two physical-device boxes open (no Android toolchain, no iOS simulator
 > runtime on the machine it was built on) and `P0-2.0` holds three open pending the firmware
-> team (OQ-6).
+> team (OQ-6). `P0-3.0` itself has real, unreflected progress sitting on the unmerged
+> `feature/P0-3.0-baas-setup` branch (schema + RLS + Vault applied and proven on dev and
+> staging) — not ticked here yet since nothing on that branch has landed via a PR.
 
 ---
 
@@ -139,6 +143,14 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 - [x] Supabase Vault configured for `K_dev` wrapping — `device_keys.k_dev_secret_id` references `vault.secrets`; round-trip + client-denial proven in `supabase/tests/vault_k_dev_proof.sql` (dev 2026-08-05, staging 2026-08-06, all 4 checks pass on both). Mechanism only — no real `K_dev` exists yet, blocked on OQ-4
 - [ ] APNs + FCM credentials configured
 - [x] Migration workflow documented; no dashboard schema edits
+- [ ] Edge Function `issue-device-session` implemented (spec §5.4) — the sole path from `K_dev`
+      to anything outside the database; this is where the server-side `age_verified` gate
+      (CLAUDE.md rule 3) actually runs
+- [ ] Edge Function `revoke-device-session` implemented (spec §5.4.1)
+
+*(Two boxes above added — spec'd in §5.4/§5.4.1 but missing from this list since the file was
+written; flagged in `supabase/README.md` on `feature/P0-3.0-baas-setup` rather than built
+silently under the task.)*
 
 **Assumption:** client provides or approves the BaaS account and billing.
 **Excludes:** self-hosted backend infrastructure.
