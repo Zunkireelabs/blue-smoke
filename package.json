@@ -8,7 +8,7 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tools/mock-peripheral/tsconfig.json"
   },
   "dependencies": {
     "@react-native/new-app-screen": "0.86.2",

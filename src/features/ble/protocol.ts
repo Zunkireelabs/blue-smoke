@@ -231,3 +231,27 @@ export const CONNECTION_PARAMS = {
  * Long Range support back in.
  */
 export const LONG_RANGE_PHY_SUPPORTED = false; // §4.9
+
+// ── §4.8 F2 — dead-man auto-lock default ────────────────────────────────────
+
+export const AUTOLOCK_GRACE_MS_DEFAULT = 5000; // §4.8 F2 — within AUTOLOCK_GRACE_MS_MIN/MAX
+
+// ── §4.8 F6 — auth backoff ───────────────────────────────────────────────────
+
+/**
+ * §4.8 F6 — after AUTH_BACKOFF.shortThresholdFailures consecutive auth
+ * failures, reject all auth attempts for shortBackoffMs; after
+ * longThresholdFailures, for longBackoffMs. Counter resets on success or
+ * power cycle.
+ */
+export const AUTH_BACKOFF = {
+  shortThresholdFailures: 5, // §4.8 F6
+  shortBackoffMs: 30_000, // §4.8 F6
+  longThresholdFailures: 10, // §4.8 F6
+  longBackoffMs: 300_000, // §4.8 F6
+} as const;
+
+// ── §4.4 — low-battery hysteresis ───────────────────────────────────────────
+
+export const LOW_BATTERY_LATCH_PERCENT = 15; // §4.4 — flags bit2 sets below this
+export const LOW_BATTERY_CLEAR_PERCENT = 20; // §4.4 — flags bit2 clears at/above this
