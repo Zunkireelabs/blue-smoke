@@ -14,9 +14,25 @@
 --
 -- Last run: 2026-08-05 against dev (hejwrhijrztgdysycvto) — all 4 checks PASS. See
 -- supabase/README.md "Applied" section for the recorded output.
+--
+-- ══ CORRECTED 2026-08-07 — the third file with the same invocation-dependent bug ══
+-- `SET LOCAL` is a NO-OP outside a transaction block (it emits only "WARNING: SET LOCAL can
+-- only be used in transaction blocks"). Through a client that wraps the script in one — as
+-- mcp__supabase__execute_sql does — the role switch works and the recorded PASSes are real.
+-- Through psql, where each statement is its own implicit transaction, the switch silently
+-- does nothing, both "client cannot..." checks run as the TABLE OWNER, and they report FAIL
+-- against controls that are actually fine.
+--
+-- Here the failure direction happened to be the safe one — a false FAIL, not a false PASS —
+-- but the file still could not be trusted either way, which is the same defect as
+-- rls_ownership_proof.sql and verifications_write_denial_proof.sql. Fixed identically: one
+-- explicit transaction ending in ROLLBACK, plus a GUARD check that asserts the role switch
+-- took effect before any denial is claimed.
 
-create temporary table vault_proof_results (check_name text, result text);
-grant insert, select on vault_proof_results to authenticated;
+begin;
+
+create temporary table vault_proof_results (check_name text, result text) on commit drop;
+grant insert, select on vault_proof_results to authenticated, anon;
 
 insert into devices (id, serial_hash) values
   ('55555555-5555-5555-5555-555555555555','vault-proof-fixture-hash');
@@ -49,7 +65,15 @@ select 'service-role unwrap round-trips correctly',
 
 -- Layer 1: RLS on device_keys (zero policies = deny-all, from 20260806060200_rls_policies.sql).
 set local role authenticated;
-set local request.jwt.claims to '{"sub":"66666666-6666-6666-6666-666666666666","role":"authenticated"}';
+select set_config('request.jwt.claims',
+  '{"sub":"66666666-6666-6666-6666-666666666666","role":"authenticated"}', true);
+select set_config('request.jwt.claim.sub', '66666666-6666-6666-6666-666666666666', true);
+
+insert into vault_proof_results (check_name, result) select
+  'GUARD: running as authenticated, not table owner',
+  case when current_user = 'authenticated' then 'PASS'
+       else 'FAIL: running as ' || current_user
+            || ' — RLS IS BYPASSED, both denial checks below are meaningless' end;
 
 insert into vault_proof_results (check_name, result) select
   'client cannot read device_keys row (RLS deny-all)', case when count(*)=0 then 'PASS' else 'FAIL got '||count(*) end from device_keys;
@@ -69,9 +93,8 @@ $do$;
 
 reset role;
 
--- Cleanup: remove every throwaway row this script created.
-delete from device_keys where device_id = '55555555-5555-5555-5555-555555555555';
-delete from vault.secrets where name = 'vault-proof-k-dev';
-delete from devices where id = '55555555-5555-5555-5555-555555555555';
-
 select ctid, check_name, result from vault_proof_results order by ctid;
+
+-- Nothing above is kept. Replaces the hand-written DELETE cleanup, which leaked fixture rows
+-- whenever the script aborted partway.
+rollback;
