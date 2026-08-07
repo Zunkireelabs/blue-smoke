@@ -7,7 +7,7 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 14 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
+**Progress:** 0 / 8 tasks · 15 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
 
 **Depends on:** `P0-3.0` (Supabase + RLS), `P0-4.0` (RN scaffold), `P0-2.0` + mock peripheral
 
@@ -38,8 +38,12 @@
 **Method B — Phone number + OTP** *(confirmed addition, spec §1.2.1)*
 - [x] Auth method choice screen — Email or Phone, single decision point before either flow
 - [x] Phone input with country-code picker, validated via `libphonenumber-js`
-- [ ] Twilio Verify configured as Supabase Auth's **native** phone provider (no custom bridge)
-      *(P0-3.0's job — Supabase dashboard/project config, not this branch's)*
+- [x] Twilio Verify configured as Supabase Auth's **native** phone provider (no custom bridge)
+      *(dev only, 2026-08-07 — Verify Service `bluesmoke-dev`, SMS channel, Fraud Guard on.
+      Staging and prod still unconfigured. Twilio account is on the 30-day trial, so SMS only
+      reaches numbers verified in the Twilio console — a trial limit, not a misconfiguration.
+      Config lives in the Supabase dashboard, not this repo; see `supabase/README.md` on
+      `feature/P0-3.0-baas-setup`)*
 - [x] OTP entry screen — segmented 6-digit input, resend cooldown timer
 - [x] Error handling mirrors the email flow — no enumeration, no leaking account existence
 
