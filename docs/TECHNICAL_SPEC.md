@@ -1,8 +1,8 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.5
+**Version:** 1.6
 **Status:** Authoritative build contract
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-07
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
 
 > This document is the **single source of technical truth** for Blue Smoke. If this document
@@ -963,14 +963,47 @@ Recorded so the effort is not silently re-absorbed, and so nobody rebuilds it:
 
 Per this spec's own rule: these are not filled in with plausible values.
 
-1. **Webhook signature verification scheme.** Header name, algorithm, and secret rotation are
-   *not* recorded here because they have not been verified against Persona's current
-   documentation. `persona-webhook` **must not ship** without this closed. An unverified webhook
-   endpoint is a direct path to forging `age_verified`.
+1. ~~**Webhook signature verification scheme.**~~ **✅ CLOSED in v1.6 — no longer a
+   ship-blocker.** Resolved by reading Persona's published documentation, which is research
+   rather than the guessing this section prohibits. The scheme, verified against
+   [webhooks-best-practices](https://docs.withpersona.com/webhooks-best-practices):
+
+   | | |
+   |---|---|
+   | Header | `Persona-Signature` |
+   | Value | `t=<unix_seconds>,v1=<hex_hmac>` |
+   | Signed string | `` `${t}.${rawBody}` `` — the RAW bytes, never re-serialised JSON |
+   | Algorithm | HMAC-SHA256, hex-encoded, compared in constant time |
+   | Rotation | **two space-separated** sets of those pairs; either may match |
+
+   Implemented in `supabase/functions/_shared/personaSignature.ts`, tested against a forged
+   body per §12.1 gate **G2**.
+
+   **One thing the vendor leaves to us:** Persona documents **no timestamp tolerance and no
+   replay guidance**, yet §8.3 lists *replayed webhook* as a threat distinct from *forged
+   webhook*. A captured body-plus-signature stays valid indefinitely unless we bound it, so the
+   **5-minute freshness window is our decision, not the vendor's**, and it is only the first of
+   two defences — the unique index on `verifications.inquiry_id` means a replay that beats the
+   clock still cannot write a second outcome.
 2. **Template configuration.** Which document types, which regions, and whether the template
    enforces an 18+ check itself or returns a DOB-derived field we evaluate.
-3. **`min_age` enforcement point.** v1.4 put the 18 threshold in remote config (R7). Whether
-   that now lives in the Persona template or stays ours is undecided.
+3. 🔴 **`min_age` enforcement point — now the sharpest open item in §6, promoted in v1.6.**
+   v1.4 put the 18 threshold in remote config (R7). Under the vendor flow it can only live in
+   the Persona template's own verification checks, and **that is not something any code in this
+   repo can verify.**
+
+   The reasoning matters, because it is easy to assume this is already handled. `persona-webhook`
+   derives `age_verified` from the vendor status, and the passing statuses are `completed` and
+   `approved`. But those mean *"the inquiry passed the checks the template was configured with"* —
+   **not** *"this person is over 18"*. A template that scans a government ID and matches a selfie
+   but carries **no age requirement** returns `approved` for a fourteen-year-old, and every
+   server-side control we have — the RLS lockdown, the signature verification, the
+   `issue-device-session` gate — would function perfectly and still open the gate.
+
+   So the entire age gate rests on a dashboard checkbox. Until the template is inspected and the
+   age requirement confirmed **in the Persona dashboard**, `age_verified = true` means only
+   "Persona approved this inquiry". Blocks §12.1 **G2**-adjacent sign-off and belongs with
+   **OQ-11**, since the account holding that template is currently developer-owned.
 4. **Inquiry resumption.** `onCanceled` → resume semantics and session-token lifetime.
 5. **Data residency and retention at the vendor**, required for §8.6. See **OQ-11**.
 
@@ -1091,7 +1124,7 @@ Authorisation is the §4.5 CMAC handshake, which transitively proves the server 
 | Rooted / jailbroken device extracting `K_sess` | Bounded blast radius: `K_sess` is per-device, per-user, expiring, and revocable. `K_dev` is unaffected, so the fleet is unaffected. |
 | Minor using an adult's ID | Persona's liveness + face match (v1.5). **We can no longer measure or tune this** — it is a vendor guarantee we accept rather than a control we operate. See §6.5. |
 | Printed-photo spoof of the selfie | Vendor-owned as of v1.5. Same caveat. |
-| **Forged webhook asserting `age_verified`** *(new in v1.5)* | **The most direct path to defeating the age gate under the vendor architecture.** `persona-webhook` is an unauthenticated public endpoint by nature; anything that can POST to it can grant verification unless the signature is verified. Signature verification is **mandatory before the handler trusts a single field**, and the scheme is deliberately unspecified rather than guessed — see **§6.6 item 1**. |
+| **Forged webhook asserting `age_verified`** *(new in v1.5)* | **The most direct path to defeating the age gate under the vendor architecture.** `persona-webhook` is an unauthenticated public endpoint by nature; anything that can POST to it can grant verification unless the signature is verified. Signature verification is **mandatory before the handler trusts a single field**. **Closed in v1.6** — the scheme is documented in **§6.6 item 1** and implemented in `_shared/personaSignature.ts`, with the handler reading the raw body and verifying BEFORE any parse. Tested against a forged body (§12.1 **G2**). |
 | **Replayed valid webhook** *(new in v1.5)* | A captured genuine webhook re-POSTed later. Handler must be idempotent on `inquiry_id` and reject stale timestamps. |
 | **Vendor outage or account suspension** *(new in v1.5)* | No new verifications can complete. Already-verified users are unaffected (`age_verified` is our row, not a live vendor call). Degrades to the §6.4 manual fallback — **which makes OQ-2 more load-bearing than it was**, not less. |
 | **Vendor breach exposing ID images** *(new in v1.5)* | Outside our control and outside our blast radius by design — we hold no images. This is the liability-transfer the vendor exists for, and it is also the reason the client must confirm the change in writing (§1.4). |
@@ -1369,6 +1402,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.6 | 2026-08-07 | **§6.6 item 1 closed — the webhook signature scheme is no longer a ship-blocker.** Resolved from Persona's published documentation rather than guessed: header `Persona-Signature`, value `t=<unix>,v1=<hex>`, HMAC-SHA256 over `` `${t}.${rawBody}` `` hex-encoded and compared in constant time, with secret rotation carrying **two space-separated** pair-sets. Implemented in `supabase/functions/_shared/personaSignature.ts` and tested against a forged body, meeting §12.1 gate **G2**. **Replay protection is ours, not the vendor's** — Persona documents no timestamp tolerance at all, so the 5-minute freshness window is our decision, backed by a second independent defence in the unique index on `verifications.inquiry_id`. **§6.6 item 3 (`min_age`) promoted to 🔴 and restated**: `completed`/`approved` mean "passed the checks the template was configured with", NOT "is over 18" — a template without an age requirement returns `approved` for a minor while every server-side control we have functions perfectly. The age gate therefore rests on Persona **dashboard configuration that no code in this repo can verify**. **§5.2.2/§5.3 enforced in migration** `20260807090000`: the pre-v1.5 `insert_own_verifications` policy was still live on dev and staging, letting any authenticated user self-assert `age_verified` — inviolable rule 3 inverted, and a complete bypass of the gate reachable with only a valid login. Dropped, with a 10-check proof. |
 | 1.5 | 2026-08-06 | **Verification moved from on-device ML to Persona.** No protocol change; `protocolVersion` unchanged at `0x01`; §4 and §7 untouched. **This is a reversal of a v1.0 decision, not drift** — the archived `PROJECT_BRIEF-superseded.md` proposed Persona, v1.0 replaced it with Apple Vision + Google ML Kit, and v1.5 reverts. Recorded in §1.4 so it is not re-litigated a third time. **§6 replaced in full**: two increments (client-initiated capture `P2-1.0`, server-created inquiry + webhook `P2-8.0`), with the SDK's `onComplete` explicitly a UI hint and the webhook the sole authority. **§2.3 Flow A rewritten.** **§5.2.2** gains `inquiry_id` + `provider_status`, `threshold_version` becomes nullable, and the absent-column list is reaffirmed with an explicit prohibition on pulling inquiry payloads back from the vendor. **§5.3: the client INSERT policy on `verifications` is removed** — under the vendor flow a client INSERT is a user asserting their own `age_verified`, which inverts inviolable rule 3. **§8.1** 🔴 class restated from "never persisted" to "never in our possession", plus a new 🔴 row for `inquiry_id`. **§8.3** gains four threats that did not exist before: forged webhook (the most direct path to defeating the age gate), replayed webhook, vendor outage, vendor breach. **§8.6 materially weakened and honest about it** — a DPA is now required, and data-subject erasure is no longer complete on our side because the evidence lives at the vendor. **§6.5** records what the switch deleted from our scope so the effort is not silently re-absorbed; **§6.6** lists five things deliberately left unspecified rather than guessed, of which the **webhook signature scheme is a ship-blocker**. New **OQ-11** covers written client confirmation, account ownership and per-verification cost, the DPA, and the erasure path. **⚠️ Client confirmation is outstanding and `ARCHITECTURE-SIGNOFF.md` must not be sent as written.** |
 | 1.4 | 2026-08-06 | **§4.5 `authResponse` framing — an unenforceable obligation made enforceable.** `protocolVersion` **unchanged at `0x01`** under the v1.2 pre-M2 exemption: §4 still has not been handed to the firmware team, so nothing implements `0x01` and a bump would mint a version no party speaks. **This is the last change that gets that exemption** — it is being made deliberately *before* the walkthrough for exactly that reason. **The defect:** step 4 mandated that "an out-of-order frame resets the handshake", but both frames were 20 opaque bytes written to the same characteristic with no discriminator. Firmware could only track position with an internal cursor, so it could not *detect* an out-of-order frame at all — the mandated behaviour was **not implementable**, and a buggy or hostile central could desynchronise that cursor with no defined recovery. Found while building the `P0-2.5` mock, which had to invent a cursor convention to proceed and flagged it rather than guessing silently. **The fix:** byte 0 of both frames is now `frameIndex` (`0x01`/`0x02`), making each frame self-describing. To free that byte inside the unchanged 20-byte ATT payload, `expiresAtDelta` narrows from uint32 to **uint24 LE seconds** — max ≈194 days against the 90-day `SESSION_EXPIRY_MAX_DAYS` cap, 2.1× headroom, clamped rather than rejected. `frameIndex` is deliberately **outside** the proof CMAC: it is framing, not a security parameter, and forging it without `K_sess` achieves nothing beyond a reset. New obligation **F12**, which also settles that a framing reset is *not* an F6 auth failure and does *not* invalidate `N`. New acceptance tests **FW-19/FW-20**. §2.3 Flow C updated in the same change, since it restates the frame contract. |
 | 1.3.1 | 2026-08-06 | **Editorial only — no normative change, no protocol change, `protocolVersion` unchanged at `0x01`.** §4.8 `F11` was inserted between `F5` and `F6` when it was added in v1.2, leaving the firmware obligation table numbered `F1…F5, F11, F6…F10`. Moved to its correct position after `F10`. The firmware team reads §4.8 as a numbered obligation list and will work through it in order; an out-of-sequence row invites `F11` being read as a sub-clause of `F5` (session expiry) rather than as the independent replay-resistance requirement it is. Wording of every row is byte-identical to v1.3 — this is a row move. Landed before the §4 walkthrough (M2) deliberately, so the version the firmware team first reads is the correctly ordered one. |
