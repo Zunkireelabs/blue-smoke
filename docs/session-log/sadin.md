@@ -4,6 +4,150 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-07 (later) — three streams merged; two live security holes closed; five false-green tests found
+
+**Branch:** `chore/integrate-auth-db-persona` — 17 commits, **not pushed**. Everything below is on it.
+**Landed on `stage`:** nothing. This branch is the integration point and stays local until the app runs.
+
+**The three streams had never touched each other, and that turned out to be a merge problem, not a
+technical one.** `P0-3.0` (backend), `P1-1.0` (auth, ~3,100 lines) and `P0-2.5` (mock) were all
+built, all green, all unmerged. **Rebasing looks impossible and merging is trivial** — `P1-1.0`'s
+11 commits each re-conflict on `navigation.tsx` under rebase, while a merge collapses the whole
+thing to two additive conflicts per branch and none for the mock. "We couldn't put it together"
+was never a hard problem; it had been attempted with the wrong tool. Suite went **1 test → 142**.
+
+### 🔴 Two live security holes, both closed
+
+**1. `verifications` was client-writable on dev and staging.** `insert_own_verifications` let any
+authenticated user INSERT their own `age_verified = true`. `issue-device-session` reads exactly
+that table before releasing key material, so it was **a complete bypass of the age gate reachable
+with nothing but a valid login** — no ID, no selfie, no vendor. It got there honestly: the
+migration was written against spec v1.1, where the client genuinely held the only copy of an
+on-device result. v1.5 deleted the policy *on paper*; the databases had already been migrated.
+**A spec change is not a fix until a migration carries it.** Closed by `20260807090000` + a
+10-check proof. ⚠️ **Still not applied to dev — needs credentials I do not hold.**
+
+**2. `K_dev` needed a `SECURITY DEFINER` accessor, and Postgres grants `EXECUTE` to `PUBLIC` by
+default.** `vault.decrypted_secrets` is unreachable through PostgREST, so `issue-device-session`
+needs a bridge function. Without an explicit `revoke`, that function — running as its owner,
+reading Vault — **would have been callable by any anonymous PostgREST request.** One missing line
+between here and handing out device root keys. Three controls (pinned `search_path`, revoke from
+public/anon/authenticated, grant to `service_role` only), all proven, and I verified the proof
+bites by granting `EXECUTE` to `authenticated` and watching two independent checks flip to FAIL.
+
+### The pattern of the day: five tests that passed while proving nothing
+
+Every one was found by **breaking the thing the test claims to check** and confirming it still
+passed. None would have been found by reading.
+
+| Where | Why it lied |
+|---|---|
+| `rls_ownership_proof.sql` | `SET LOCAL` is a **no-op outside a transaction** — every check silently ran as the table owner, RLS bypassed |
+| same file, hijack check | caught `when others`, so an **FK error from a fixture that never created** scored as "denied by RLS" |
+| `vault_k_dev_proof.sql` | same `SET LOCAL` bug — the third file with it, and I fixed two and missed this one |
+| my own `navigation.gating` test | asserted on rendered routes; **React Navigation mounts only the focused screen**, so it matched an empty array every time |
+| `revoke_session_proof.sql` (executor's) | `now()` is **transaction-scoped** — frozen at transaction start, so `pg_sleep` cannot move it and both writes recorded the same timestamp |
+
+The `SET LOCAL` one is the nastiest, because it is **invocation-dependent**: through the MCP
+client (which wraps in a transaction) the proof is real, through `psql` it is not. The same file
+reports different results for the same database depending only on who called it. All four proof
+files now run in one transaction ending in `ROLLBACK`, with a **GUARD check that asserts
+`current_user` before any denial is claimed**.
+
+Worth stealing: the executor's proof carries the *inverse* insight — running as `authenticated`
+would make every UPDATE affect zero rows regardless of predicate, so "B cannot revoke A's session"
+would pass even against code with no `user_id` predicate at all. **Both postures can hide the same
+hole.** Assert which one you are in.
+
+### §6.6 ship-blocker closed — and the thing it was hiding is worse
+
+The Persona webhook signature scheme was marked "do not guess". Correct, but **"do not guess" and
+"blocked" are not the same thing** — the scheme is published, so reading it is research. Header
+`Persona-Signature`, `t=<unix>,v1=<hex>`, HMAC-SHA256 over `` `${t}.${rawBody}` ``, and **rotation
+sends two space-separated pair-sets**. §12.1 gate **G2** met: 20 tests, including a forged body,
+a re-serialised body (proving the raw-bytes requirement rather than asserting it), and a stale
+signature re-sent under a fresh timestamp.
+
+**Persona documents no timestamp tolerance at all**, yet §8.3 lists replay as its own threat — so
+the 5-minute window is *our* decision, not the vendor's, backed by the unique index on
+`inquiry_id` as a second defence.
+
+**Closing it made the real gap sharper, not smaller.** `completed`/`approved` mean *"passed the
+checks the template was configured with"* — **not** *"is over 18"*. A template with no age
+requirement returns `approved` for a fourteen-year-old while the RLS lockdown, the signature
+verification and the `issue-device-session` gate all function perfectly. After a day spent closing
+two server-side holes, **the age gate rests on a dashboard checkbox no code in this repo can
+verify.** Promoted to 🔴 in v1.6. Sadin confirmed the template does carry the age requirement
+(2026-08-07, verbally) — **a dashboard screenshot in `docs/` would make that auditable**, which it
+currently is not.
+
+### Gotchas worth stealing
+
+- **`.env` did nothing.** `.env.example` says "copy this to `.env`", and that instruction was
+  false: `transform-inline-environment-variables` reads the **shell environment of the build
+  process**, and nothing loaded `.env` into it. The failure is quiet, not loud —
+  `getSupabaseClient()` throws, the session listener catches it and reports `signedOut`, so the
+  app renders the auth stack and **looks healthy while every login fails**, with one
+  `console.warn` as the only clue. The innocent suspects (anon key, project, Twilio) would all
+  have been blamed first. Fixed in `babel.config.js`, hand-parsed, no new dependency.
+- **`now()` vs `clock_timestamp()`** inside `begin;…rollback;` — see the table above.
+- **Never `git commit` while a delegated executor is mid-task.** `git commit --amend` targets
+  whatever `HEAD` is, so a commit of mine would have been rewritten by their amend. Stash and wait.
+- **The `supabase/postgres` image is not a Supabase project.** User is `supabase_admin`, not
+  `postgres`; `auth.users` is a pre-GoTrue stub without `email_confirmed_at`/`is_sso_user`; and
+  `auth.uid()` reads the **legacy** `request.jwt.claim.sub` GUC, not the `request.jwt.claims` JSON
+  a real project uses. Set **both** or `auth.uid()` returns null and every "own row" check goes
+  vacuous. Fixture columns must exist in both environments.
+- **Do not run `supabase start` on this machine** — port 54322 belongs to an unrelated project
+  (`edgexcrm`). Throwaway containers on high ports; the image restarts internally during init, so
+  poll `pg_isready` twice with a gap or migrations hit a half-built schema.
+- **CocoaPods installed and `pod install` succeeded** — 82 pods, `BlueSmoke.xcworkspace` created,
+  BLE 3.5.1 / Persona 2.52.1 / Keychain 10.0.0 all linked. **New Architecture compatibility of
+  Persona and Keychain is still unproven** until a real device build runs.
+
+### Blocked / needs a human
+
+- **The migrations are not on dev.** `20260807090000` and `20260807120000`, plus the four proofs.
+  Until then dev's age gate is forgeable. Needs DB credentials.
+- **No physical device build yet** — needs the iPhone plugged in and a signing Team. The simulator
+  is not an option: no BLE, no camera, and zero runtimes installed.
+- **Use `bluesmoke-dev` (`hejwrhijrztgdysycvto`) only.** Phone auth (Twilio Verify) is configured
+  on dev and **not** on staging, so Method B silently cannot work there. And **do not promote dev
+  to production later** — dev accumulates "Test Phone Numbers and OTPs" pairs, which are permanent
+  auth bypasses. The migrations are the promotion path; point them at a fresh project.
+- **Everything from the previous entry is unchanged and now nine days old:** the unsent client
+  message, OQ-11, OQ-6 and the firmware team, OQ-10, and the two physical hardware checks.
+
+### Delegation started, and the review caught what the report did not
+
+`revoke-device-session` and the `inquiry_id` lint guard were both written by an executor against
+committed briefs, then reviewed against the **diff** rather than the report. Worth doing again;
+also worth knowing what it costs.
+
+Both reports were polished and both contained something the diff contradicted. The revoke report
+quoted its bytea literal as `` `\x${…}` `` — which would be a *SyntaxError* in a template literal;
+the source was correctly `` `\\x${…}` ``. Harmless, but it means **a report reads as evidence and
+isn't**. The real find was in its proof: a vacuous idempotency check, sent back with the mechanism
+and a demonstration that the fix bites. The executor re-derived `now()`'s behaviour itself before
+applying it, which is the right instinct.
+
+**Every delegated artefact got mutation-tested by me, not by its author.** For revoke I broke three
+predicates (idempotency guard, `user_id` in the cross-user check, `user_id` in the bulk branch) —
+all three flipped to FAIL. For the lint guard I stripped the overrides from `.eslintrc.js` and
+re-ran its test: **all four positive assertions failed**, the negative ones correctly held. That is
+the difference between a suite that passes and a suite that means something.
+
+The guard is deliberately honest about its own limits: `CLAUDE.md`'s rule is a **data-flow**
+property and ESLint has none, so `{id: inquiryId, who: user.email}` passed to a logger is a real
+violation nothing will catch. The config says so in those words. The import ban *is* genuinely
+enforceable and is described that way — the distinction is the point. `no-console` is deliberately
+**not** applied to the Edge Functions, which have nine legitimate `console.error` sites; a probe
+proving a genuine `console.error` still lints clean is part of the test.
+
+
+---
+
+
 ## 2026-08-07 — new machine; stack re-based onto a moved `stage`; P2-1.0 reviewed after the fact
 
 **Branches:** the whole stack rebased onto `stage` `e24d263` and force-pushed —
