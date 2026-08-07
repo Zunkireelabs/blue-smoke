@@ -4,6 +4,89 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-07 — new machine; stack re-based onto a moved `stage`; P2-1.0 reviewed after the fact
+
+**Branches:** the whole stack rebased onto `stage` `e24d263` and force-pushed —
+`docs/correct-stale-workflow-and-denominators` `2a8b5b4→288cf3b`,
+`fix/P0-2.0-…` `8c1ae85→181da52`, `feature/P0-4.5-…` `b89aa45→8f0e712`,
+`docs/persona-verification-realignment` `ad609dd→ea76606`. Pre-rebase tips kept at
+`refs/backup/2026-08-07-*`.
+**Landed:** nothing into `stage` — `stage` moved on its own (see below).
+
+**The build machine changed again — Windows, and completely bare.** Not "git is off PATH" as
+every prior handover says: **git was not installed at all**, and neither was anything else.
+Installed via `winget install Git.Git`. The `P0-4.0` / `P1-1.0` briefs describing a Windows box
+are accidentally accurate again, and the macOS notes in the previous entry are now the stale
+ones. **Neither platform builds here either** — no Android SDK, no Java, no Xcode. M0 stays
+missed; that is settled, not a thing to keep re-discovering.
+
+Two mechanics worth keeping:
+
+- `git credential approve` fails from a PowerShell pipe (`refusing to work with credential
+  missing protocol field`) regardless of encoding. `cmd /c "git credential approve < file"`
+  works. Do that once and the PAT never needs to touch `.git/config`.
+- **Set `user.name` / `user.email` repo-local before rebasing anything.** A rebase rewrites the
+  *committer*, so an unconfigured box halts mid-rebase with staged changes and no commit. Three
+  Sadin identities exist in this repo's history; the stack uses `sadin@zunkireelabs.com`.
+
+**`stage` had moved and the stack was one commit stale.** PR #11 (`d5bad2e`, `.env.example`
+only) landed at 16:15. All four branches still forked from `ac0ec8b` — they had never been
+rebased past Anish's P2-1.0 merge, only *verified* against it.
+
+**Tried and abandoned — `git merge-tree` as a rebase dry-run.** It reported conflicts on
+`CLAUDE.md`, `ROADMAP.md` and `TODO-phase-2.md` for all four branches, and I wrote that up as
+fact. It is wrong: `merge-tree` simulates a *merge* and does not do rebase's patch-id
+already-upstream detection. The real rebase printed `skipped previously applied commit 9b6e62c`
+and applied **zero conflicts**, at 1/3/4/5 commits exactly as predicted. Anish's P2-1.0 was cut
+from `0efdaa2`, so half of what looked like a conflict was already upstream.
+
+I also claimed the earlier "verified clean" was chronologically impossible because the branch
+tips predated `b087c64`. Also wrong — a dry-run verification does not move tips. **Only a real
+rebase in a throwaway worktree answers this question.** That is the same lesson as the two-tree
+diff that looked like a revert, arrived at from the opposite direction.
+
+**Found: `ROADMAP` §8.1 has been internally inconsistent on `stage` since PR #10.** It reported
+Phase 2 at **97** sub-tasks while `TODO-phase-2.md` reported **30** — a 67-box divergence inside
+the one table whose entire purpose is to be the trustworthy denominator, under a heading
+asserting "understated by 23%" that had stopped being true. P2-1.0 updated the block-C summary
+row and the phase file but not the audit table.
+
+Fixed by keeping the two events apart rather than overwriting one number: the recount (74→97)
+was a real finding about a bad estimate; the drop to 30 is the v1.5 switch deleting
+`P2-2.0`–`P2-5.0`. Re-derived all four phases rather than patching the one cell — which caught
+that **Phase 0's 91 raw checkboxes are 76 under the PRD-line-item convention**, because
+`P0-2.5` and `P0-4.5` are our own additions and sit outside the denominator. That convention was
+nowhere in writing; it is now in §8.1 so the next recount agrees with this one. Current totals:
+**76 / 91 / 30 / 119 = 316** against a claimed 311.
+
+**P2-1.0 reviewed retroactively — [`audits/P2-1.0-retroactive-review.md`](../audits/P2-1.0-retroactive-review.md).**
+Ten findings, three of them 🔴. The core design is sound and the commit is honest, but:
+the ESLint guard deletion left **two live `CLAUDE.md` rules with zero enforcement** (proved with
+a probe file — `console.log` of an `inquiry_id` beside an email lints clean); `personaConfig.ts`
+**defaults to the Persona sandbox**, so a release build that loses `PERSONA_ENVIRONMENT`
+silently ships a forgeable age gate; and 150 new lines landed with **no tests at all**, the
+existing suite never mounting the new screen.
+
+Credit where it is due: he corrected `NSCameraUsageDescription`, which still promised *"Nothing
+leaves your phone"* — the same §12.2 misrepresentation class the v1.5 realignment found, caught
+independently in the plist.
+
+**Blocked / needs someone else:**
+
+- **Anish's `P0-6.0` needs a rebase *and* a re-scope**, not just the rebase its conflicts imply.
+  Its guard covers `src/native/**`, which **his own P2-1.0 deleted** — the path matches nothing
+  and its stated rationale describes a data flow that no longer happens. His guard and this
+  review's F1 are the same piece of work; they must not be written twice.
+- **Everything in the previous entry is unchanged and now eight days old:** the unsent client
+  message, OQ-11, the Persona webhook signature scheme (ship-blocker), OQ-6 and the firmware
+  team, and the two physical hardware checks. None of them are engineering problems.
+
+**Gotcha worth stealing:** the no-Claude-attribution rule is **forward-only from here**.
+`0efdaa2` arrived on `stage` inside PR #10 with its trailer intact, plus two on Anish's own
+commits. Removing them means rewriting `stage`, which `CLAUDE.md` forbids. **Do not "fix" this
+later with a force-push** — that is the trap this line exists to close.
+
+---
 ## 2026-08-07 — P1-1.0 client-side scope substantially complete; caught an abstraction violation from my own prior session
 
 **Branches:** `feature/P1-1.0-signup-login-reset`
