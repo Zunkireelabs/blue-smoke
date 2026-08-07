@@ -73,6 +73,26 @@ follow-up migration should be needed for that reconciliation.
 - All three migrations applied to **staging** (`rwhawlvigzakmjwpzvnc`) too, 2026-08-06, via
   `npx supabase db push` (user's own credentials, run outside chat). Confirmed via
   `npx supabase migration list --linked`: all three timestamps show matching Local/Remote.
+- **Phone auth (Twilio Verify) configured on dev only**, 2026-08-07 — Dashboard →
+  Authentication → Providers → Phone, SMS provider set to **Twilio Verify** (spec §1.2.1),
+  backed by Twilio Verify Service `bluesmoke-dev` (`VA193a790c…`, SMS channel, Fraud Guard on).
+  Note the provider dropdown offers both "Twilio" and "Twilio Verify" and they are *not*
+  interchangeable: plain "Twilio" wants a Messaging Service SID (`MG…`) and has Supabase
+  generate the OTP itself, which is not what §1.2.1 specifies. **Staging and prod remain
+  unconfigured.** Credentials live in the dashboard, never in this repo.
+
+  Two caveats worth knowing before reading a failure as a bug:
+  - The Twilio account is on the **30-day trial**, so SMS is delivered only to numbers
+    verified in the Twilio console. A send to an arbitrary number failing is the trial, not
+    the config.
+  - Supabase's **"Test Phone Numbers and OTPs"** field (same panel) registers fixed
+    `phone=otp` pairs that bypass SMS entirely — useful on dev, and the way around the trial
+    restriction for automated testing. **Never set this on prod:** a registered pair is a
+    permanent auth bypass for that number.
+
+  Auth is currently wired with the account-wide **Auth Token**. Twilio's own console
+  recommends a scoped **API Key** instead, since the Auth Token grants full account access —
+  worth switching before staging/prod.
 - RLS proof (`supabase/tests/rls_ownership_proof.sql`) run against dev, 2026-08-05, and
   re-run against staging, 2026-08-06 — all 8 checks PASS on both, including the PR #6 hijack
   scenario: a second user's simulated JWT cannot read
@@ -99,8 +119,8 @@ follow-up migration should be needed for that reconciliation.
   this, it's Dashboard/Management-API territory. Also blocked in practice: no custom SMTP is
   configured, so the default project email sender is rate-limited almost immediately (hit
   `429 over_email_send_rate_limit` on a single test signup).
-- Phone + OTP: Twilio Verify as the native provider — **blocked**, no Twilio account
-  provisioned yet (same class of external dependency as OQ-8)
+- Phone + OTP: Twilio Verify as the native provider — **done on dev** (see Applied above,
+  2026-08-07); **still to do on staging and prod**, and prod has no project yet
 - Edge Functions `issue-device-session` (§5.4) and `revoke-device-session` (§5.4.1) — not a
   checkbox in `TODO-phase-0.md`'s P0-3.0 list, but this is where Vault unwrapping and the
   server-side `age_verified` check both actually happen; flagging the gap rather than
