@@ -8,5 +8,11 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["**/node_modules", "**/Pods", "tools/mock-peripheral/**", "supabase/functions/**"]
+  "exclude": [
+    "**/node_modules",
+    "**/Pods",
+    "tools/mock-peripheral/**",
+    "supabase/functions/**",
+    "tools/lint-guard/**"
+  ]
 }
