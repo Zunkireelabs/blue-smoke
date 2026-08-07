@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
-import { signInWithEmail } from './api';
+import { useAuthClient } from './AuthClientContext';
 import { loginSchema } from './schemas';
 
 /**
@@ -21,9 +21,14 @@ import { loginSchema } from './schemas';
  *
  * The one rule this screen exists to enforce: whatever `signInWithEmail`
  * returns on failure is rendered verbatim, with no screen-level branching
- * on the reason. `api.ts` already collapses "wrong password" and "unknown
- * email" into one generic message — TODO-phase-1.md P1-1.0: "error handling
- * that does not leak account existence." Don't undo that here.
+ * on the reason. Both `AuthClient` implementations already collapse "wrong
+ * password" and "unknown email" into one generic message —
+ * TODO-phase-1.md P1-1.0: "error handling that does not leak account
+ * existence." Don't undo that here.
+ *
+ * Auth calls go through `useAuthClient()` (§3.5) — never
+ * `@supabase/supabase-js` directly, so this screen is testable against
+ * `createMockAuthClient()` with no backend.
  */
 
 type FormValues = {
@@ -34,6 +39,7 @@ type FormValues = {
 type Status = 'idle' | 'submitting' | 'signedIn';
 
 export function LoginScreen() {
+  const authClient = useAuthClient();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -61,7 +67,7 @@ export function LoginScreen() {
     }
 
     setStatus('submitting');
-    const result = await signInWithEmail(parsed.data.email, parsed.data.password);
+    const result = await authClient.signInWithEmail(parsed.data.email, parsed.data.password);
     if (!result.ok) {
       setStatus('idle');
       setFormError(result.error);

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
-import { signUpWithEmail } from './api';
+import { useAuthClient } from './AuthClientContext';
 import { signupSchema } from './schemas';
 
 /**
@@ -22,6 +22,10 @@ import { signupSchema } from './schemas';
  * announcement first. This gets the same result with what's already a
  * dependency; swap in the resolver later if the team wants it, it's a
  * mechanical change.
+ *
+ * Auth calls go through `useAuthClient()` (§3.5) — never `@supabase/supabase-js`
+ * or `api.ts` directly, so this screen is testable against
+ * `createMockAuthClient()` with no backend.
  */
 
 type FormValues = {
@@ -33,6 +37,7 @@ type FormValues = {
 type Status = 'idle' | 'submitting' | 'checkEmail' | 'signedIn';
 
 export function SignupScreen() {
+  const authClient = useAuthClient();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -60,18 +65,18 @@ export function SignupScreen() {
     }
 
     setStatus('submitting');
-    const result = await signUpWithEmail(parsed.data.email, parsed.data.password);
+    const result = await authClient.signUpWithEmail(parsed.data.email, parsed.data.password);
     if (!result.ok) {
       setStatus('idle');
       setFormError(result.error);
       return;
     }
 
-    // supabase-js returns session: null when email confirmation is
-    // required, and a live session when it isn't — this project hasn't
-    // decided/configured that yet (P0-3.0's auth-config box is still open),
-    // so both outcomes are handled rather than assuming one.
-    setStatus(result.data.session ? 'signedIn' : 'checkEmail');
+    // sessionEstablished is false when email confirmation is required, true
+    // when it isn't — this project hasn't decided/configured that yet
+    // (P0-3.0's auth-config box is still open), so both outcomes are
+    // handled rather than assuming one.
+    setStatus(result.data.sessionEstablished ? 'signedIn' : 'checkEmail');
   }
 
   if (status === 'checkEmail') {

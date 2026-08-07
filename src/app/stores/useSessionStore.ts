@@ -17,9 +17,10 @@ interface SessionState {
  * This store does not itself talk to Keychain or call `signOut`/`signIn`:
  * persistence lives in the `auth.storage` adapter wired into
  * `getSupabaseClient()` (src/shared/lib/authKeychainStorage.ts), and the
- * actual auth calls live in src/features/auth/api.ts. This store only
- * reflects `onAuthStateChange`, so it's the single source of truth for "is
- * anyone signed in" across every feature, not just P1-1.0's own screens.
+ * actual auth calls go through the `AuthClient` interface (§3.5,
+ * src/features/auth/client.ts). This store only reflects
+ * `onAuthStateChange`, so it's the single source of truth for "is anyone
+ * signed in" across every feature, not just P1-1.0's own screens.
  */
 export const useSessionStore = create<SessionState>(() => ({
   status: 'hydrating',
