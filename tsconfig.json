@@ -8,5 +8,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["**/node_modules", "**/Pods", "tools/mock-peripheral/**"]
+  "exclude": ["**/node_modules", "**/Pods", "tools/mock-peripheral/**", "supabase/functions/**"]
 }

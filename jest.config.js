@@ -1,6 +1,6 @@
-// Two projects: the RN app, and tools/mock-peripheral (plain Node, no RN
-// runtime — see tools/mock-peripheral/jest.config.js for why it can't share
-// the RN preset).
+// Three projects: the RN app, tools/mock-peripheral, and supabase/functions — the latter
+// two are plain Node with no RN runtime, each with its own jest.config.js explaining why it
+// can't share the RN preset.
 module.exports = {
   projects: [
     {
@@ -12,8 +12,13 @@ module.exports = {
       transformIgnorePatterns: [
         'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|react-native-.*)/)',
       ],
-      testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/tools/'],
+      testPathIgnorePatterns: [
+        '<rootDir>/node_modules/',
+        '<rootDir>/tools/',
+        '<rootDir>/supabase/',
+      ],
     },
     '<rootDir>/tools/mock-peripheral/jest.config.js',
+    '<rootDir>/supabase/functions/jest.config.js',
   ],
 };
