@@ -90,7 +90,7 @@ describe('DeviceCore — §4.5 handshake', () => {
       expiresAtDeltaSeconds: 3600,
     });
 
-    // Out-of-order: frame 2 (frameIndex = 0x02) arrives while FRAME_1 is expected.
+    // Out-of-order: frame 2 (frameIndex = 0x02) arrives with nothing buffered.
     core.writeAuthResponseFrame(frame2);
     // No commandResult should have been written for the bogus frame 2 — a framing
     // reset is silent, not an evaluated (and failed) handshake attempt.
@@ -103,36 +103,79 @@ describe('DeviceCore — §4.5 handshake', () => {
     expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
   });
 
-  test('FW-19(b) — frame 1 sent twice discards the first via frameIndex mismatch, recovers without reconnect', () => {
+  test('FW-19(b) — frame 1 sent twice REPLACES the first (F12a) and completes against the second session_id', () => {
     const clock = new FakeClock(0);
     const core = makeCore(clock);
     core.connect();
     const nonce = core.read('authChallenge');
 
-    const { frame1, frame2 } = buildHandshakeFrames({
+    const FIRST_SESSION_ID = Buffer.alloc(16, 0x22);
+    const SECOND_SESSION_ID = Buffer.alloc(16, 0x33); // deliberately different from the first
+
+    const first = buildHandshakeFrames({
       kDev: K_DEV,
-      sessionId: SESSION_ID,
+      sessionId: FIRST_SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: 3600,
+    });
+    const second = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: SECOND_SESSION_ID,
       keyGeneration: 1,
       nonce,
       expiresAtDeltaSeconds: 3600,
     });
 
-    // First frame 1: accepted, device now expects FRAME_2.
-    core.write('authResponse', frame1);
-    // A second frame 1 arrives instead — frameIndex (0x01) does not match the
-    // expected FRAME_2, so per F12 this is a framing reset: no commandResult,
-    // pending state discarded, device back to expecting a fresh FRAME_1.
-    core.write('authResponse', frame1);
+    // First frame 1: accepted, device now expects FRAME_2, buffers FIRST_SESSION_ID.
+    core.write('authResponse', first.frame1);
+    // A second, different frame 1 arrives instead — per F12(a) this REPLACES the
+    // buffered session_id/keyGeneration and the device keeps awaiting FRAME_2. No
+    // commandResult is written for the replace itself.
+    core.write('authResponse', second.frame1);
     expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
     expect(core.isAuthenticated()).toBe(false);
 
-    // FW-19(c) — a clean frame 1 → frame 2 sequence still succeeds, no reconnect.
-    core.write('authResponse', frame1);
-    core.write('authResponse', frame2);
-    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+    // Completing with the FIRST session's frame 2 must fail — the device is holding
+    // the SECOND session_id now, so that proof does not match.
+    core.write('authResponse', first.frame2);
+    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.AUTH_FAILED);
+    expect(core.isAuthenticated()).toBe(false);
   });
 
-  test('FW-19(c) — a framing reset consumes no F6 backoff attempt and does not invalidate N', () => {
+  test('FW-19(b) — frame 1 → frame 1 → frame 2 completes the handshake, does not dead-end', () => {
+    const clock = new FakeClock(0);
+    const core = makeCore(clock);
+    core.connect();
+    const nonce = core.read('authChallenge');
+
+    const FIRST_SESSION_ID = Buffer.alloc(16, 0x22);
+    const SECOND_SESSION_ID = Buffer.alloc(16, 0x33); // deliberately different from the first
+
+    const first = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: FIRST_SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: 3600,
+    });
+    const second = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: SECOND_SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: 3600,
+    });
+
+    core.write('authResponse', first.frame1);
+    core.write('authResponse', second.frame1); // replaces — no reconnect, no dead-end
+    core.write('authResponse', second.frame2); // matches the SECOND frame 1's session_id
+
+    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+    expect(core.isAuthenticated()).toBe(true);
+  });
+
+  test('FW-19(c) — after a case-(a) reset, a clean frame 1 → frame 2 still succeeds without a reconnect', () => {
     const clock = new FakeClock(0);
     const core = makeCore(clock);
     core.connect();
@@ -146,14 +189,60 @@ describe('DeviceCore — §4.5 handshake', () => {
       expiresAtDeltaSeconds: 3600,
     });
 
-    // Drive AUTH_BACKOFF.shortThresholdFailures - 1 worth of framing resets — if a
-    // reset burned an F6 attempt, this alone would trip the short backoff.
-    for (let i = 0; i < AUTH_BACKOFF.shortThresholdFailures - 1; i += 1) {
-      core.writeAuthResponseFrame(frame2); // frame 2 first — a reset, every time
+    // Case (a): a frame 2 arriving with nothing buffered resets.
+    core.writeAuthResponseFrame(frame2);
+    expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+
+    // No reconnect — same connection, same nonce, a clean attempt still succeeds.
+    core.write('authResponse', frame1);
+    core.write('authResponse', frame2);
+    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+    expect(core.isAuthenticated()).toBe(true);
+  });
+
+  test('FW-19(d) — neither (a) nor (b) consumes an F6 backoff attempt, and N stays valid', () => {
+    const clock = new FakeClock(0);
+    const core = makeCore(clock);
+    core.connect();
+    const nonce = core.read('authChallenge');
+
+    const { frame1, frame2 } = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: 3600,
+    });
+
+    // A framing event with a frameIndex that is neither 0x01 nor 0x02 always
+    // resets (F12b), regardless of what is currently expected/buffered — used
+    // here purely to unwind state between iterations without ever completing
+    // (and therefore without ever consuming N).
+    const junkFrame = Buffer.alloc(20, 0);
+    junkFrame.writeUInt8(0x03, AUTH_RESPONSE_FRAME_2_LAYOUT.frameIndex.offset);
+
+    // Drive at least AUTH_BACKOFF.shortThresholdFailures framing events, mixing
+    // case-(a) stray frame 2s and case-(b) duplicate frame 1s — v1.8's own note:
+    // "a loop bound of shortThresholdFailures - 1 makes (d) vacuous", so this
+    // drives the full threshold, not one short of it.
+    for (let i = 0; i < AUTH_BACKOFF.shortThresholdFailures; i += 1) {
+      if (i % 2 === 0) {
+        // case (a): frame 2 with nothing buffered.
+        core.writeAuthResponseFrame(frame2);
+      } else {
+        // case (b): a duplicate frame 1 replaces the buffered one; unwind with
+        // the junk frame so the next iteration starts from a clean FRAME_1 wait
+        // without ever reaching a real frame 2 (which would complete early).
+        core.write('authResponse', frame1);
+        core.write('authResponse', frame1);
+        core.writeAuthResponseFrame(junkFrame);
+      }
     }
 
-    // The connection's original nonce N must still be live (not invalidated by any
-    // reset) — a clean frame1 → frame2 handshake using it must still succeed.
+    // The connection's original nonce N must still be live (not invalidated by
+    // any framing event) — a clean frame1 → frame2 handshake using it must still
+    // return OK, not RATE_LIMITED (which would prove a framing event silently
+    // armed F6 backoff).
     core.write('authResponse', frame1);
     core.write('authResponse', frame2);
     expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);

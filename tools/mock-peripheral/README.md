@@ -141,22 +141,28 @@ made while implementing it are documented in the module doc comment at the
 top of `deviceCore.ts` rather than guessed silently — read that before
 assuming any of the following is normative:
 
-1. RESOLVED by §4.5 (v1.4) F12. `authResponse`'s two frames now carry
+1. RESOLVED by §4.5 (v1.8) F12. `authResponse`'s two frames now carry
    `frameIndex` in byte 0, so the mock identifies a frame from that byte —
    never from write order or a position cursor. `writeAuthResponseFrame(bytes)`
-   is the explicit test hook: tests can pass any `frameIndex` value, including
-   a repeated or out-of-order one, to exercise F12's reset path directly. A
-   framing reset (an unexpected `frameIndex`) writes no `commandResult`, does
-   not touch the F6 failure counter, and does not invalidate the connection
-   nonce `N` — see `deviceCore.handshake.test.ts` (FW-19/FW-20 analogues).
+   is the explicit test hook: tests can pass any `frameIndex` value to
+   exercise either half of F12 directly. **(a)** a repeated frame 1
+   REPLACES the buffered `session_id`/`keyGeneration` and the device keeps
+   awaiting frame 2 — the ordinary BLE retransmit case, not a reset.
+   **(b)** every other unexpected `frameIndex` (a frame 2 with nothing
+   buffered, or any value that is neither `0x01` nor `0x02`) resets:
+   discards pending state, awaits a fresh frame 1. Neither case writes a
+   `commandResult`, touches the F6 failure counter, or invalidates the
+   connection nonce `N` — see `deviceCore.handshake.test.ts` (FW-19/FW-20
+   analogues).
 2. Handshake failures write `commandResult.commandId = 0x00` — a sentinel
    unused by any real command — since §4.5 says a mismatch "writes
    AUTH_FAILED to commandResult" but no command was actually involved.
 3. §4.8 F6's backoff counter is shared between handshake failures **and**
    bad-tag/replayed commands (per §4.6's firmware rules table), but backoff
    itself only blocks the next handshake attempt, not an already-open
-   session's commands. Narrowed by §4.5 (v1.4) F12: a framing reset is
-   explicitly not an auth failure, so it never touches this counter.
+   session's commands. Narrowed by §4.5 (v1.8) F12: a framing event (a
+   repeated frame 1, or any other unexpected `frameIndex`) is explicitly not
+   an auth failure, so it never touches this counter.
 4. `SESSION_EXPIRED` (the `commandResult` code) fires once, on the first
    command attempt after expiry; subsequent attempts get ordinary
    `UNAUTHENTICATED`. The passive lock-on-expiry (F5) always updates

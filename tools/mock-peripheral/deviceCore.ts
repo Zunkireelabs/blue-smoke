@@ -11,11 +11,17 @@
  * reviewed by the firmware team — OQ-6). Each is a judgement call, written
  * down per brief §8 rather than guessed silently:
  *
- *  1. RESOLVED by §4.5 (v1.4) F12. authResponse (C3) frames now carry
+ *  1. RESOLVED by §4.5 (v1.8) F12. authResponse (C3) frames now carry
  *     `frameIndex` in byte 0, so the mock validates frame identity from the
  *     wire byte itself (never from write order or an internal cursor) —
- *     see `writeAuthResponseFrame` below. Left numbered here so ambiguities
- *     #2–#6 keep their original numbers.
+ *     see `writeAuthResponseFrame` below. F12 has two halves: (a) a repeated
+ *     frame 1 REPLACES the buffered session_id/keyGeneration and the device
+ *     keeps awaiting frame 2 — a duplicated GATT write is the ordinary BLE
+ *     retransmit case and must not dead-end the handshake; (b) every other
+ *     unexpected `frameIndex` (a frame 2 with nothing buffered, or any value
+ *     that is neither 0x01 nor 0x02) resets — discards pending state and
+ *     awaits a fresh frame 1. Left numbered here so ambiguities #2–#6 keep
+ *     their original numbers.
  *  2. §4.5 step 5d says a handshake mismatch "writes AUTH_FAILED to
  *     commandResult", but commandResult's `commandId` field is defined only
  *     for the 7 §4.6 command ids (0x01–0x07). This mock echoes `0x00` as a
@@ -26,10 +32,10 @@
  *     *commands*, not only handshake mismatches — so the failure counter is
  *     shared across both. Backoff itself only blocks the next handshake
  *     attempt (RATE_LIMITED on authResponse); it does not revoke an
- *     already-authenticated session's commands. Narrowed by §4.5 (v1.4)
- *     F12: a framing reset (an authResponse frame whose `frameIndex` is not
- *     the one expected next) is explicitly NOT an auth failure — it never
- *     touches this counter and never invalidates the connection nonce `N`.
+ *     already-authenticated session's commands. Narrowed by §4.5 (v1.8)
+ *     F12: a framing event (a repeated frame 1, or any other unexpected
+ *     `frameIndex`) is explicitly NOT an auth failure — it never touches
+ *     this counter and never invalidates the connection nonce `N`.
  *  4. `commandResult`'s SESSION_EXPIRED (0x05) is distinct from the passive
  *     lock F5 performs on `tick()`. This mock fires SESSION_EXPIRED on the
  *     first `lockCommand` write that lands after an expiry the device has
@@ -427,30 +433,24 @@ export class DeviceCore {
   // ── §4.5 handshake ──────────────────────────────────────────────────────
 
   /**
-   * §4.5 (v1.4) F12 — frame identity comes ONLY from `frameIndex` (byte 0 of
-   * the wire bytes), never from write order or a position cursor. This is
-   * also the explicit test hook (see ambiguity #1 in the module doc
-   * comment): tests can pass bytes with any `frameIndex` value, including a
-   * repeated or wrong one, to exercise F12's reset path directly.
+   * §4.5 (v1.8) F12 — frame identity comes ONLY from `frameIndex` (byte 0 of
+   * the wire bytes), never from write order or a position cursor. A repeated
+   * frame 1 REPLACES the buffered one and keeps awaiting frame 2 (F12a); any
+   * other unexpected `frameIndex` resets (F12b). This is also the explicit
+   * test hook (see ambiguity #1 in the module doc comment): tests can pass
+   * bytes with any `frameIndex` value to exercise either path directly.
    */
   writeAuthResponseFrame(bytes: Uint8Array): void {
     this.applyTimeDrivenTransitions();
     const frameIndex = readUint8(bytes, AUTH_RESPONSE_FRAME_1_LAYOUT.frameIndex.offset);
 
-    if (frameIndex !== this.expectedFrameIndex) {
-      // F12 — a frameIndex that is not the one expected next (a repeated
-      // frame 1, a frame 2 arriving first, or any other value) discards all
-      // pending handshake state and awaits a fresh frame 1. This is a
-      // FRAMING reset, not a cryptographic failure: it must not touch
-      // consecutiveAuthFailures and must not invalidate the connection
-      // nonce N (evaluateHandshake, and therefore nonce consumption, is
-      // never reached on this path).
-      this.pendingFrame1 = null;
-      this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
-      return;
-    }
-
     if (frameIndex === AuthResponseFrameIndex.FRAME_1) {
+      // F12(a) — frame 1 is always accepted, whatever expectedFrameIndex is.
+      // A repeated frame 1 REPLACES the buffered session_id/keyGeneration
+      // and the device keeps awaiting frame 2 — this is the ordinary BLE
+      // retransmit case, not a reset. This is a FRAMING event, not a
+      // cryptographic one: it must not touch consecutiveAuthFailures and
+      // must not invalidate the connection nonce N.
       const sessionId = readBytes(
         bytes,
         AUTH_RESPONSE_FRAME_1_LAYOUT.sessionId.offset,
@@ -462,20 +462,35 @@ export class DeviceCore {
       return;
     }
 
-    // frameIndex === FRAME_2 and matched expectation. The only way
-    // expectedFrameIndex reaches FRAME_2 is via an accepted frame 1 above,
-    // so pendingFrame1 is guaranteed set here.
-    if (this.pendingFrame1 === null) {
-      throw new Error('DeviceCore: invariant violated — expected FRAME_2 with no pending frame 1');
+    if (frameIndex === AuthResponseFrameIndex.FRAME_2 && this.expectedFrameIndex === AuthResponseFrameIndex.FRAME_2) {
+      // The only way expectedFrameIndex reaches FRAME_2 is via an accepted
+      // frame 1 above, so pendingFrame1 is guaranteed set here.
+      if (this.pendingFrame1 === null) {
+        throw new Error('DeviceCore: invariant violated — expected FRAME_2 with no pending frame 1');
+      }
+      const frame1 = this.pendingFrame1;
+      this.pendingFrame1 = null;
+      this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
+
+      const proof = readBytes(
+        bytes,
+        AUTH_RESPONSE_FRAME_2_LAYOUT.proof.offset,
+        AUTH_RESPONSE_FRAME_2_LAYOUT.proof.length,
+      );
+      const expiresAtDelta = readUint24LE(bytes, AUTH_RESPONSE_FRAME_2_LAYOUT.expiresAtDelta.offset);
+
+      this.evaluateHandshake(frame1, proof, expiresAtDelta);
+      return;
     }
-    const frame1 = this.pendingFrame1;
+
+    // F12(b) — everything else (a frame 2 arriving with nothing buffered, or
+    // any value that is neither 0x01 nor 0x02) discards all pending
+    // handshake state and awaits a fresh frame 1. This is a FRAMING reset,
+    // not a cryptographic failure: it must not touch consecutiveAuthFailures
+    // and must not invalidate the connection nonce N (evaluateHandshake,
+    // and therefore nonce consumption, is never reached on this path).
     this.pendingFrame1 = null;
     this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
-
-    const proof = readBytes(bytes, AUTH_RESPONSE_FRAME_2_LAYOUT.proof.offset, AUTH_RESPONSE_FRAME_2_LAYOUT.proof.length);
-    const expiresAtDelta = readUint24LE(bytes, AUTH_RESPONSE_FRAME_2_LAYOUT.expiresAtDelta.offset);
-
-    this.evaluateHandshake(frame1, proof, expiresAtDelta);
   }
 
   private evaluateHandshake(frame1: PendingFrame1, proof: Uint8Array, expiresAtDeltaSeconds: number): void {
