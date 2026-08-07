@@ -1,6 +1,6 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.6
+**Version:** 1.7
 **Status:** Authoritative build contract
 **Last updated:** 2026-08-07
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
@@ -812,11 +812,43 @@ Server logic (service role):
      from one that does not exist.
   3. Affected 0 rows → 404 { error: "SESSION_NOT_FOUND" }.  Do not leak whether the
      session_id exists under a different user.
-  4. audit_log: 'session_revoked'
+     ⚠️ SINGLE-SESSION CASE ONLY — clarified in v1.7, see below.
+  4. audit_log: 'session_revoked'.  metadata carries { revoked_count } and NO identifier
+     (§5.2.8) — the user_id column already carries identity; do not duplicate it, and
+     never put session_id in the JSON.
   5. Respond 200 { revoked: <count>, revoked_at: "<iso8601>" }
 
 Idempotent: revoking an already-revoked session is a 404, not an error state.
 ```
+
+**Zero rows means different things in the two cases (clarified v1.7).** Step 3 as originally
+written did not distinguish them, and the difference is not cosmetic:
+
+| Case | Rows | Response |
+|---|---|---|
+| `session_id` given | 1 | `200 { revoked: 1, revoked_at }` |
+| `session_id` given | 0 | `404 { error: "SESSION_NOT_FOUND" }` |
+| `session_id` omitted | N ≥ 1 | `200 { revoked: N, revoked_at }` |
+| **`session_id` omitted** | **0** | **`200 { revoked: 0, revoked_at }`** |
+
+"Revoke everything I hold" when nothing is active is a **satisfied request, not a missing
+resource**. Answering 404 there would make a correct client look broken and would push callers
+into treating 404 as success — which then masks the single-session 404 that genuinely means
+something.
+
+**An explicit `{"session_id": null}` is a 400, not a bulk revoke.** Only an *absent* field means
+bulk. A null far more likely indicates a client variable that failed to populate than a
+deliberate mass revoke, and guessing the friendlier reading logs the user out of every device
+they own.
+
+> 🔴 **Implementation trap — `session_id` is `bytea`.** `issue-device-session` writes it as a
+> `\x`-prefixed hex literal. A query comparing against plain hex matches **zero rows, every
+> time**, and the endpoint then returns a clean `404 SESSION_NOT_FOUND` that is
+> indistinguishable from a genuinely absent session — so revocation silently never works and
+> nothing else in the system looks wrong. Both sides of that comparison must go through one
+> encoder (`_shared/revokeRequest.ts` `toByteaLiteral`). Any proof of this endpoint must seed
+> its fixtures through the **same** representation, or it proves nothing about the mismatch
+> that is actually at risk.
 
 **What revocation does and does not do.** It stops the *server* from re-issuing, and the app
 refuses to use a revoked session on its next online check. It does **not** reach the device:
@@ -1402,6 +1434,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.7 | 2026-08-07 | **§5.4.1 clarified where its prose was ambiguous, plus the two implementation traps that ambiguity hides.** No behavioural change to any shipped endpoint; `revoke-device-session` was written against this clarification. **(1) "Affected 0 rows → 404" now distinguishes the two cases it silently conflated**: for a named `session_id`, 0 rows is genuinely 404; for an omitted one ("revoke everything I hold"), 0 rows is `200 { revoked: 0 }`, because nothing-to-revoke is a *satisfied request, not a missing resource*. Answering 404 there teaches callers to treat 404 as success, which then masks the single-session 404 that means something. **(2) An explicit `{"session_id": null}` is a 400, not a bulk revoke** — only an absent field is bulk; a null is far more likely a client variable that failed to populate, and the friendlier reading logs the user out of every device. **(3) 🔴 `session_id` is `bytea`** and is written as a `\x`-prefixed hex literal, so a query comparing plain hex matches zero rows every time and returns a clean `404` — revocation silently never works, and nothing else looks wrong. Recorded in the spec because it is invisible at the call site and a proof that seeds fixtures any other way would pass while the endpoint stayed broken. **(4) §5.4.1 step 4 now states the audit-metadata rule inline** (`{ revoked_count }`, no identifiers, §5.2.8) rather than leaving it to be inferred. |
 | 1.6 | 2026-08-07 | **§6.6 item 1 closed — the webhook signature scheme is no longer a ship-blocker.** Resolved from Persona's published documentation rather than guessed: header `Persona-Signature`, value `t=<unix>,v1=<hex>`, HMAC-SHA256 over `` `${t}.${rawBody}` `` hex-encoded and compared in constant time, with secret rotation carrying **two space-separated** pair-sets. Implemented in `supabase/functions/_shared/personaSignature.ts` and tested against a forged body, meeting §12.1 gate **G2**. **Replay protection is ours, not the vendor's** — Persona documents no timestamp tolerance at all, so the 5-minute freshness window is our decision, backed by a second independent defence in the unique index on `verifications.inquiry_id`. **§6.6 item 3 (`min_age`) promoted to 🔴 and restated**: `completed`/`approved` mean "passed the checks the template was configured with", NOT "is over 18" — a template without an age requirement returns `approved` for a minor while every server-side control we have functions perfectly. The age gate therefore rests on Persona **dashboard configuration that no code in this repo can verify**. **§5.2.2/§5.3 enforced in migration** `20260807090000`: the pre-v1.5 `insert_own_verifications` policy was still live on dev and staging, letting any authenticated user self-assert `age_verified` — inviolable rule 3 inverted, and a complete bypass of the gate reachable with only a valid login. Dropped, with a 10-check proof. |
 | 1.5 | 2026-08-06 | **Verification moved from on-device ML to Persona.** No protocol change; `protocolVersion` unchanged at `0x01`; §4 and §7 untouched. **This is a reversal of a v1.0 decision, not drift** — the archived `PROJECT_BRIEF-superseded.md` proposed Persona, v1.0 replaced it with Apple Vision + Google ML Kit, and v1.5 reverts. Recorded in §1.4 so it is not re-litigated a third time. **§6 replaced in full**: two increments (client-initiated capture `P2-1.0`, server-created inquiry + webhook `P2-8.0`), with the SDK's `onComplete` explicitly a UI hint and the webhook the sole authority. **§2.3 Flow A rewritten.** **§5.2.2** gains `inquiry_id` + `provider_status`, `threshold_version` becomes nullable, and the absent-column list is reaffirmed with an explicit prohibition on pulling inquiry payloads back from the vendor. **§5.3: the client INSERT policy on `verifications` is removed** — under the vendor flow a client INSERT is a user asserting their own `age_verified`, which inverts inviolable rule 3. **§8.1** 🔴 class restated from "never persisted" to "never in our possession", plus a new 🔴 row for `inquiry_id`. **§8.3** gains four threats that did not exist before: forged webhook (the most direct path to defeating the age gate), replayed webhook, vendor outage, vendor breach. **§8.6 materially weakened and honest about it** — a DPA is now required, and data-subject erasure is no longer complete on our side because the evidence lives at the vendor. **§6.5** records what the switch deleted from our scope so the effort is not silently re-absorbed; **§6.6** lists five things deliberately left unspecified rather than guessed, of which the **webhook signature scheme is a ship-blocker**. New **OQ-11** covers written client confirmation, account ownership and per-verification cost, the DPA, and the erasure path. **⚠️ Client confirmation is outstanding and `ARCHITECTURE-SIGNOFF.md` must not be sent as written.** |
 | 1.4 | 2026-08-06 | **§4.5 `authResponse` framing — an unenforceable obligation made enforceable.** `protocolVersion` **unchanged at `0x01`** under the v1.2 pre-M2 exemption: §4 still has not been handed to the firmware team, so nothing implements `0x01` and a bump would mint a version no party speaks. **This is the last change that gets that exemption** — it is being made deliberately *before* the walkthrough for exactly that reason. **The defect:** step 4 mandated that "an out-of-order frame resets the handshake", but both frames were 20 opaque bytes written to the same characteristic with no discriminator. Firmware could only track position with an internal cursor, so it could not *detect* an out-of-order frame at all — the mandated behaviour was **not implementable**, and a buggy or hostile central could desynchronise that cursor with no defined recovery. Found while building the `P0-2.5` mock, which had to invent a cursor convention to proceed and flagged it rather than guessing silently. **The fix:** byte 0 of both frames is now `frameIndex` (`0x01`/`0x02`), making each frame self-describing. To free that byte inside the unchanged 20-byte ATT payload, `expiresAtDelta` narrows from uint32 to **uint24 LE seconds** — max ≈194 days against the 90-day `SESSION_EXPIRY_MAX_DAYS` cap, 2.1× headroom, clamped rather than rejected. `frameIndex` is deliberately **outside** the proof CMAC: it is framing, not a security parameter, and forging it without `K_sess` achieves nothing beyond a reset. New obligation **F12**, which also settles that a framing reset is *not* an F6 auth failure and does *not* invalidate `N`. New acceptance tests **FW-19/FW-20**. §2.3 Flow C updated in the same change, since it restates the frame contract. |
