@@ -85,7 +85,7 @@ Q1 QA   ░░░░░░┼░░░░░┼░░░░░┼░░░░░
 |---|---|---|---|
 | **A** | 1–6 | Foundation, spikes, spec handoff | Phase 0 |
 | **B** | 7–12 | Accounts & device management | Phase 1 |
-| **C** | 13–19 | On-device verification | Phase 2 |
+| **C** | 13–19 | Persona verification integration | Phase 2 |
 | **D** | 20–25 | Lock/unlock & proximity | Phase 3 (build) |
 | **E** | 26–30 | Hardware integration, QA, submission | Phase 3 (harden) |
 
@@ -100,7 +100,7 @@ Q1 QA   ░░░░░░┼░░░░░┼░░░░░┼░░░░░
 | **M2** | **6** | **BLE Interface Spec delivered to and acknowledged by the firmware team** | Written acknowledgement; §4 frozen at `protocolVersion 0x01` |
 | **M3** | **6** | Foundation complete — Supabase live with RLS, CI/CD green on both platforms, design system approved | Phase 0 exit criteria demonstrated |
 | **M4** | **12** | User can sign up, scan, bond, and manage multiple devices against the mock peripheral | Phase 1 exit criteria demonstrated |
-| **M5** | **19** | Verification pipeline passes §6.3 accuracy targets | ROC curve + FAR/FRR report, `threshold_version` pinned |
+| **M5** | **19** | Persona capture flow integrated and passing sandbox end-to-end tests | Forced-pass/forced-fail Simulate runs demonstrated; webhook confirmation wired (`P2-8.0`) |
 | **M6** | **25** | Full lock/unlock + proximity auto-lock working against the mock, incl. backgrounded | Phase 3 build exit criteria on mock |
 | **M7** | **29** | **Real firmware integration signed off** — all §4.10 `FW-01`–`FW-15` pass | Joint test session with the client's firmware team |
 | **M8** | **30** | **Submitted** to App Store and Google Play | Submission receipts |
@@ -133,35 +133,37 @@ Q1 QA   ░░░░░░┼░░░░░┼░░░░░┼░░░░░
 | Track | Work |
 |---|---|
 | **M1** | Filtered scan & discovery. LESC bonding. §4.5 auth handshake. Connection lifecycle — reconnect, background handling (applying the Block A spike findings). |
-| **M2** | *(runs ahead into Phase 2)* Guided ID capture UI + quality gates. PDF417 / MRZ / OCR DOB extraction. |
+| **M2** | *(runs ahead into Phase 2)* Persona SDK integration — capture-flow screen, native setup. No OCR/quality-gate code to build; Persona's SDK owns capture. |
 | **M3** | Signup / login / password reset. Onboarding + permission priming with recovery paths. Profile & settings. |
 | **B1** | `issue-device-session` Edge Function (§5.4) — the age gate. Device ↔ account sync. |
 | **D1** | Hi-fi designs for the verification flow and lock control. |
 | **Q1** | Test Phase 1 against the mock. RLS audit round 1. |
 
-**Parallelism note:** M2 begins Phase 2 work on Day 7, six days before Block C nominally
-opens. Verification is the largest phase (23.2 d) and its tuning step has an external
-dependency, so it gets the longest runway.
+**Parallelism note:** M2 begins Phase 2 work on Day 7, six days before Block C nominally opens.
+**The 23.2 d effort figure below is stale** — it was sized for building OCR/liveness/face-match
+in-app, which no longer happens (Persona's SDK does it). A re-estimate for the vendor-integration
+shape of Phase 2 hasn't been done yet; treat the day range in this block as provisional until it
+is, rather than assuming it still costs 23.2 person-days.
 
 ---
 
-### Block C — Days 13–19 · On-Device Verification
-**PRD:** Phase 2 (23.2 d) → [`TODO-phase-2.md`](TODO-phase-2.md)
+### Block C — Days 13–19 · Persona Verification Integration
+**PRD:** Phase 2 (effort stale, see note above) → [`TODO-phase-2.md`](TODO-phase-2.md)
 
 | Track | Work |
 |---|---|
 | **M1** | Multi-device management BLE plumbing — status, battery, per-device state. |
-| **M2** | Selfie capture + liveness. ID-portrait vs selfie face match. **Threshold tuning against the labelled set.** Secure deletion + zeroisation. |
+| **M2** | Persona SDK capture-flow screen (`P2-1.0`). Result/fallback handling (`P2-6.0`). What little data reaches the app secured (`P2-7.0`). |
 | **M3** | Device management UI — list, rename, unpair, live status, battery. Verification flow UI. |
-| **B1** | Push infrastructure (APNs/FCM via Edge Function). Verification status persistence + server-side gating. |
-| **Q1** | Build and run the §6.3 accuracy harness. Ramping to full-time from D21. |
+| **B1** | Push infrastructure (APNs/FCM via Edge Function). Create-inquiry + webhook Edge Functions, verification status persistence + server-side gating (`P2-8.0`). |
+| **Q1** | Ramping to full-time from D21. |
 
-> **⚠️ STRAIN — this is the highest-risk block.** `P2-5.0` (face match + tuning) is the
-> single largest line item at 5 person-days, and it cannot be honestly completed without
-> **physical sample IDs (OQ-1)**. Mitigation: build the pipeline and the tuning harness
-> against a synthetic/team-sourced set from Day 13 so that when real IDs arrive the tuning
-> run is hours, not days. If OQ-1 is still unanswered by **Day 13**, escalate to the client
-> as a formal timeline risk — do not absorb it silently.
+> **STRAIN status changed — this is no longer the highest-risk block.** The old risk was
+> `P2-5.0` (on-device face-match tuning), which needed physical sample IDs (**OQ-1**) to
+> honestly complete and couldn't be if OQ-1 slipped. That task doesn't exist anymore — Persona
+> performs the match, and its **sandbox needs no real ID at all** (Simulate + file-upload
+> capture cover testing). OQ-1 drops out of this block's dependency chain entirely; it may
+> still matter elsewhere (e.g. physical hardware, `P3-6.0`), but not here.
 
 ---
 
@@ -171,7 +173,7 @@ dependency, so it gets the longest runway.
 | Track | Work |
 |---|---|
 | **M1** | First-time activation. Authenticated lock/unlock commands (§4.6). Proximity monitor with RSSI hysteresis (§7.2). Background BLE behaviour on both platforms. |
-| **M2** | Result handling, retries, failure states, manual fallback. Verification gating of first activation. Accuracy regression suite. |
+| **M2** | Result handling, manual fallback (`P2-6.0`). Verification gating of first activation. |
 | **M3** | Lock/unlock UI + state machine rendering. Push notification handling. Store assets. |
 | **B1** | *(50%)* Session revocation. Production hardening. |
 | **Q1** | Full-time. End-to-end QA on the mock. Security review begins. |
@@ -244,7 +246,6 @@ allowed to be discovered late.
 
 ```
 OQ-4 (OTP keys) ─────────────────────────► §4.5 handshake on real HW ──► M7
-OQ-1 (sample IDs) ───────────────────────► P2-5.0 tuning ─────────────► M5
 OQ-1 (physical device) ──────────────────► P3-6.0 integration ───────► M7
 OQ-8 (developer accounts) ───────────────► P0-5.0 CI/CD ────────────► M3
 OQ-7 (brand assets) ─────────────────────► P0-7.0 design system ────► M3
@@ -253,9 +254,11 @@ P0-4.0 RN scaffold ──► everything mobile
 P0-3.0 Supabase+RLS ──► P1-1.0 auth ──► P1-6.0 sync ──► P2-8.0 gating ──► P3-1.0 activation
 P0-2.0 BLE spec ──► mock peripheral ──► P1-3.0 scan ──► P1-4.0 bond ──► P3-2.0 lock/unlock
                                                                     └──► P3-3.0 proximity
-P2-2.0 OCR ──► P2-3.0 age rules ──┐
-P2-4.0 liveness ──► P2-5.0 match ─┴──► P2-6.0 decision ──► P2-7.0 deletion ──► P2-8.0 gating
+P2-1.0 Persona SDK capture ──► P2-6.0 result handling ──► P2-7.0 data audit ──► P2-8.0 gating
 ```
+
+*(OQ-1, sample IDs, dropped out of this graph — it fed `P2-5.0` on-device tuning, which no
+longer exists. Persona's sandbox needs no real ID.)*
 
 **Critical path:** `P0-2.0 BLE spec → mock peripheral → P1-4.0 bonding → P3-2.0 authenticated
 lock/unlock → P3-6.0 firmware integration → M7`. Everything on this line is M1's, which is
@@ -268,7 +271,7 @@ why M1 carries no secondary responsibilities.
 - **Daily standup**, 15 min, tracks report blockers only. Open questions are read aloud every day until closed.
 - **Definition of Done** is §12.1 of the technical spec. A ticked box means every criterion, not "the happy path works."
 - **Ticking a box here is a claim.** Milestones M0–M8 are demonstrated live or on video, never asserted.
-- **Branching:** `feature/*` → PR → `main` → tag for release. CI must be green to merge.
+- **Branching:** `feature|fix|hotfix|chore|docs/*` → PR → **`stage`** → promote `stage` → `main` → tag for release. CI must be green to merge; `promotion-guard` enforces the order. See `CLAUDE.md`.
 - **The three inviolable rules** (§2.2 of the spec) are checked in every PR touching verification. A breach is an automatic block, not a review comment.
 - **Scope changes** go through the PRD. Add-ons stay in [`TODO-addons.md`](TODO-addons.md) and do not leak into the base build.
 
@@ -280,12 +283,31 @@ Update this table at the end of each block.
 
 | Block | Days | Phase | Tasks | Done | Status |
 |---|---|---|---:|---:|---|
-| A | 1–6 | Phase 0 | 7 | 0 | ⬜ Not started |
+| A | 1–6 | Phase 0 | 7 | 1 | 🟡 In progress — `P0-1.0` done; `P0-2.0` and `P0-4.0` part-done |
 | B | 7–12 | Phase 1 | 8 | 0 | ⬜ Not started |
-| C | 13–19 | Phase 2 | 8 | 0 | ⬜ Not started |
+| C | 13–19 | Phase 2 | 4 | 0 | ⬜ Not started |
 | D | 20–25 | Phase 3 (build) | 5 | 0 | ⬜ Not started |
 | E | 26–30 | Phase 3 (harden) | 3 | 0 | ⬜ Not started |
-| | | **Total** | **31** | **0** | |
+| | | **Total** | **27** | **1** | |
+
+### 8.1 ⚠️ Sub-task totals were understated by 23%
+
+Re-counting the boxes under the PRD tasks in each phase file, against the method audited in
+`TODO-phase-0.md`:
+
+| Phase | Header claimed | Actual | Delta |
+|---|---:|---:|---:|
+| 0 | 76 | **76** ✅ | — *(corrected earlier, was `62`)* |
+| 1 | 77 | **91** | +14 |
+| 2 | 74 | **97** | +23 |
+| 3 | 84 | **119** | +35 |
+| **Total** | **311** | **383** | **+72 (+23%)** |
+
+All four originals appear to trace to the same unreconciled estimate. **This does not change the
+PRD's 83.7 person-days** — the person-day figures are the commercial commitment and are unaffected.
+What it changes is the *granularity signal*: a burn-down against 311 would have read ~23% ahead of
+reality throughout, and the error is worst in **Phase 3**, which carries the least slack and the
+hardware dependency. Treat sub-task progress as a completeness check, not a schedule forecast.
 
 **Open questions:** 9 open / 0 closed — see [`../TECHNICAL_SPEC.md` §13](../TECHNICAL_SPEC.md#13-open-questions-register)
 **Critical open questions:** OQ-1, OQ-2, OQ-4 🔴

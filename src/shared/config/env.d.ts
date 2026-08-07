@@ -8,5 +8,7 @@ declare const process: {
   env: {
     SUPABASE_URL?: string;
     SUPABASE_ANON_KEY?: string;
+    PERSONA_TEMPLATE_ID?: string;
+    PERSONA_ENVIRONMENT?: string;
   };
 };

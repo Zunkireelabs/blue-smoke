@@ -37,7 +37,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>BlueSmoke connects to your paired device over Bluetooth so it can lock and unlock automatically as you move — this only talks to your own device, never anyone else's.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>BlueSmoke uses your camera to verify your age by scanning your ID and taking a quick selfie. Nothing leaves your phone — photos are never saved or uploaded.</string>
+	<string>BlueSmoke uses your camera to verify your age by scanning your ID and taking a quick selfie. These are sent securely to our verification partner, Persona, to confirm your age — BlueSmoke itself never stores or sees the photos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>UILaunchStoryboardName</key>

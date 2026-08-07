@@ -149,6 +149,7 @@ $RECYCLE.BIN/
 
 # ══ Scratch / working files ══
 temp_ss/
+temp-ss/
 temp/
 tmp/
 scratch/

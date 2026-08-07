@@ -9,7 +9,7 @@ Guidance for Claude Code when working in this repository.
 A React Native (iOS + Android) app controlling a **Bluetooth-enabled vape device**. Three pillars:
 
 1. **Accounts & multi-device BLE pairing** — ownership enforced server-side via Supabase RLS
-2. **On-device 18+ age verification** — ID OCR + selfie face match, entirely on the phone, no KYC vendor
+2. **18+ age verification via Persona** (third-party vendor) — ID scan + selfie captured by Persona's SDK, verified off-device, result confirmed to us by webhook. Changed from the original on-device (ID OCR + face match) design — **written client confirmation is still outstanding**, see `docs/session-log/anish.md` (commit `6bbe150`).
 3. **Proximity lock/unlock** — authenticated BLE commands; the device auto-locks itself when the phone leaves range
 
 **Timeline: 30 days.** Aggressive. Scope is fixed by a client PRD.
@@ -63,7 +63,7 @@ Not assignments — a map, so you can tell whose in-flight branch your diff migh
 | Area | Paths | Notes |
 |---|---|---|
 | **BLE & Lock** | `src/features/ble/**`, `src/features/lock/**` | Scan, bonding, auth handshake, lock/unlock, proximity, background BLE. **Critical path** — most likely to block others. |
-| **Verification** | `src/features/verification/**`, `src/native/**` | ID capture, OCR/DOB, liveness, face match. **The 🔴 zone** — extra rules below. Most self-contained area; easiest to work in without collisions. |
+| **Verification** | `src/features/verification/**` | Persona SDK integration (capture flow), the create-inquiry + webhook Edge Functions. No longer a no-network zone — see rules below. Most self-contained area; easiest to work in without collisions. |
 | **App & Backend** | `src/features/auth|onboarding|profile|devices/**`, `supabase/**`, `.github/**` | Auth, onboarding, device UI, Supabase schema + RLS + Edge Functions, CI/CD. Broadest surface, so most likely to touch shared files. |
 
 **When work spans two areas:** say so, and prefer splitting it into two PRs over one wide diff.
@@ -88,10 +88,25 @@ These cause 90% of merge pain. No owner, so the rule is **single-writer at a tim
 Everyone works apart, so the discipline is about **merging cleanly** and **staying visible** — not about review gates.
 
 ```
-main        ← integration branch. All PRs target this. CI green to merge.
+main        ← PRODUCTION. Nothing merges here directly.
+              Only `stage` or a `promote/*` branch may open a PR into main.
               Releases are cut by tagging a commit on main (v1.0.0).
+stage       ← INTEGRATION. All feature work targets this. CI green to merge.
 feature/*   ← your work. One branch per task.
+fix/*  hotfix/*  chore/*  docs/*   ← also accepted into stage
 ```
+
+**The flow is `feature|fix|hotfix|chore|docs/* → stage → main`**, and it is
+**enforced by the `promotion-guard` job** in `.github/workflows/ci.yml` — a PR with the wrong
+base or a branch name outside that list fails CI before anything else runs. `chore/*` is for
+tooling and repo housekeeping, `docs/*` for documentation-only work.
+
+Two consequences people trip over:
+
+- **A PR based on `main` is blocked, not merged-with-a-warning.** If you branched before this
+  was written down, retarget the PR to `stage` — that is the whole fix.
+- **`main` is stale by design between promotions.** Reading `main` to see current state will
+  mislead you. `stage` is where the work is.
 
 **Branch naming carries the PRD ID** so a branch maps to committed scope:
 
@@ -106,7 +121,7 @@ fix/P3-3.0-rssi-flapping
 
 1. **Check `git fetch && git branch -r` before starting a task.** Remote branches are the live claim list. If a `feature/P2-2.0-*` branch exists, that task is taken.
 2. **Push your branch on day one**, empty if need be. That is how you claim the task. An unpushed branch claims nothing.
-3. **Rebase on `main` every morning.** `git pull --rebase origin main`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `main`, staying current matters more, not less.
+3. **Rebase on `stage` every morning.** `git pull --rebase origin stage`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `stage`, staying current matters more, not less. (Rebasing on `main` will silently give you a stale base.)
 4. **Small PRs.** One task, one PR. A 2000-line PR nobody has seen in progress is unreviewable and unmergeable.
 5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
 6. **CI green before merge.** No exceptions.
@@ -125,7 +140,7 @@ frame order is mandatory per spec. Constant-time CMAC comparison.
 
 - **Git is not on PATH.** Prefix: `$env:PATH = "C:\Program Files\Git\cmd;$env:PATH"`
 - **PowerShell 5.1 mangles `-m` messages containing double quotes.** Write the message to a file and use `git commit -F <file>`.
-- Never `--no-verify`. **Never force-push `main`** — everyone's work lives there.
+- Never `--no-verify`. **Never force-push `main` or `stage`** — everyone's work lives on `stage`.
 
 ---
 
@@ -162,9 +177,15 @@ npx supabase db push     # migrations
 
 ### `src/features/verification/**` — extra rules
 
-1. No logging, analytics, or persistence imports. ESLint-enforced (`no-restricted-imports`).
-2. Only `decision.ts` exports outward, returning exactly `{ passed, method, thresholdVersion, outcomeReason }`.
-3. Nothing else escapes the subtree. Not the DOB, not the score, not the crop.
+Persona's SDK captures and uploads the ID/selfie itself — our code never receives the raw image,
+DOB, or a biometric score, so the old no-network ESLint guard for this subtree has been removed
+(nothing left to protect). The rule that still applies:
+
+1. Never log or persist an `inquiry_id` alongside anything that could re-identify the underlying
+   document or selfie — we only ever have the ID and a status string to begin with, keep it that
+   way.
+2. `PersonaInquiryView`'s `onComplete` status is a UI hint only. The server-side webhook is the
+   only thing allowed to write `verifications.provider_status` (inviolable rule 3 below).
 
 ---
 
@@ -172,7 +193,7 @@ npx supabase db push     # migrations
 
 From spec §12.1. All of it, not the happy path:
 
-- [ ] Merged to `main` via PR; CI green
+- [ ] Merged to `stage` via PR; CI green
 - [ ] Works on **both** iOS and Android, on a **physical** device
 - [ ] Touches 🔴 data → verified no disk write, no log, no network payload
 - [ ] Touches BLE → tested against the mock, **failure paths included**
@@ -184,7 +205,7 @@ From spec §12.1. All of it, not the happy path:
 
 ## Do not
 
-- **Reintroduce superseded decisions.** No Persona/KYC vendor, no self-hosted Node backend, no Ed25519 on the MCU, no us writing firmware. All rejected — see `docs/archive/`.
+- **Reintroduce superseded decisions.** No self-hosted Node backend, no Ed25519 on the MCU, no us writing firmware. All rejected — see `docs/archive/`. (Persona/KYC-vendor was on this list too — reversed, see pillar 2 above and `docs/session-log/anish.md`. Written client confirmation is still pending, so treat the vendor decision as provisional until that lands.)
 - **Build add-ons.** Admin panel, analytics/Sentry, firmware, advanced PAD are out of scope. If asked, name it as an add-on and point at `TODO-addons.md`.
 - **Add analytics or crash reporting to the verification subtree.** Ever. A crash during ID capture must not produce a report containing the ID.
 - **Commit secrets.** The Supabase service-role key bypasses every RLS policy. `.gitignore` guards this; don't defeat it.
