@@ -7,7 +7,7 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 0 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
+**Progress:** 0 / 8 tasks · 14 / 77 sub-tasks *(P1-1.0 grew +6 sub-tasks — confirmed phone-OTP addition, spec §1.2.1)*
 
 **Depends on:** `P0-3.0` (Supabase + RLS), `P0-4.0` (RN scaffold), `P0-2.0` + mock peripheral
 
@@ -25,29 +25,38 @@
 > person-day estimate (was 2.5 d, see spec §1.2.1) is the locked figure for this task.
 
 **Method A — Email + password** *(original scope)*
-- [ ] Signup screen — email + password, Zod validation
-- [ ] Password strength requirements + clear inline feedback
-- [ ] Login screen with error handling that does not leak account existence
-- [ ] Password reset request + email flow
-- [ ] Deep-link handling for the reset link on both platforms
+- [x] Signup screen — email + password, Zod validation
+- [x] Password strength requirements + clear inline feedback *(8-char floor — placeholder, not a
+      spec value; flagged in schemas.ts to confirm against the Supabase project's own Auth
+      password policy once P0-3.0 exists)*
+- [x] Login screen with error handling that does not leak account existence
+- [x] Password reset request + email flow
+- [x] Deep-link handling for the reset link on both platforms *(config only — bluesmoke:// scheme
+      registered in Info.plist/AndroidManifest.xml + RN linking config; unrunnable on this
+      machine, brief §2 — unverified on a device, not untested-in-principle)*
 
 **Method B — Phone number + OTP** *(confirmed addition, spec §1.2.1)*
-- [ ] Auth method choice screen — Email or Phone, single decision point before either flow
-- [ ] Phone input with country-code picker, validated via `libphonenumber-js`
+- [x] Auth method choice screen — Email or Phone, single decision point before either flow
+- [x] Phone input with country-code picker, validated via `libphonenumber-js`
 - [ ] Twilio Verify configured as Supabase Auth's **native** phone provider (no custom bridge)
-- [ ] OTP entry screen — segmented 6-digit input, resend cooldown timer
-- [ ] Error handling mirrors the email flow — no enumeration, no leaking account existence
+      *(P0-3.0's job — Supabase dashboard/project config, not this branch's)*
+- [x] OTP entry screen — segmented 6-digit input, resend cooldown timer
+- [x] Error handling mirrors the email flow — no enumeration, no leaking account existence
 
 **Shared — both methods**
-- [ ] Session persistence — refresh token in Keychain/Keystore (🟠 secret-at-rest, spec §8.1)
-- [ ] Auto-refresh + graceful expiry handling
-- [ ] Sign-out clears all local secrets, including any `K_sess`
-- [ ] `profiles` row created on signup, regardless of method
-- [ ] Email verification flow (if enabled) handled
-- [ ] Account-linking policy enforced: a first-time method with no existing link always creates a
+- [x] Session persistence — refresh token in Keychain/Keystore (🟠 secret-at-rest, spec §8.1)
+- [x] Auto-refresh + graceful expiry handling
+- [ ] Sign-out clears all local secrets, including any `K_sess` *(`K_sess` doesn't exist until
+      P1-4.0 — clearing it is that task's job; today's `signOut()` only clears the Supabase
+      session, which is all there is to clear yet)*
+- [x] `profiles` row created on signup, regardless of method
+- [x] Email verification flow (if enabled) handled
+- [x] Account-linking policy enforced: a first-time method with no existing link always creates a
       new account; linking email + phone to one identity only happens as a deliberate
       already-authenticated action, never an automatic merge at verify time (spec §1.2.1)
-- [ ] Tested on both platforms, both methods
+      *(enforced by omission — no client, mock or real, attempts a merge anywhere in this feature)*
+- [ ] Tested on both platforms, both methods *(no physical device or simulator on this machine,
+      brief §2 — unit/typecheck/lint only; genuinely deferred, not faked)*
 
 **Assumption:** BaaS auth supports email/password and reset email flow; Twilio Verify account
 provisioned for the phone method (§1.2.1, confirmed 2026-08-05).

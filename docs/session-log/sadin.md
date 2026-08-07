@@ -4,6 +4,47 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-07 — P1-1.0 client-side scope substantially complete; caught an abstraction violation from my own prior session
+
+**Branches:** `feature/P1-1.0-signup-login-reset`
+**Landed:** 3 commits pushed to the feature branch (not yet merged to `stage`/`main`):
+refactor to the `AuthClient` abstraction, auth-choice + Method B phone/OTP screens, password
+reset request/confirm + deep-link config.
+
+**Decided, and why:** the 2026-08-06 foundation/signup/login commits had `SignupScreen`/
+`LoginScreen` call `api.ts`, which called `@supabase/supabase-js` directly — exactly what the
+P1-1.0 execution brief's §3.5 rules out, and precisely because `P0-3.0` is still unmerged
+(`feature/P0-3.0-baas-setup` isn't an ancestor of this branch). Refactored to the `AuthClient`
+interface (`client.ts`) with `supabaseAuthClient.ts` / `mockAuthClient.ts` implementations and
+`AuthClientContext.tsx` as the composition root, before adding anything else. Two deliberate
+deviations from the brief, both explained in the refactor commit body: result types instead of
+`Promise<void>` on three methods, and a real (lazily-configured) `supabaseAuthClient` instead of
+the brief's suggested hardcoded `throw new Error('P0-3.0')` stub — the latter would need deleting
+the moment P0-3.0 lands, the former already works then with no further change.
+
+Also added `confirmPasswordReset` to `AuthClient` — not in the brief's §3.5 interface sketch, but
+without it the reset-link deep link lands the user in the app with nothing to do. Flagged in
+`client.ts` rather than silently bolted on.
+
+**Blocked / needs someone else:**
+
+- Twilio Verify configuration itself (P0-3.0) — Method B's client-side flow is built against the
+  `AuthClient` abstraction and works with the mock, but can't be exercised against a real phone
+  number until that lands.
+- Nothing in this task can be run on a physical device or simulator from this machine — typecheck/
+  lint/test only. Deep-link config (URL scheme in `Info.plist`/`AndroidManifest.xml`, RN `linking`
+  config) is therefore unverified, not untested-in-principle. Left unticked in `TODO-phase-1.md`
+  where the brief's own DoD says to.
+
+**Gotcha worth stealing:** the 2026-08-06 entry above says the build machine is now macOS with
+Node/git already present. **This session ran on a third machine** — Windows, with neither `git`
+nor `node` installed at all, not even the PowerShell-workaround Windows the P1-1.0 brief's §2
+describes. Installed both via `winget` (`Git.Git`, `OpenJS.NodeJS.LTS`) before anything else was
+possible. Worth checking `git --version` / `node --version` before assuming *either* the brief's
+Windows section or yesterday's macOS note describes whatever machine you're actually on — three
+different environments in three days on one small team.
+
+
 ## 2026-08-06 — §4 and §5 audited before anyone builds against them; P0-1.0 landed
 
 **Branches:** `feature/P0-1.0-architecture-signoff`, `feature/P0-2.0-ble-protocol`,
