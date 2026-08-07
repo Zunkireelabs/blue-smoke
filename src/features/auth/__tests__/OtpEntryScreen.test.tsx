@@ -90,4 +90,20 @@ describe('OtpEntryScreen', () => {
     expect(spy).toHaveBeenCalledWith(PHONE);
     expect(findByLabel(renderer, 'Resend code in 30s').props.disabled).toBe(true);
   });
+
+  it('recovers from a thrown error instead of stranding the form', async () => {
+    const client = createMockAuthClient();
+    await client.requestPhoneOtp(PHONE);
+    jest.spyOn(client, 'verifyPhoneOtp').mockRejectedValue(new Error('SUPABASE_URL is not set'));
+    const renderer = renderOtp(client);
+
+    await act(async () => {
+      await findInput(renderer, 'Verification code').props.onChangeText(MOCK_OTP_CODE);
+    });
+
+    expect(renderedText(renderer)).toContain('Something went wrong. Please try again.');
+    // The bug this guards against: a rejected await skips the status reset,
+    // leaving the input permanently non-editable with no way back.
+    expect(findInput(renderer, 'Verification code').props.editable).toBe(true);
+  });
 });

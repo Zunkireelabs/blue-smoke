@@ -85,4 +85,17 @@ describe('LoginScreen', () => {
 
     expect(renderedText(renderer)).toContain('Signed in');
   });
+
+  it('recovers from a thrown error instead of stranding the form', async () => {
+    const client = createMockAuthClient();
+    jest.spyOn(client, 'signInWithEmail').mockRejectedValue(new Error('SUPABASE_URL is not set'));
+    const renderer = renderLogin(client);
+
+    await fillAndSubmit(renderer, { email: 'real@example.com', password: 'correct-password' });
+
+    expect(renderedText(renderer)).toContain('Something went wrong. Please try again.');
+    // The bug this guards against: a rejected await skips the status reset,
+    // leaving the button permanently disabled/loading with no way back.
+    expect(findByLabel(renderer, 'Log in').props.disabled).toBe(false);
+  });
 });

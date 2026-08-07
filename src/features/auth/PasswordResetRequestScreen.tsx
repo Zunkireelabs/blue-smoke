@@ -60,14 +60,22 @@ export function PasswordResetRequestScreen() {
     }
 
     setStatus('submitting');
-    const result = await authClient.requestPasswordReset(parsed.data.email);
-    if (!result.ok) {
-      setStatus('idle');
-      setFormError(result.error);
-      return;
-    }
+    try {
+      const result = await authClient.requestPasswordReset(parsed.data.email);
+      if (!result.ok) {
+        setStatus('idle');
+        setFormError(result.error);
+        return;
+      }
 
-    setStatus('checkEmail');
+      setStatus('checkEmail');
+    } catch {
+      // supabaseAuthClient's contract is that no method throws — this is
+      // defence in depth, so a screen can never strand itself even if that
+      // contract is ever violated (see execution brief).
+      setStatus('idle');
+      setFormError('Something went wrong. Please try again.');
+    }
   }
 
   if (status === 'checkEmail') {

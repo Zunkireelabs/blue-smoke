@@ -52,16 +52,25 @@ export function OtpEntryScreen() {
   async function verify(digits: string) {
     setFormError(null);
     setStatus('submitting');
-    const result = await authClient.verifyPhoneOtp(phone, digits);
+    try {
+      const result = await authClient.verifyPhoneOtp(phone, digits);
 
-    if (!result.ok) {
+      if (!result.ok) {
+        setStatus('idle');
+        setFormError(result.error);
+        setCode('');
+        return;
+      }
+
+      setStatus('signedIn');
+    } catch {
+      // supabaseAuthClient's contract is that no method throws — this is
+      // defence in depth, so a screen can never strand itself even if that
+      // contract is ever violated (see execution brief).
       setStatus('idle');
-      setFormError(result.error);
+      setFormError('Something went wrong. Please try again.');
       setCode('');
-      return;
     }
-
-    setStatus('signedIn');
   }
 
   function handleChangeCode(text: string) {
@@ -74,13 +83,17 @@ export function OtpEntryScreen() {
 
   async function handleResend() {
     setFormError(null);
-    const result = await authClient.requestPhoneOtp(phone);
-    if (!result.ok) {
-      setFormError(result.error);
-      return;
+    try {
+      const result = await authClient.requestPhoneOtp(phone);
+      if (!result.ok) {
+        setFormError(result.error);
+        return;
+      }
+      setCode('');
+      setCooldown(RESEND_COOLDOWN_SECONDS);
+    } catch {
+      setFormError('Something went wrong. Please try again.');
     }
-    setCode('');
-    setCooldown(RESEND_COOLDOWN_SECONDS);
   }
 
   if (status === 'signedIn') {

@@ -63,17 +63,25 @@ export function PhoneInputScreen() {
     }
 
     setStatus('submitting');
-    const result = await authClient.requestPhoneOtp(e164.data);
-    setStatus('idle');
+    try {
+      const result = await authClient.requestPhoneOtp(e164.data);
 
-    if (!result.ok) {
-      // Mirrors Method A: no branching on the failure reason here beyond
-      // rendering it verbatim.
-      setFormError(result.error);
-      return;
+      if (!result.ok) {
+        // Mirrors Method A: no branching on the failure reason here beyond
+        // rendering it verbatim.
+        setFormError(result.error);
+        return;
+      }
+
+      navigation.navigate('OtpVerify', { phone: e164.data });
+    } catch {
+      // supabaseAuthClient's contract is that no method throws — this is
+      // defence in depth, so the screen can never strand itself even if
+      // that contract is ever violated (see execution brief).
+      setFormError('Something went wrong. Please try again.');
+    } finally {
+      setStatus('idle');
     }
-
-    navigation.navigate('OtpVerify', { phone: e164.data });
   }
 
   const isSubmitting = status === 'submitting';

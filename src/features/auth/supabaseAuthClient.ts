@@ -33,6 +33,26 @@ import { RESET_PASSWORD_REDIRECT_URL } from './deepLink';
 const GENERIC_LOGIN_ERROR = 'Incorrect email or password.';
 
 /**
+ * P1-1.0 follow-up (docs/execution-briefs/P1-1.0-followup-auth-exception-paths.md):
+ * every method below honours its own `Promise<AuthResult<T>>` signature — no
+ * path may throw. `getSupabaseClient()` throws by design when config is
+ * missing (correct — loud at the boundary), so each method's whole body runs
+ * through this wrapper rather than trusting individual call sites to catch
+ * it. The message is deliberately generic: coaching, not diagnostic, and
+ * never names the vendor (CLAUDE.md's "never a stack trace... never the word
+ * Supabase").
+ */
+const UNEXPECTED_ERROR = "We couldn't reach the server. Check your connection and try again.";
+
+async function runSafely<T>(fn: () => Promise<AuthResult<T>>): Promise<AuthResult<T>> {
+  try {
+    return await fn();
+  } catch {
+    return { ok: false, error: UNEXPECTED_ERROR };
+  }
+}
+
+/**
  * §5.2.1: `profiles` has no DB trigger creating a row on signup — it is a
  * plain table with `id references auth.users(id)` and an `own_profile` RLS
  * policy the client satisfies directly (`id = auth.uid()`). TODO-phase-1.md
@@ -40,47 +60,53 @@ const GENERIC_LOGIN_ERROR = 'Incorrect email or password.';
  * here, called from both the email and phone success paths.
  */
 async function ensureProfileRow(userId: string): Promise<void> {
-  const supabase = getSupabaseClient();
-  // upsert, not insert: verifyPhoneOtp / signUp can both race a retry or an
-  // already-linked account; a duplicate call must not error.
-  const { error } = await supabase.from('profiles').upsert({ id: userId }, { onConflict: 'id' });
-  if (error) {
+  try {
+    const supabase = getSupabaseClient();
+    // upsert, not insert: verifyPhoneOtp / signUp can both race a retry or an
+    // already-linked account; a duplicate call must not error.
+    await supabase.from('profiles').upsert({ id: userId }, { onConflict: 'id' });
+  } catch {
     // Non-fatal to the caller's auth result — the session is real either
-    // way. Surfacing this as an auth failure would be misleading.
-    throw new Error(`profiles row upsert failed: ${error.message}`);
+    // way. Surfacing this as an auth failure would be misleading, and it
+    // must not escape as an unhandled rejection either (the bug this file
+    // exists to fix).
   }
 }
 
 export const supabaseAuthClient: AuthClient = {
   async signUpWithEmail(email, password): Promise<AuthResult<AuthOutcome>> {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.auth.signUp({ email, password });
 
-    if (error || !data.user) {
-      return { ok: false, error: error?.message ?? 'Sign-up failed.' };
-    }
+      if (error || !data.user) {
+        return { ok: false, error: error?.message ?? 'Sign-up failed.' };
+      }
 
-    await ensureProfileRow(data.user.id);
+      await ensureProfileRow(data.user.id);
 
-    // supabase-js returns session: null when email confirmation is
-    // required, and a live session when it isn't — this project hasn't
-    // decided/configured that yet (P0-3.0's auth-config box is still open),
-    // so both outcomes are handled rather than assuming one.
-    return {
-      ok: true,
-      data: { userId: data.user.id, sessionEstablished: data.session != null },
-    };
+      // supabase-js returns session: null when email confirmation is
+      // required, and a live session when it isn't — this project hasn't
+      // decided/configured that yet (P0-3.0's auth-config box is still open),
+      // so both outcomes are handled rather than assuming one.
+      return {
+        ok: true,
+        data: { userId: data.user.id, sessionEstablished: data.session != null },
+      };
+    });
   },
 
   async signInWithEmail(email, password): Promise<AuthResult<AuthOutcome>> {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error || !data.session || !data.user) {
-      return { ok: false, error: GENERIC_LOGIN_ERROR };
-    }
+      if (error || !data.session || !data.user) {
+        return { ok: false, error: GENERIC_LOGIN_ERROR };
+      }
 
-    return { ok: true, data: { userId: data.user.id, sessionEstablished: true } };
+      return { ok: true, data: { userId: data.user.id, sessionEstablished: true } };
+    });
   },
 
   /**
@@ -90,21 +116,23 @@ export const supabaseAuthClient: AuthClient = {
    * operational blocker, not a code one; this call is correct either way.
    */
   async requestPasswordReset(email): Promise<AuthResult> {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: RESET_PASSWORD_REDIRECT_URL,
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: RESET_PASSWORD_REDIRECT_URL,
+      });
+
+      if (error) {
+        // Password-reset requests are themselves an enumeration vector (does
+        // this email have an account?). Supabase's own behavior here does not
+        // error on an unknown email, so this branch should only fire for real
+        // failures (rate limit, network, SMTP misconfiguration) — safe to
+        // surface as-is.
+        return { ok: false, error: error.message };
+      }
+
+      return { ok: true, data: undefined };
     });
-
-    if (error) {
-      // Password-reset requests are themselves an enumeration vector (does
-      // this email have an account?). Supabase's own behavior here does not
-      // error on an unknown email, so this branch should only fire for real
-      // failures (rate limit, network, SMTP misconfiguration) — safe to
-      // surface as-is.
-      return { ok: false, error: error.message };
-    }
-
-    return { ok: true, data: undefined };
   },
 
   /**
@@ -114,50 +142,58 @@ export const supabaseAuthClient: AuthClient = {
    * this screen ever renders; nothing here re-parses the URL.
    */
   async confirmPasswordReset(newPassword): Promise<AuthResult> {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
 
-    if (error) {
-      return { ok: false, error: error.message };
-    }
+      if (error) {
+        return { ok: false, error: error.message };
+      }
 
-    return { ok: true, data: undefined };
+      return { ok: true, data: undefined };
+    });
   },
 
   /** Method B (§1.2.1), step 1: send the SMS code via Twilio Verify. */
   async requestPhoneOtp(phone): Promise<AuthResult> {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.signInWithOtp({ phone });
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.signInWithOtp({ phone });
 
-    if (error) {
-      return { ok: false, error: error.message };
-    }
+      if (error) {
+        return { ok: false, error: error.message };
+      }
 
-    return { ok: true, data: undefined };
+      return { ok: true, data: undefined };
+    });
   },
 
   /** Method B (§1.2.1), step 2: verify the code and establish the session. */
   async verifyPhoneOtp(phone, code): Promise<AuthResult<AuthOutcome>> {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.verifyOtp({ phone, token: code, type: 'sms' });
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.auth.verifyOtp({ phone, token: code, type: 'sms' });
 
-    if (error || !data.session || !data.user) {
-      return { ok: false, error: 'Incorrect or expired code.' };
-    }
+      if (error || !data.session || !data.user) {
+        return { ok: false, error: 'Incorrect or expired code.' };
+      }
 
-    await ensureProfileRow(data.user.id);
+      await ensureProfileRow(data.user.id);
 
-    return { ok: true, data: { userId: data.user.id, sessionEstablished: true } };
+      return { ok: true, data: { userId: data.user.id, sessionEstablished: true } };
+    });
   },
 
   async signOut(): Promise<AuthResult> {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.signOut();
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.signOut();
 
-    if (error) {
-      return { ok: false, error: error.message };
-    }
+      if (error) {
+        return { ok: false, error: error.message };
+      }
 
-    return { ok: true, data: undefined };
+      return { ok: true, data: undefined };
+    });
   },
 };

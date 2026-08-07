@@ -68,4 +68,19 @@ describe('ResetPasswordConfirmScreen', () => {
 
     expect(renderedText(renderer)).toContain('Recovery session expired.');
   });
+
+  it('recovers from a thrown error instead of stranding the form', async () => {
+    const client = createMockAuthClient();
+    jest
+      .spyOn(client, 'confirmPasswordReset')
+      .mockRejectedValue(new Error('SUPABASE_URL is not set'));
+    const renderer = renderScreen(client);
+
+    await fillAndSubmit(renderer, { password: 'newpassword123', confirmPassword: 'newpassword123' });
+
+    expect(renderedText(renderer)).toContain('Something went wrong. Please try again.');
+    // The bug this guards against: a rejected await skips the status reset,
+    // leaving the button permanently disabled/loading with no way back.
+    expect(findByLabel(renderer, 'Update password').props.disabled).toBe(false);
+  });
 });
