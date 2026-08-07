@@ -1,14 +1,17 @@
 import { DeviceCore } from '../deviceCore';
 import { FakeClock } from '../clock';
 import {
+  AUTH_BACKOFF,
   AUTH_NONCE_LENGTH_BYTES,
   AUTH_NONCE_TTL_MS,
+  AUTH_RESPONSE_FRAME_2_LAYOUT,
   COMMAND_RESULT_LAYOUT,
   LOCK_STATE_LAYOUT,
   LockStateFlagBit,
   ResultCode,
   SESSION_EXPIRY_MAX_DAYS,
 } from '../../../src/features/ble/protocol';
+import { readUint24LE, writeUint24LE } from '../byteLayout';
 import { buildHandshakeFrames } from './harness';
 
 const K_DEV = Buffer.alloc(16, 0x11);
@@ -73,7 +76,7 @@ describe('DeviceCore — §4.5 handshake', () => {
     expect(core.isAuthenticated()).toBe(false);
   });
 
-  test('frame 2 before frame 1 resets the handshake instead of evaluating garbage', () => {
+  test('FW-19(a) — frame 2 sent first is discarded by frameIndex, no session opens', () => {
     const clock = new FakeClock(0);
     const core = makeCore(clock);
     core.connect();
@@ -87,15 +90,74 @@ describe('DeviceCore — §4.5 handshake', () => {
       expiresAtDeltaSeconds: 3600,
     });
 
-    // Out-of-order: frame 2 arrives with no frame 1 buffered.
-    core.writeAuthResponseFrame(2, frame2);
-    // No commandResult should have been written for the bogus frame 2.
+    // Out-of-order: frame 2 (frameIndex = 0x02) arrives while FRAME_1 is expected.
+    core.writeAuthResponseFrame(frame2);
+    // No commandResult should have been written for the bogus frame 2 — a framing
+    // reset is silent, not an evaluated (and failed) handshake attempt.
     expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+    expect(core.isAuthenticated()).toBe(false);
 
-    // The reset must leave the core ready for a clean attempt.
+    // FW-19(c) — the reset leaves the core ready for a clean attempt, no reconnect needed.
     core.write('authResponse', frame1);
     core.write('authResponse', frame2);
     expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+  });
+
+  test('FW-19(b) — frame 1 sent twice discards the first via frameIndex mismatch, recovers without reconnect', () => {
+    const clock = new FakeClock(0);
+    const core = makeCore(clock);
+    core.connect();
+    const nonce = core.read('authChallenge');
+
+    const { frame1, frame2 } = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: 3600,
+    });
+
+    // First frame 1: accepted, device now expects FRAME_2.
+    core.write('authResponse', frame1);
+    // A second frame 1 arrives instead — frameIndex (0x01) does not match the
+    // expected FRAME_2, so per F12 this is a framing reset: no commandResult,
+    // pending state discarded, device back to expecting a fresh FRAME_1.
+    core.write('authResponse', frame1);
+    expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+    expect(core.isAuthenticated()).toBe(false);
+
+    // FW-19(c) — a clean frame 1 → frame 2 sequence still succeeds, no reconnect.
+    core.write('authResponse', frame1);
+    core.write('authResponse', frame2);
+    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+  });
+
+  test('FW-19(c) — a framing reset consumes no F6 backoff attempt and does not invalidate N', () => {
+    const clock = new FakeClock(0);
+    const core = makeCore(clock);
+    core.connect();
+    const nonce = core.read('authChallenge');
+
+    const { frame1, frame2 } = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: 3600,
+    });
+
+    // Drive AUTH_BACKOFF.shortThresholdFailures - 1 worth of framing resets — if a
+    // reset burned an F6 attempt, this alone would trip the short backoff.
+    for (let i = 0; i < AUTH_BACKOFF.shortThresholdFailures - 1; i += 1) {
+      core.writeAuthResponseFrame(frame2); // frame 2 first — a reset, every time
+    }
+
+    // The connection's original nonce N must still be live (not invalidated by any
+    // reset) — a clean frame1 → frame2 handshake using it must still succeed.
+    core.write('authResponse', frame1);
+    core.write('authResponse', frame2);
+    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+    expect(core.isAuthenticated()).toBe(true);
   });
 
   test('a wrong K_dev produces a mismatched proof → AUTH_FAILED', () => {
@@ -132,7 +194,8 @@ describe('DeviceCore — §4.5 handshake', () => {
       expiresAtDeltaSeconds: 3600,
     });
     const tamperedFrame2 = Buffer.from(frame2);
-    tamperedFrame2.writeUInt32LE(tamperedFrame2.readUInt32LE(16) + 1, 16); // bump expiresAtDelta by 1s
+    const offset = AUTH_RESPONSE_FRAME_2_LAYOUT.expiresAtDelta.offset;
+    writeUint24LE(tamperedFrame2, offset, readUint24LE(tamperedFrame2, offset) + 1); // bump expiresAtDelta by 1s
 
     core.write('authResponse', frame1);
     core.write('authResponse', tamperedFrame2);
@@ -161,6 +224,33 @@ describe('DeviceCore — §4.5 handshake', () => {
 
     // Advance past the cap (90 days) — the session must already be gone,
     // proving the device capped it rather than honouring the requested value.
+    clock.advanceMs(SESSION_EXPIRY_MAX_DAYS * 24 * 60 * 60 * 1000 + 1000);
+    core.tick();
+    expect(core.isAuthenticated()).toBe(false);
+  });
+
+  test('FW-20 — expiresAtDelta of 0xFFFFFF (uint24 max, ~194 days) clamps to 90 days, not rejected', () => {
+    const clock = new FakeClock(0);
+    const core = makeCore(clock);
+    core.connect();
+    const nonce = core.read('authChallenge');
+
+    const uint24Max = 0xffffff; // ~194 days — fits the wire field exactly, no overflow
+    const { frame1, frame2 } = buildHandshakeFrames({
+      kDev: K_DEV,
+      sessionId: SESSION_ID,
+      keyGeneration: 1,
+      nonce,
+      expiresAtDeltaSeconds: uint24Max,
+    });
+    core.write('authResponse', frame1);
+    core.write('authResponse', frame2);
+    // Not rejected: the handshake still succeeds.
+    expect(readResultCode(core.read('commandResult'))).toBe(ResultCode.OK);
+    expect(core.isAuthenticated()).toBe(true);
+
+    // Not honoured: the session is gone at 90 days + 1s, long before the
+    // ~194 days 0xFFFFFF would have granted if uncapped.
     clock.advanceMs(SESSION_EXPIRY_MAX_DAYS * 24 * 60 * 60 * 1000 + 1000);
     core.tick();
     expect(core.isAuthenticated()).toBe(false);

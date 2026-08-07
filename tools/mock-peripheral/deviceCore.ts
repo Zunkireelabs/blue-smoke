@@ -11,14 +11,11 @@
  * reviewed by the firmware team — OQ-6). Each is a judgement call, written
  * down per brief §8 rather than guessed silently:
  *
- *  1. authResponse (C3) is one 20-byte characteristic written twice in a
- *     mandatory order. The wire bytes carry no frame-index discriminator —
- *     firmware can only track order by an internal cursor. This mock models
- *     that cursor explicitly (`awaitingFrame`) and exposes both an
- *     order-implicit `write('authResponse', bytes)` (advances positionally,
- *     the shape every other characteristic uses) and an explicit
- *     `writeAuthResponseFrame(frame, bytes)` for tests that need to force a
- *     specific frame — including deliberately out-of-order.
+ *  1. RESOLVED by §4.5 (v1.4) F12. authResponse (C3) frames now carry
+ *     `frameIndex` in byte 0, so the mock validates frame identity from the
+ *     wire byte itself (never from write order or an internal cursor) —
+ *     see `writeAuthResponseFrame` below. Left numbered here so ambiguities
+ *     #2–#6 keep their original numbers.
  *  2. §4.5 step 5d says a handshake mismatch "writes AUTH_FAILED to
  *     commandResult", but commandResult's `commandId` field is defined only
  *     for the 7 §4.6 command ids (0x01–0x07). This mock echoes `0x00` as a
@@ -29,7 +26,10 @@
  *     *commands*, not only handshake mismatches — so the failure counter is
  *     shared across both. Backoff itself only blocks the next handshake
  *     attempt (RATE_LIMITED on authResponse); it does not revoke an
- *     already-authenticated session's commands.
+ *     already-authenticated session's commands. Narrowed by §4.5 (v1.4)
+ *     F12: a framing reset (an authResponse frame whose `frameIndex` is not
+ *     the one expected next) is explicitly NOT an auth failure — it never
+ *     touches this counter and never invalidates the connection nonce `N`.
  *  4. `commandResult`'s SESSION_EXPIRED (0x05) is distinct from the passive
  *     lock F5 performs on `tick()`. This mock fires SESSION_EXPIRED on the
  *     first `lockCommand` write that lands after an expiry the device has
@@ -58,6 +58,7 @@ import {
   AUTOLOCK_GRACE_MS_DEFAULT,
   AUTOLOCK_GRACE_MS_MAX,
   AUTOLOCK_GRACE_MS_MIN,
+  AuthResponseFrameIndex,
   BLE_CHARACTERISTIC_UUIDS,
   CHARACTERISTIC_LENGTH_BYTES,
   COMMAND_RESULT_LAYOUT,
@@ -82,11 +83,12 @@ import type { Clock } from './clock';
 import {
   readBytes,
   readUint16LE,
+  readUint24LE,
   readUint32LE,
   readUint8,
   writeBytes,
   writeUint16LE,
-  writeUint32LE,
+  writeUint24LE,
   writeUint8,
 } from './byteLayout';
 import { randomBytes } from 'node:crypto';
@@ -117,8 +119,6 @@ export interface DeviceCoreConfig {
 }
 
 type ForcedHandshakeResult = 'AUTH_FAILED' | 'RATE_LIMITED';
-
-type AwaitingFrame = 1 | 2;
 
 interface PendingFrame1 {
   sessionId: Buffer;
@@ -160,7 +160,8 @@ export class DeviceCore {
   private currentNonce: Buffer | null = null;
   private nonceIssuedAtMs = 0;
   private nonceConsumed = false;
-  private awaitingFrame: AwaitingFrame = 1;
+  /** §4.5 (v1.4) F12 — the frameIndex expected next; never a position/order cursor. */
+  private expectedFrameIndex: AuthResponseFrameIndex = AuthResponseFrameIndex.FRAME_1;
   private pendingFrame1: PendingFrame1 | null = null;
 
   private session: AuthenticatedSession | null = null;
@@ -207,7 +208,7 @@ export class DeviceCore {
     this.currentNonce = Buffer.from(this.nonceSource().slice(0, AUTH_NONCE_LENGTH_BYTES));
     this.nonceIssuedAtMs = this.clock.nowMs();
     this.nonceConsumed = false;
-    this.awaitingFrame = 1;
+    this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
     this.pendingFrame1 = null;
     this.notify('authChallenge', this.currentNonce);
   }
@@ -221,6 +222,7 @@ export class DeviceCore {
     this.applyTimeDrivenTransitions();
     this.connected = false;
     this.currentNonce = null;
+    this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
     this.pendingFrame1 = null;
     this.session = null;
     this.connectionNonceForTagging = null;
@@ -233,6 +235,7 @@ export class DeviceCore {
   powerCycle(): void {
     this.connected = false;
     this.currentNonce = null;
+    this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
     this.pendingFrame1 = null;
     this.session = null;
     this.connectionNonceForTagging = null;
@@ -354,7 +357,7 @@ export class DeviceCore {
     }
     switch (characteristic) {
       case 'authResponse':
-        this.writeAuthResponseFrame(this.awaitingFrame, bytes);
+        this.writeAuthResponseFrame(bytes);
         return;
       case 'lockCommand':
         this.handleLockCommand(bytes);
@@ -424,13 +427,30 @@ export class DeviceCore {
   // ── §4.5 handshake ──────────────────────────────────────────────────────
 
   /**
-   * Explicit frame API — see ambiguity #1 in the module doc comment.
-   * `write('authResponse', bytes)` calls this positionally; tests that need
-   * to force a specific (possibly wrong) frame call it directly.
+   * §4.5 (v1.4) F12 — frame identity comes ONLY from `frameIndex` (byte 0 of
+   * the wire bytes), never from write order or a position cursor. This is
+   * also the explicit test hook (see ambiguity #1 in the module doc
+   * comment): tests can pass bytes with any `frameIndex` value, including a
+   * repeated or wrong one, to exercise F12's reset path directly.
    */
-  writeAuthResponseFrame(frame: AwaitingFrame, bytes: Uint8Array): void {
+  writeAuthResponseFrame(bytes: Uint8Array): void {
     this.applyTimeDrivenTransitions();
-    if (frame === 1) {
+    const frameIndex = readUint8(bytes, AUTH_RESPONSE_FRAME_1_LAYOUT.frameIndex.offset);
+
+    if (frameIndex !== this.expectedFrameIndex) {
+      // F12 — a frameIndex that is not the one expected next (a repeated
+      // frame 1, a frame 2 arriving first, or any other value) discards all
+      // pending handshake state and awaits a fresh frame 1. This is a
+      // FRAMING reset, not a cryptographic failure: it must not touch
+      // consecutiveAuthFailures and must not invalidate the connection
+      // nonce N (evaluateHandshake, and therefore nonce consumption, is
+      // never reached on this path).
+      this.pendingFrame1 = null;
+      this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
+      return;
+    }
+
+    if (frameIndex === AuthResponseFrameIndex.FRAME_1) {
       const sessionId = readBytes(
         bytes,
         AUTH_RESPONSE_FRAME_1_LAYOUT.sessionId.offset,
@@ -438,26 +458,22 @@ export class DeviceCore {
       );
       const keyGeneration = readUint8(bytes, AUTH_RESPONSE_FRAME_1_LAYOUT.keyGeneration.offset);
       this.pendingFrame1 = { sessionId: Buffer.from(sessionId), keyGeneration };
-      this.awaitingFrame = 2;
+      this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_2;
       return;
     }
 
-    // frame === 2
-    if (this.awaitingFrame !== 2 || this.pendingFrame1 === null) {
-      // Out-of-order: frame 2 with no valid frame 1 buffered. Reset — the
-      // whole handshake must restart from frame 1 (§4.5: "an out-of-order
-      // frame resets the handshake").
-      this.pendingFrame1 = null;
-      this.awaitingFrame = 1;
-      return;
+    // frameIndex === FRAME_2 and matched expectation. The only way
+    // expectedFrameIndex reaches FRAME_2 is via an accepted frame 1 above,
+    // so pendingFrame1 is guaranteed set here.
+    if (this.pendingFrame1 === null) {
+      throw new Error('DeviceCore: invariant violated — expected FRAME_2 with no pending frame 1');
     }
-
     const frame1 = this.pendingFrame1;
     this.pendingFrame1 = null;
-    this.awaitingFrame = 1;
+    this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
 
     const proof = readBytes(bytes, AUTH_RESPONSE_FRAME_2_LAYOUT.proof.offset, AUTH_RESPONSE_FRAME_2_LAYOUT.proof.length);
-    const expiresAtDelta = readUint32LE(bytes, AUTH_RESPONSE_FRAME_2_LAYOUT.expiresAtDelta.offset);
+    const expiresAtDelta = readUint24LE(bytes, AUTH_RESPONSE_FRAME_2_LAYOUT.expiresAtDelta.offset);
 
     this.evaluateHandshake(frame1, proof, expiresAtDelta);
   }
@@ -497,9 +513,11 @@ export class DeviceCore {
       16,
     );
 
-    // §4.5 proof = CMAC(K_sess, 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3] ‖ expiresAtDelta)
-    const expiresAtDeltaBytes = Buffer.alloc(4);
-    writeUint32LE(expiresAtDeltaBytes, 0, expiresAtDeltaSeconds);
+    // §4.5 (v1.4) proof = CMAC(K_sess, 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3] ‖ expiresAtDelta),
+    // expiresAtDelta now 3 bytes (uint24 LE) — total input 25B, not 26B. frameIndex is
+    // deliberately excluded (§4.5 (v1.4), §4.1 of the addendum): it is framing, not security.
+    const expiresAtDeltaBytes = Buffer.alloc(3);
+    writeUint24LE(expiresAtDeltaBytes, 0, expiresAtDeltaSeconds);
     const proofInput = Buffer.concat([
       Buffer.from([AUTH_PROOF_FIXED_PREFIX]),
       Buffer.from([PROTOCOL_VERSION]),

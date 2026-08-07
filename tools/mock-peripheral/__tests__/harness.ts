@@ -13,8 +13,12 @@ import { aesCmac, hkdfSha256 } from '../crypto';
 import {
   AUTH_HKDF_INFO,
   AUTH_PROOF_FIXED_PREFIX,
+  AUTH_RESPONSE_FRAME_1_LAYOUT,
+  AUTH_RESPONSE_FRAME_2_LAYOUT,
+  AuthResponseFrameIndex,
   PROTOCOL_VERSION,
 } from '../../../src/features/ble/protocol';
+import { writeUint24LE } from '../byteLayout';
 
 export function deriveKSess(kDev: Uint8Array, sessionId: Uint8Array, keyGeneration: number): Buffer {
   return hkdfSha256(
@@ -41,12 +45,15 @@ export function buildHandshakeFrames(options: {
   const { kDev, sessionId, keyGeneration, nonce, expiresAtDeltaSeconds } = options;
   const kSess = deriveKSess(kDev, sessionId, keyGeneration);
 
+  // §4.5 (v1.4) frame 1: [ frameIndex=0x01 | session_id (16B) | keyGeneration (1B) | reserved (2B) ]
   const frame1 = Buffer.alloc(20, 0);
-  Buffer.from(sessionId).copy(frame1, 0);
-  frame1.writeUInt8(keyGeneration, 16);
+  frame1.writeUInt8(AuthResponseFrameIndex.FRAME_1, AUTH_RESPONSE_FRAME_1_LAYOUT.frameIndex.offset);
+  Buffer.from(sessionId).copy(frame1, AUTH_RESPONSE_FRAME_1_LAYOUT.sessionId.offset);
+  frame1.writeUInt8(keyGeneration, AUTH_RESPONSE_FRAME_1_LAYOUT.keyGeneration.offset);
 
-  const expiresAtDeltaBytes = Buffer.alloc(4);
-  expiresAtDeltaBytes.writeUInt32LE(expiresAtDeltaSeconds >>> 0, 0);
+  // §4.5 (v1.4) expiresAtDelta narrowed to uint24 LE (3B), inside the proof CMAC as sent.
+  const expiresAtDeltaBytes = Buffer.alloc(3);
+  writeUint24LE(expiresAtDeltaBytes, 0, expiresAtDeltaSeconds >>> 0);
 
   const proofInput = Buffer.concat([
     Buffer.from([AUTH_PROOF_FIXED_PREFIX]),
@@ -57,7 +64,11 @@ export function buildHandshakeFrames(options: {
   ]);
   const proof = aesCmac(kSess, proofInput).subarray(0, 16);
 
-  const frame2 = Buffer.concat([proof, expiresAtDeltaBytes]);
+  // §4.5 (v1.4) frame 2: [ frameIndex=0x02 | proof (16B) | expiresAtDelta (3B, uint24 LE) ]
+  const frame2 = Buffer.alloc(20, 0);
+  frame2.writeUInt8(AuthResponseFrameIndex.FRAME_2, AUTH_RESPONSE_FRAME_2_LAYOUT.frameIndex.offset);
+  proof.copy(frame2, AUTH_RESPONSE_FRAME_2_LAYOUT.proof.offset);
+  expiresAtDeltaBytes.copy(frame2, AUTH_RESPONSE_FRAME_2_LAYOUT.expiresAtDelta.offset);
 
   return { frame1, frame2, kSess };
 }
