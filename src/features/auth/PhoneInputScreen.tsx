@@ -1,17 +1,9 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AsYouType, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js/min';
+import { Button, Screen, Text, TextField, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { CountryPicker } from './CountryPicker';
@@ -87,19 +79,19 @@ export function PhoneInputScreen() {
   const isSubmitting = status === 'submitting';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Enter your phone number</Text>
+    <Screen scroll>
+      <Text variant="title" style={styles.title}>
+        Enter your phone number
+      </Text>
 
-        <Text style={styles.label}>Country</Text>
-        <CountryPicker value={country} onChange={handleCountryChange} />
+      <Text variant="label" tone="secondary" style={styles.label}>
+        Country
+      </Text>
+      <CountryPicker value={country} onChange={handleCountryChange} />
 
-        <Text style={styles.label}>Phone number</Text>
-        <TextInput
-          style={styles.input}
+      <View style={styles.field}>
+        <TextField
+          label="Phone number"
           value={phoneText}
           onChangeText={handleChangeText}
           keyboardType="phone-pad"
@@ -107,74 +99,37 @@ export function PhoneInputScreen() {
           editable={!isSubmitting}
           accessibilityLabel="Phone number"
         />
+      </View>
 
-        {formError && <Text style={styles.formError}>{formError}</Text>}
+      {formError && (
+        <Text variant="caption" tone="danger" style={styles.formError}>
+          {formError}
+        </Text>
+      )}
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={onSubmit}
-          disabled={isSubmitting}
-          accessibilityRole="button"
-          accessibilityLabel="Send code"
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Send code</Text>
-          )}
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <View style={styles.button}>
+        <Button label="Send code" onPress={onSubmit} disabled={isSubmitting} loading={isSubmitting} />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: tokens.spacing.lg,
   },
   label: {
-    fontSize: 14,
-    marginTop: 12,
-    marginBottom: 4,
-    color: '#333',
+    marginTop: tokens.spacing.md,
+    marginBottom: tokens.spacing.xs,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+  field: {
+    marginTop: tokens.spacing.xs,
   },
   formError: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 16,
+    marginTop: tokens.spacing.lg,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: tokens.spacing.xl,
   },
 });

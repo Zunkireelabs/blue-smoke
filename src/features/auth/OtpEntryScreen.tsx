@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
+import { Screen, Text, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 
@@ -91,18 +85,24 @@ export function OtpEntryScreen() {
 
   if (status === 'signedIn') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Signed in</Text>
-      </View>
+      <Screen>
+        <Text variant="title" style={styles.centerText}>
+          Signed in
+        </Text>
+      </Screen>
     );
   }
 
   const isSubmitting = status === 'submitting';
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Enter the code</Text>
-      <Text style={styles.body}>We sent a 6-digit code to {phone}.</Text>
+    <Screen>
+      <Text variant="title" style={styles.centerText}>
+        Enter the code
+      </Text>
+      <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
+        We sent a 6-digit code to {phone}.
+      </Text>
 
       <Pressable
         style={styles.segmentsRow}
@@ -112,7 +112,9 @@ export function OtpEntryScreen() {
       >
         {Array.from({ length: CODE_LENGTH }).map((_, i) => (
           <View key={i} style={styles.segment}>
-            <Text style={styles.segmentText}>{code[i] ?? ''}</Text>
+            <Text variant="title" style={styles.centerText}>
+              {code[i] ?? ''}
+            </Text>
           </View>
         ))}
       </Pressable>
@@ -129,8 +131,12 @@ export function OtpEntryScreen() {
         accessibilityLabel="Verification code"
       />
 
-      {formError && <Text style={styles.formError}>{formError}</Text>}
-      {isSubmitting && <ActivityIndicator style={styles.spinner} />}
+      {formError && (
+        <Text variant="caption" tone="danger" style={[styles.centerText, styles.formError]}>
+          {formError}
+        </Text>
+      )}
+      {isSubmitting && <ActivityIndicator style={styles.spinner} color={tokens.color.textPrimary} />}
 
       <Pressable
         onPress={handleResend}
@@ -139,49 +145,35 @@ export function OtpEntryScreen() {
         accessibilityLabel={cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
         style={styles.linkButton}
       >
-        <Text style={[styles.link, cooldown > 0 && styles.linkDisabled]}>
+        <Text variant="label" tone={cooldown > 0 ? 'secondary' : 'link'} style={styles.centerText}>
           {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
         </Text>
       </Pressable>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 8,
+  centerText: {
     textAlign: 'center',
   },
-  body: {
-    fontSize: 14,
-    color: '#444',
-    textAlign: 'center',
-    marginBottom: 24,
+  subtitle: {
+    marginTop: tokens.spacing.xs,
+    marginBottom: tokens.spacing.xl,
   },
   segmentsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 10,
+    gap: tokens.spacing.sm,
   },
   segment: {
-    width: 44,
+    width: tokens.touchTarget.minWidth,
     height: 52,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderColor: tokens.color.border,
+    borderRadius: tokens.radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  segmentText: {
-    fontSize: 22,
-    fontWeight: '600',
   },
   hiddenInput: {
     position: 'absolute',
@@ -190,26 +182,15 @@ const styles = StyleSheet.create({
     width: 1,
   },
   formError: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 16,
-    textAlign: 'center',
+    marginTop: tokens.spacing.lg,
   },
   spinner: {
-    marginTop: 16,
+    marginTop: tokens.spacing.lg,
   },
   linkButton: {
-    marginTop: 24,
+    marginTop: tokens.spacing.xl,
     alignItems: 'center',
-  },
-  link: {
-    color: '#1a1a1a',
-    fontSize: 14,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
-  },
-  linkDisabled: {
-    color: '#999',
-    textDecorationLine: 'none',
+    minHeight: tokens.touchTarget.minHeight,
+    justifyContent: 'center',
   },
 });
