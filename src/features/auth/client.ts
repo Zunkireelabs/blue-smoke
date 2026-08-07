@@ -47,6 +47,17 @@ export interface AuthClient {
   signUpWithEmail(email: string, password: string): Promise<AuthResult<AuthOutcome>>;
   signInWithEmail(email: string, password: string): Promise<AuthResult<AuthOutcome>>;
   requestPasswordReset(email: string): Promise<AuthResult>;
+  /**
+   * Addition beyond the brief's §3.5 interface sketch. The reset-link
+   * deep-link (TODO-phase-1.md P1-1.0: "Deep-link handling for the reset
+   * link on both platforms") lands the user back in the app with a live
+   * recovery session — without a method to actually set the new password,
+   * catching that link accomplishes nothing. Not in the brief because the
+   * brief's interface only covers the six actions it explicitly lists;
+   * flagged here rather than silently left out, per "where the spec is
+   * silent, say so and flag it."
+   */
+  confirmPasswordReset(newPassword: string): Promise<AuthResult>;
   requestPhoneOtp(phone: string): Promise<AuthResult>;
   verifyPhoneOtp(phone: string, code: string): Promise<AuthResult<AuthOutcome>>;
   signOut(): Promise<AuthResult>;

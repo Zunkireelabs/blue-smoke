@@ -1,4 +1,4 @@
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import { NavigationContainer, useNavigation, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SignupScreen } from '@/features/auth/SignupScreen';
@@ -6,6 +6,9 @@ import { LoginScreen } from '@/features/auth/LoginScreen';
 import { AuthMethodChoiceScreen } from '@/features/auth/AuthMethodChoiceScreen';
 import { PhoneInputScreen } from '@/features/auth/PhoneInputScreen';
 import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
+import { PasswordResetRequestScreen } from '@/features/auth/PasswordResetRequestScreen';
+import { ResetPasswordConfirmScreen } from '@/features/auth/ResetPasswordConfirmScreen';
+import { RESET_PASSWORD_URL_HOST, RESET_PASSWORD_URL_SCHEME } from '@/features/auth/deepLink';
 
 /**
  * Root param list — spec §9.2 app/navigation.tsx. Contested shared file
@@ -19,6 +22,26 @@ export type RootStackParamList = {
   Login: undefined;
   PhoneInput: undefined;
   OtpVerify: { phone: string };
+  PasswordReset: undefined;
+  ResetPasswordConfirm: undefined;
+};
+
+/**
+ * P1-1.0 §3.2 — deep-link config for the reset-password link
+ * (`deepLink.ts`). Maps `bluesmoke://reset-password` to the confirm screen.
+ * Native registration (URL scheme in Info.plist / intent-filter in
+ * AndroidManifest.xml) is separate — see those files — this is the RN side
+ * that turns an opened URL into a navigation action.
+ */
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: [`${RESET_PASSWORD_URL_SCHEME}://`],
+  config: {
+    screens: {
+      // Every other screen is unreachable by URL — only the one path this
+      // task's deep link needs is registered.
+      ResetPasswordConfirm: RESET_PASSWORD_URL_HOST,
+    },
+  },
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -73,7 +96,7 @@ const styles = StyleSheet.create({
 
 export function RootNavigator() {
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator initialRouteName="Home">
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="AuthChoice" component={AuthMethodChoiceScreen} />
@@ -81,6 +104,8 @@ export function RootNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="PhoneInput" component={PhoneInputScreen} />
         <Stack.Screen name="OtpVerify" component={OtpEntryScreen} />
+        <Stack.Screen name="PasswordReset" component={PasswordResetRequestScreen} />
+        <Stack.Screen name="ResetPasswordConfirm" component={ResetPasswordConfirmScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

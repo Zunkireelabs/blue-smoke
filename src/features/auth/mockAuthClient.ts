@@ -77,6 +77,13 @@ export function createMockAuthClient(options: MockAuthClientOptions = {}): MockA
       return { ok: true, data: undefined };
     },
 
+    async confirmPasswordReset(_newPassword): Promise<AuthResult> {
+      // No recovery-session concept in the mock — always succeeds. A test
+      // that needs the failure path uses jest.spyOn(...).mockResolvedValue
+      // on this method directly, same as PhoneInputScreen's rate-limit test.
+      return { ok: true, data: undefined };
+    },
+
     async requestPhoneOtp(phone): Promise<AuthResult> {
       otpRequested.add(phone);
       return { ok: true, data: undefined };

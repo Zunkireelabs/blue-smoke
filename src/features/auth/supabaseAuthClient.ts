@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '@/shared/lib/supabaseClient';
 import type { AuthClient, AuthOutcome, AuthResult } from './client';
+import { RESET_PASSWORD_REDIRECT_URL } from './deepLink';
 
 /**
  * P1-1.0 §3.5 — the real `AuthClient`, backed by `supabase.auth` for both
@@ -90,7 +91,9 @@ export const supabaseAuthClient: AuthClient = {
    */
   async requestPasswordReset(email): Promise<AuthResult> {
     const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: RESET_PASSWORD_REDIRECT_URL,
+    });
 
     if (error) {
       // Password-reset requests are themselves an enumeration vector (does
@@ -98,6 +101,23 @@ export const supabaseAuthClient: AuthClient = {
       // error on an unknown email, so this branch should only fire for real
       // failures (rate limit, network, SMTP misconfiguration) — safe to
       // surface as-is.
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: true, data: undefined };
+  },
+
+  /**
+   * Called from ResetPasswordConfirmScreen after the deep-link (§3.2)
+   * lands the user back in the app with a live recovery session —
+   * Supabase establishes that session itself from the link's token before
+   * this screen ever renders; nothing here re-parses the URL.
+   */
+  async confirmPasswordReset(newPassword): Promise<AuthResult> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error) {
       return { ok: false, error: error.message };
     }
 

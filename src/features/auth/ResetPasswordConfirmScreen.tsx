@@ -11,39 +11,37 @@ import {
   View,
 } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '@/app/navigation';
+import { z } from 'zod';
 import { useAuthClient } from './AuthClientContext';
-import { loginSchema } from './schemas';
+import { passwordSchema } from './schemas';
 
 /**
- * P1-1.0 Method A — login screen (spec §1.2). Same hand-rolled zod
- * validation approach as SignupScreen.tsx (see its header comment for why
- * no @hookform/resolvers).
- *
- * The one rule this screen exists to enforce: whatever `signInWithEmail`
- * returns on failure is rendered verbatim, with no screen-level branching
- * on the reason. Both `AuthClient` implementations already collapse "wrong
- * password" and "unknown email" into one generic message —
- * TODO-phase-1.md P1-1.0: "error handling that does not leak account
- * existence." Don't undo that here.
- *
- * Auth calls go through `useAuthClient()` (§3.5) — never
- * `@supabase/supabase-js` directly, so this screen is testable against
- * `createMockAuthClient()` with no backend.
+ * P1-1.0 §3.2 — lands here from the `bluesmoke://reset-password` deep link
+ * (deepLink.ts), after Supabase has already established a recovery session
+ * from the link's token (config only from this app's side — can't be
+ * verified without a device, brief §2). Calls `authClient.confirmPasswordReset`,
+ * the addition to the §3.5 interface documented in client.ts.
  */
 
+const resetConfirmSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine(data => data.password === data.confirmPassword, {
+    message: 'Passwords do not match.',
+    path: ['confirmPassword'],
+  });
+
 type FormValues = {
-  email: string;
   password: string;
+  confirmPassword: string;
 };
 
-type Status = 'idle' | 'submitting' | 'signedIn';
+type Status = 'idle' | 'submitting' | 'done';
 
-export function LoginScreen() {
+export function ResetPasswordConfirmScreen() {
   const authClient = useAuthClient();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -52,14 +50,12 @@ export function LoginScreen() {
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<FormValues>({
-    defaultValues: { email: '', password: '' },
-  });
+  } = useForm<FormValues>({ defaultValues: { password: '', confirmPassword: '' } });
 
   async function onSubmit(values: FormValues) {
     setFormError(null);
 
-    const parsed = loginSchema.safeParse(values);
+    const parsed = resetConfirmSchema.safeParse(values);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         const field = issue.path[0] as keyof FormValues | undefined;
@@ -71,20 +67,21 @@ export function LoginScreen() {
     }
 
     setStatus('submitting');
-    const result = await authClient.signInWithEmail(parsed.data.email, parsed.data.password);
+    const result = await authClient.confirmPasswordReset(parsed.data.password);
     if (!result.ok) {
       setStatus('idle');
       setFormError(result.error);
       return;
     }
 
-    setStatus('signedIn');
+    setStatus('done');
   }
 
-  if (status === 'signedIn') {
+  if (status === 'done') {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Signed in</Text>
+        <Text style={styles.title}>Password updated</Text>
+        <Text style={styles.body}>You can now log in with your new password.</Text>
       </View>
     );
   }
@@ -97,29 +94,9 @@ export function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Log in</Text>
+        <Text style={styles.title}>Choose a new password</Text>
 
-        <Text style={styles.label}>Email</Text>
-        <Controller
-          control={control}
-          name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              editable={!isSubmitting}
-              accessibilityLabel="Email"
-            />
-          )}
-        />
-        {errors.email && <Text style={styles.fieldError}>{errors.email.message}</Text>}
-
-        <Text style={styles.label}>Password</Text>
+        <Text style={styles.label}>New password</Text>
         <Controller
           control={control}
           name="password"
@@ -130,22 +107,34 @@ export function LoginScreen() {
               onChangeText={onChange}
               onBlur={onBlur}
               secureTextEntry
-              autoComplete="password"
+              autoComplete="new-password"
               editable={!isSubmitting}
-              accessibilityLabel="Password"
+              accessibilityLabel="New password"
             />
           )}
         />
         {errors.password && <Text style={styles.fieldError}>{errors.password.message}</Text>}
 
-        <Pressable
-          onPress={() => navigation.navigate('PasswordReset')}
-          accessibilityRole="button"
-          accessibilityLabel="Forgot password?"
-          style={styles.forgotPassword}
-        >
-          <Text style={styles.link}>Forgot password?</Text>
-        </Pressable>
+        <Text style={styles.label}>Confirm new password</Text>
+        <Controller
+          control={control}
+          name="confirmPassword"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <TextInput
+              style={styles.input}
+              value={value}
+              onChangeText={onChange}
+              onBlur={onBlur}
+              secureTextEntry
+              autoComplete="new-password"
+              editable={!isSubmitting}
+              accessibilityLabel="Confirm new password"
+            />
+          )}
+        />
+        {errors.confirmPassword && (
+          <Text style={styles.fieldError}>{errors.confirmPassword.message}</Text>
+        )}
 
         {formError && <Text style={styles.formError}>{formError}</Text>}
 
@@ -154,22 +143,13 @@ export function LoginScreen() {
           onPress={handleSubmit(onSubmit)}
           disabled={isSubmitting}
           accessibilityRole="button"
-          accessibilityLabel="Log in"
+          accessibilityLabel="Update password"
         >
           {isSubmitting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Log in</Text>
+            <Text style={styles.buttonText}>Update password</Text>
           )}
-        </Pressable>
-
-        <Pressable
-          onPress={() => navigation.navigate('Signup')}
-          accessibilityRole="button"
-          accessibilityLabel="New here? Create an account"
-          style={styles.linkButton}
-        >
-          <Text style={styles.link}>New here? Create an account</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -189,6 +169,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
     marginBottom: 16,
+  },
+  body: {
+    fontSize: 16,
+    color: '#444',
   },
   label: {
     fontSize: 14,
@@ -229,19 +213,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  forgotPassword: {
-    marginTop: 8,
-    alignItems: 'flex-end',
-  },
-  linkButton: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  link: {
-    color: '#1a1a1a',
-    fontSize: 14,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
   },
 });
