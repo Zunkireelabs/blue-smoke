@@ -290,12 +290,15 @@ Update this table at the end of each block.
 | E | 26–30 | Phase 3 (harden) | 3 | 0 | ⬜ Not started |
 | | | **Total** | **27** | **1** | |
 
-### 8.1 ⚠️ Sub-task totals were understated by 23%
+### 8.1 ⚠️ Sub-task denominators — a recount, then a scope change
 
-Re-counting the boxes under the PRD tasks in each phase file, against the method audited in
-`TODO-phase-0.md`:
+**Two separate things happened to these numbers, and collapsing them into one loses both.** The
+first is a counting error we found; the second is a deliberate re-scope. Read them in order.
 
-| Phase | Header claimed | Actual | Delta |
+**(1) The original headers were undercounted.** Re-counting the boxes under the PRD tasks in each
+phase file, against the method audited in `TODO-phase-0.md`:
+
+| Phase | Header claimed | Recount | Delta |
 |---|---:|---:|---:|
 | 0 | 76 | **76** ✅ | — *(corrected earlier, was `62`)* |
 | 1 | 77 | **91** | +14 |
@@ -303,11 +306,34 @@ Re-counting the boxes under the PRD tasks in each phase file, against the method
 | 3 | 84 | **119** | +35 |
 | **Total** | **311** | **383** | **+72 (+23%)** |
 
-All four originals appear to trace to the same unreconciled estimate. **This does not change the
-PRD's 83.7 person-days** — the person-day figures are the commercial commitment and are unaffected.
-What it changes is the *granularity signal*: a burn-down against 311 would have read ~23% ahead of
-reality throughout, and the error is worst in **Phase 3**, which carries the least slack and the
-hardware dependency. Treat sub-task progress as a completeness check, not a schedule forecast.
+All four originals appear to trace to the same unreconciled estimate.
+
+**(2) Then the v1.5 Persona switch removed most of Phase 2.** `P2-2.0`–`P2-5.0` (OCR, age rules,
+liveness, face match + threshold tuning) are struck out entirely — **67 of those 97 boxes**. Phase 2
+now holds **30** boxes across **4** live tasks: `P2-1.0` 12 · `P2-6.0` 6 · `P2-7.0` 4 · `P2-8.0` 8.
+This is removed scope, not outstanding work; see `TODO-phase-2.md` for the per-task basis.
+
+**Current denominators — use these, not the recount column above:**
+
+| Phase | Tasks | Sub-tasks |
+|---|---:|---:|
+| 0 | 7 | 76 |
+| 1 | 8 | 91 |
+| 2 | **4** | **30** |
+| 3 | 8 | 119 |
+| **Total** | **27** | **316** |
+
+**This does not change the PRD's 83.7 person-days** — the person-day figures are the commercial
+commitment and are unaffected. The Phase 2 *effort* re-estimate is a separate open item (see the
+Block C note above). What the recount changes is the *granularity signal*: a burn-down against 311
+would have read ahead of reality in Phases 1 and 3, and the error is worst in **Phase 3**, which
+carries the least slack and the hardware dependency. Treat sub-task progress as a completeness
+check, not a schedule forecast.
+
+**Counting convention**, so the next recount agrees with this one: only boxes under **PRD line-item
+tasks** count. Deliberately outside the denominator — Exit Criteria blocks, the 🔴/🧭 phase
+preambles, the 🔥 Day-1 escalations block, and the two non-PRD added tasks `P0-2.5` (mock
+peripheral) and `P0-4.5` (background BLE spike), which are tracked in their own sections.
 
 **Open questions:** 9 open / 0 closed — see [`../TECHNICAL_SPEC.md` §13](../TECHNICAL_SPEC.md#13-open-questions-register)
 **Critical open questions:** OQ-1, OQ-2, OQ-4 🔴
