@@ -11,6 +11,9 @@ import {
   View,
 } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { loginSchema } from './schemas';
 
@@ -40,6 +43,7 @@ type Status = 'idle' | 'submitting' | 'signedIn';
 
 export function LoginScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -141,12 +145,22 @@ export function LoginScreen() {
           onPress={handleSubmit(onSubmit)}
           disabled={isSubmitting}
           accessibilityRole="button"
+          accessibilityLabel="Log in"
         >
           {isSubmitting ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.buttonText}>Log in</Text>
           )}
+        </Pressable>
+
+        <Pressable
+          onPress={() => navigation.navigate('Signup')}
+          accessibilityRole="button"
+          accessibilityLabel="New here? Create an account"
+          style={styles.linkButton}
+        >
+          <Text style={styles.link}>New here? Create an account</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -206,5 +220,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  linkButton: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  link: {
+    color: '#1a1a1a',
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });

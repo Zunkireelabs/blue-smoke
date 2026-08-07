@@ -5,18 +5,23 @@
  */
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
+import { NavigationContainer } from '@react-navigation/native';
 import { SignupScreen } from '../SignupScreen';
 import { AuthClientProvider } from '../AuthClientContext';
 import { createMockAuthClient } from '../mockAuthClient';
-import { findButton, findInput, renderedText } from '../testUtils';
+import { findByLabel, findInput, renderedText } from '../testUtils';
 
+// NavigationContainer: SignupScreen calls useNavigation() (for the "already
+// have an account" link) - it throws at render time outside one.
 function renderSignup(client = createMockAuthClient()) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <AuthClientProvider client={client}>
-        <SignupScreen />
-      </AuthClientProvider>,
+      <NavigationContainer>
+        <AuthClientProvider client={client}>
+          <SignupScreen />
+        </AuthClientProvider>
+      </NavigationContainer>,
     );
   });
   return renderer;
@@ -32,7 +37,7 @@ async function fillAndSubmit(
     findInput(renderer, 'Confirm password').props.onChangeText(values.confirmPassword);
   });
   await act(async () => {
-    await findButton(renderer).props.onPress();
+    await findByLabel(renderer, 'Sign up').props.onPress();
   });
 }
 

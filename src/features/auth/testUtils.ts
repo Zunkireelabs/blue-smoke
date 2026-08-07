@@ -20,6 +20,11 @@ export function findButton(renderer: ReactTestRenderer): ReactTestInstance {
   return renderer.root.findByProps({ accessibilityRole: 'button' });
 }
 
+/** For screens with more than one button/link — every Pressable below carries a distinct accessibilityLabel. */
+export function findByLabel(renderer: ReactTestRenderer, accessibilityLabel: string): ReactTestInstance {
+  return renderer.root.findByProps({ accessibilityLabel });
+}
+
 /** Flattens the rendered tree to a single string for substring assertions on visible text. */
 export function renderedText(renderer: ReactTestRenderer): string {
   return JSON.stringify(renderer.toJSON());

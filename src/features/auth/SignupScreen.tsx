@@ -11,6 +11,9 @@ import {
   View,
 } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { signupSchema } from './schemas';
 
@@ -38,6 +41,7 @@ type Status = 'idle' | 'submitting' | 'checkEmail' | 'signedIn';
 
 export function SignupScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -176,12 +180,22 @@ export function SignupScreen() {
           onPress={handleSubmit(onSubmit)}
           disabled={isSubmitting}
           accessibilityRole="button"
+          accessibilityLabel="Sign up"
         >
           {isSubmitting ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.buttonText}>Sign up</Text>
           )}
+        </Pressable>
+
+        <Pressable
+          onPress={() => navigation.navigate('Login')}
+          accessibilityRole="button"
+          accessibilityLabel="Already have an account? Log in"
+          style={styles.linkButton}
+        >
+          <Text style={styles.link}>Already have an account? Log in</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -245,5 +259,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  linkButton: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  link: {
+    color: '#1a1a1a',
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });
