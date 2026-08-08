@@ -394,4 +394,178 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       expect(outcome).toEqual({ ok: false, reason: 'unexpected-result-code', resultCode: 0x08 });
     });
   });
+
+  describe('finding 6 — a stray commandResult for a different commandId is ignored', () => {
+    test('a stray notification carrying a foreign commandId does not pre-empt the real result', async () => {
+      const clock = new FakeClock(0);
+      const { manager: realManager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+
+      // The real listener is subscribed via realDevice.monitorCharacteristicForService
+      // (so the genuine commandResult notification arrives normally, in order),
+      // but before that happens we fire one synthetic notification straight at
+      // the same listener — a stray commandId (not HANDSHAKE_RESULT_COMMAND_ID,
+      // 0x00) carrying FAULT (0x08), the code most likely to be mistaken for a
+      // real answer if the guard were gone. §4.5 subscribes before writing, so
+      // this fires before the handshake has written anything.
+      const strayManager: BleManagerLike = {
+        state: () => realManager.state(),
+        isDeviceConnected: (id) => realManager.isDeviceConnected(id),
+        cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        connectToDevice: async (id) => {
+          const realDevice = await realManager.connectToDevice(id);
+          return {
+            id: realDevice.id,
+            discoverAllServicesAndCharacteristics: () => realDevice.discoverAllServicesAndCharacteristics(),
+            readCharacteristicForService: (s, c) => realDevice.readCharacteristicForService(s, c),
+            writeCharacteristicWithResponseForService: (s, c, v) =>
+              realDevice.writeCharacteristicWithResponseForService(s, c, v),
+            monitorCharacteristicForService: (s, c, listener) => {
+              const subscription = realDevice.monitorCharacteristicForService(s, c, listener);
+              const strayBytes = new Uint8Array(4);
+              strayBytes[0] = 0x01; // not HANDSHAKE_RESULT_COMMAND_ID (e.g. an in-flight lockCommand result)
+              strayBytes[1] = 0x08; // ResultCode.FAULT — would change the outcome if accepted
+              listener(null, { value: bytesToBase64(strayBytes) });
+              return subscription;
+            },
+          } satisfies BleDeviceLike;
+        },
+      };
+
+      const handshake = createAuthHandshake(strayManager);
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
+
+      // The genuine result (2) must win, with no trace of the stray FAULT (1).
+      expect(outcome.ok).toBe(true);
+      expect(core.isAuthenticated()).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.session.keyGeneration).toBe(KEY_GENERATION);
+      }
+    });
+  });
+
+  describe('finding 7 — the first commandResult notification wins, a second is ignored', () => {
+    test('two notifications with different result codes resolve to the first', async () => {
+      const clock = new FakeClock(0);
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      let lastListener:
+        | ((error: Error | null, characteristic: { value: string | null } | null) => void)
+        | undefined;
+
+      const duplicateManager: BleManagerLike = {
+        state: () => realManager.state(),
+        isDeviceConnected: (id) => realManager.isDeviceConnected(id),
+        cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        connectToDevice: async (id) => {
+          const realDevice = await realManager.connectToDevice(id);
+          return {
+            id: realDevice.id,
+            discoverAllServicesAndCharacteristics: () => realDevice.discoverAllServicesAndCharacteristics(),
+            readCharacteristicForService: (s, c) => realDevice.readCharacteristicForService(s, c),
+            writeCharacteristicWithResponseForService: async (s, c, v) => {
+              const result = await realDevice.writeCharacteristicWithResponseForService(s, c, v);
+              const okBytes = new Uint8Array(4);
+              okBytes[0] = 0x00; // HANDSHAKE_RESULT_COMMAND_ID
+              okBytes[1] = 0x00; // ResultCode.OK
+              lastListener?.(null, { value: bytesToBase64(okBytes) });
+              const faultBytes = new Uint8Array(4);
+              faultBytes[0] = 0x00; // HANDSHAKE_RESULT_COMMAND_ID
+              faultBytes[1] = 0x08; // ResultCode.FAULT — unambiguously distinguishable from OK
+              lastListener?.(null, { value: bytesToBase64(faultBytes) });
+              return result;
+            },
+            monitorCharacteristicForService: (_s, _c, listener) => {
+              lastListener = listener;
+              return { remove: () => {} };
+            },
+          } satisfies BleDeviceLike;
+        },
+      };
+
+      const handshake = createAuthHandshake(duplicateManager);
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.session.keyGeneration).toBe(KEY_GENERATION);
+      }
+    });
+  });
+
+  describe('finding 8 — the commandResult subscription is always released', () => {
+    function spyManager(): { manager: BleManagerLike; remove: jest.Mock } {
+      const clock = new FakeClock(0);
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const remove = jest.fn();
+      const manager: BleManagerLike = {
+        state: () => realManager.state(),
+        isDeviceConnected: (id) => realManager.isDeviceConnected(id),
+        cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        connectToDevice: async (id) => {
+          const realDevice = await realManager.connectToDevice(id);
+          return {
+            id: realDevice.id,
+            discoverAllServicesAndCharacteristics: () => realDevice.discoverAllServicesAndCharacteristics(),
+            readCharacteristicForService: (s, c) => realDevice.readCharacteristicForService(s, c),
+            writeCharacteristicWithResponseForService: (s, c, v) =>
+              realDevice.writeCharacteristicWithResponseForService(s, c, v),
+            monitorCharacteristicForService: (s, c, listener) => {
+              const subscription = realDevice.monitorCharacteristicForService(s, c, listener);
+              return {
+                remove: () => {
+                  remove();
+                  subscription.remove();
+                },
+              };
+            },
+          } satisfies BleDeviceLike;
+        },
+      };
+      return { manager, remove };
+    }
+
+    test('a successful handshake removes its subscription exactly once', async () => {
+      const { manager, remove } = spyManager();
+      const handshake = createAuthHandshake(manager);
+
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
+
+      expect(outcome.ok).toBe(true);
+      expect(remove).toHaveBeenCalledTimes(1);
+    });
+
+    test('a failed handshake (wrong K_sess, AUTH_FAILED) removes its subscription exactly once', async () => {
+      const { manager, remove } = spyManager();
+      const handshake = createAuthHandshake(manager);
+      const wrongKSess = Uint8Array.from({ length: 16 }, (_, i) => 0x90 + i);
+
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput({ kSess: wrongKSess }));
+
+      expect(outcome).toEqual({ ok: false, resultCode: 0x02 /* AUTH_FAILED */ });
+      expect(remove).toHaveBeenCalledTimes(1);
+    });
+
+    test('a connect rejection never creates a subscription, so nothing is removed and nothing throws', async () => {
+      // Same connect-rejection manager as finding 3's test at auth.test.ts:266
+      // — subscription stays undefined because discover/monitor are never
+      // reached, so the finally must not call remove() on it.
+      const rejectingManager: BleManagerLike = {
+        state: async () => 'PoweredOn',
+        isDeviceConnected: async () => false,
+        cancelDeviceConnection: async (id) => {
+          throw new Error(`not connected: ${id}`);
+        },
+        connectToDevice: async () => {
+          throw new Error('connection failed');
+        },
+      };
+      const handshake = createAuthHandshake(rejectingManager);
+
+      await expect(handshake.authenticate(DEVICE_ID, buildInput())).resolves.toEqual({
+        ok: false,
+        reason: 'transport',
+        stage: 'connect',
+        detail: 'connection failed',
+      });
+    });
+  });
 });
