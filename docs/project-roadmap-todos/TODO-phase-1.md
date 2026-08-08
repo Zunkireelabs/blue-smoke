@@ -173,15 +173,22 @@ region — not yet assessed for target markets (relates to OQ-3).
 > 10 tests, all 8 briefed mutations independently re-run and killed. Still 3 of 12 boxes ticked
 > above; this closes 1 of the remaining 9 but stays unticked pending the rest of Part 2.
 >
-> **Two review gaps left open** (found by mutations the brief didn't name; the production code is
-> correct in both cases, the *tests* are blind):
+> **Two review gaps were found by mutations the brief didn't name, and are now closed** (`c48cd4a`,
+> briefed in `P1-4.0-part2a-followup-two-unpinned-properties.md`). Both were test-side — the
+> production code was correct in each case, just unpinned:
 >
-> 1. The exact-length check survives being weakened from `!==` to `<` — only an under-length (5-byte)
->    fixture exists, so a 21-byte `deviceInfo` would be parsed instead of rejected. §4.2 says exactly
->    20. This is the case a future firmware that extends the characteristic would actually produce.
-> 2. `protocolVersion` and `provisioningState` hold the same value in both main fixtures (`1`/`1`,
->    then `2`/`2`), so swapping their offsets dies only because a third fixture happens to use
->    `provisioningState: 3`. Deliberate, not lucky, is the standard here.
+> 1. ✅ The exact-length check was only tested from below, so weakening `!==` to `<` left the suite
+>    green and a 21-byte `deviceInfo` would have parsed. §4.2 says exactly 20, and an over-length read
+>    is what a firmware that extends the characteristic would actually produce. **Both** directions of
+>    the bound are now pinned independently.
+> 2. ✅ `protocolVersion` and `provisioningState` held the same value in both main fixtures (`1`/`1`,
+>    then `2`/`2`), so swapping their offsets died only because a third fixture happened to use
+>    `provisioningState: 3` for unrelated reasons. Fixtures corrected; each of the two tests now fails
+>    on its own under that swap.
+>
+> **Knowingly left unpinned:** `READ_TIMEOUT_MS`. That the read times out at all is pinned; the value
+> `3000` is an app-level choice nobody has ruled on, so a millisecond-exact test would assert a number
+> rather than a property. Recorded so it isn't re-discovered and "fixed".
 >
 > **Correction to the earlier note here: OQ-6 does *not* block the rest of Part 2.** The mismatch
 > policy (§4.3 defines a version-bump process but never client behaviour) affects one *branch* of the
