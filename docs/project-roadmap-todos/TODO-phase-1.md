@@ -86,6 +86,13 @@ region — not yet assessed for target markets (relates to OQ-3).
 > Guided first-run experience that explains the app and requests BLE and camera permissions at
 > the right moment, with clear fallback messaging if a permission is denied.
 
+**Input (Day 9): the flow is designed — build against [`F1`](../system-design-ux/USER_FLOWS.md#f1),
+drawn in [`flows.html`](../system-design-ux/flows.html).** It covers all nine boxes below, including
+the denial matrix item 9 asks you to walk. Two things it settles that are easy to get wrong: item 7's
+"denied once" and "permanently denied" are **different screens** (a re-prompt on a permanently-denied
+permission is a button that silently does nothing), and denying Bluetooth must leave **the rest of
+the app working** — account, profile and verification are all reachable without it.
+
 - [ ] Onboarding carousel explaining the product and the privacy model
 - [ ] BLE permission priming screen, requested **at the moment of need**, not at launch
 - [ ] Camera permission priming, requested at the start of verification

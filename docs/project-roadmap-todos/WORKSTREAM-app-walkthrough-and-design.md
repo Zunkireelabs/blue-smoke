@@ -83,16 +83,41 @@ closes it.
 
 ## Track B — flows and design
 
-- [ ] **B1. `docs/FLOWS.md`** — every screen, transition and dead end, read out of `selectStack` and
-      the screen files rather than from memory. Five stacks (`boot`/`auth`/`pending`/`verify`/`home`),
-      the deep-link route, and **the states with no exit** — where the DoD's "error states have a
-      user-visible recovery path" is currently unmet. Two already found:
-      - `SignupScreen`'s `checkEmail` branch is a dead end with no navigation — stranded until an
-        email arrives that, with no SMTP, may never.
-      - `VerificationPendingScreen` polls forever, because `create-inquiry` is 501 and no outcome can
-        land.
+- [x] **B1. `docs/FLOWS.md`** — every screen, transition and dead end, read out of `selectStack` and
+      the screen files rather than from memory. **Done — [`docs/FLOWS.md`](../FLOWS.md).** Every
+      claim carries a verified `file:line`.
 
-      Doubles as the input to P1-2.0 (onboarding) and as the punch list of missing recovery paths.
+      **It found eight dead ends, not two.** The root cause is structural: the app contains **six
+      `navigate()` call sites and zero `replace`/`reset`/`goBack`/`push`**, and only one of the six
+      is a success transition (`PhoneInputScreen:76`). Every other success state had to be drawn as
+      a terminal panel that depends on `onAuthStateChange` firing and the navigator swapping the
+      stack out from under it. Registered as DE-1…DE-8, plus three structural defects SD-1…SD-3.
+
+      🔴 **And one thing worse than a dead end.** Sign-out exists in exactly one place —
+      `HomeScreen.tsx:31-41`, on the `home` stack — which is the one stack a blocked user cannot
+      reach. A user whose verification is declined has no sign-out, no support and no working retry,
+      while `sessionStatus` is still `signedIn` so the auth stack is not mounted. **They cannot
+      leave the app**; force-quit and relaunch restores the same state from the Keychain. This is a
+      shipping blocker. See `FLOWS.md` §4.1 and its fix, F6.Z / F9.2.
+
+      Also produced, since the design work depended on it:
+      - [`system-design-ux/USER_FLOWS.md`](../system-design-ux/USER_FLOWS.md) — the target flows
+        F1–F9, every failure branch and its recovery. The as-built and as-designed docs are
+        deliberately **separate and cross-linked**: merging them makes "there is a flow for pairing"
+        read as "pairing works".
+      - [`system-design-ux/flows.html`](../system-design-ux/flows.html) — 13 UML activity diagrams
+        with true swimlanes, self-contained (no scripts, no CDN). Open it in a browser. Node IDs are
+        printed on every node so review comments can be precise.
+      - [`system-design-ux/SCREEN_INVENTORY.md`](../system-design-ux/SCREEN_INVENTORY.md) — feeds B2.
+      - [`product/USER_STORIES.md`](../product/USER_STORIES.md),
+        [`product/VERIFICATION_COPY.md`](../product/VERIFICATION_COPY.md).
+
+      **Not fixed here — recorded only.** The eight dead ends are a punch list against an agreed
+      flow, not a set of one-line patches; six of them want the same fix, and patching them screen
+      by screen would produce six different answers.
+
+      🔴 **F9 (profile & settings) has no owning roadmap task** and resolves the trap above. It needs
+      one.
 
 - [ ] **B2. Finish the design-system migration — 8 screens.** `src/shared/ui/` already has tokens and
       8 primitives (`Screen`, `Text`, `Button`, `TextField`, `Card`, `EmptyState`, `ErrorState`,

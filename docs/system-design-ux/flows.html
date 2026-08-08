@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blue Smoke — User Flows</title>
+<style>
+:root{
+  --bg:#ffffff; --panel:#f7f7f8; --ink:#16161a; --ink2:#55555f; --ink3:#82828c;
+  --line:#c9c9d1; --line2:#e3e3e8;
+  --surface:#ffffff; --accent:#4f46e5; --accent-bg:#eef2ff;
+  --dead:#dc2626; --dead-bg:#fef2f2;
+  --block:#b45309; --block-bg:#fffbeb;
+  --ok:#047857; --ok-bg:#ecfdf5;
+  --ext:#6b7280; --ext-bg:#f3f4f6;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#131316; --panel:#1a1a1f; --ink:#ececf0; --ink2:#a9a9b4; --ink3:#7c7c88;
+    --line:#3d3d47; --line2:#2a2a31;
+    --surface:#1e1e24; --accent:#a5b4fc; --accent-bg:#26263a;
+    --dead:#f87171; --dead-bg:#31191b;
+    --block:#fbbf24; --block-bg:#2e2415;
+    --ok:#6ee7b7; --ok-bg:#12291f;
+    --ext:#9ca3af; --ext-bg:#24242b;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 120px}
+header.top{border-bottom:1px solid var(--line2);padding:40px 0 28px;margin-bottom:28px}
+h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--ink2);margin:0}
+h2{font-size:21px;margin:56px 0 6px;padding-top:20px;border-top:1px solid var(--line2);letter-spacing:-.01em}
+h2:first-of-type{border-top:none}
+h3{font-size:16px;margin:28px 0 8px}
+p{margin:10px 0}
+code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel);
+  padding:1px 5px;border-radius:4px;border:1px solid var(--line2)}
+a{color:var(--accent)}
+.lede{color:var(--ink2);margin:2px 0 16px}
+.note{background:var(--panel);border:1px solid var(--line2);border-left:3px solid var(--ink3);
+  border-radius:6px;padding:12px 16px;margin:16px 0;font-size:14px}
+.note.red{border-left-color:var(--dead);background:var(--dead-bg)}
+.note.amber{border-left-color:var(--block);background:var(--block-bg)}
+.note.accent{border-left-color:var(--accent);background:var(--accent-bg)}
+.note b{font-weight:650}
+figure{margin:22px 0 8px;padding:14px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:10px;overflow-x:auto}
+figcaption{color:var(--ink3);font-size:12.5px;margin-top:10px;text-align:center}
+svg{display:block;margin:0 auto;max-width:100%;height:auto}
+nav.idx{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:16px 20px;margin:24px 0}
+nav.idx ol{margin:8px 0 0;padding-left:20px;columns:2;column-gap:36px}
+nav.idx li{margin:3px 0;break-inside:avoid}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+th,td{border:1px solid var(--line2);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--panel);font-weight:620}
+.tag{display:inline-block;font-size:11px;font-weight:650;padding:1px 7px;border-radius:20px;
+  border:1px solid;vertical-align:middle}
+.t-dead{color:var(--dead);border-color:var(--dead);background:var(--dead-bg)}
+.t-block{color:var(--block);border-color:var(--block);background:var(--block-bg)}
+.t-ok{color:var(--ok);border-color:var(--ok);background:var(--ok-bg)}
+.t-ext{color:var(--ext);border-color:var(--ext);background:var(--ext-bg)}
+/* ---- SVG vocabulary ---- */
+.laneHdr{fill:var(--panel);stroke:var(--line);stroke-width:1}
+.laneHdrExt{fill:var(--ext-bg);stroke:var(--line);stroke-width:1}
+.laneBody{fill:none;stroke:var(--line);stroke-width:1}
+.laneExtBody{fill:var(--ext-bg);opacity:.5;stroke:none}
+.laneDiv{stroke:var(--line);stroke-width:1}
+.laneTxt{fill:var(--ink2);font:650 12px -apple-system,system-ui,sans-serif;text-anchor:middle;
+  letter-spacing:.06em;text-transform:uppercase}
+.box{fill:var(--surface);stroke:var(--line);stroke-width:1.4;rx:7}
+.box.acc{fill:var(--accent-bg);stroke:var(--accent)}
+.box.ok{fill:var(--ok-bg);stroke:var(--ok)}
+.box.ext{fill:var(--ext-bg);stroke:var(--ext);stroke-dasharray:none}
+.box.dead{fill:var(--dead-bg);stroke:var(--dead);stroke-width:1.8}
+.box.blocked{fill:var(--block-bg);stroke:var(--block);stroke-width:1.6;stroke-dasharray:5 3}
+.dia{fill:var(--surface);stroke:var(--line);stroke-width:1.4}
+.term{fill:var(--ink);stroke:none}
+.termRing{fill:none;stroke:var(--ink);stroke-width:2}
+.t{fill:var(--ink);font:12.5px -apple-system,system-ui,sans-serif;text-anchor:middle}
+.t.sm{font-size:11px;fill:var(--ink2)}
+.t.dead{fill:var(--dead);font-weight:600}
+.t.block{fill:var(--block);font-weight:600}
+.nid{fill:var(--ink3);font:600 9.5px ui-monospace,Menlo,monospace;text-anchor:start;
+  letter-spacing:.04em}
+.e{fill:none;stroke:var(--ink2);stroke-width:1.5;marker-end:url(#a)}
+.e.dash{stroke-dasharray:5 4}
+.e.red{stroke:var(--dead);marker-end:url(#ar)}
+.e.acc{stroke:var(--accent);marker-end:url(#aa)}
+.el{fill:var(--ink2);font:10.5px -apple-system,system-ui,sans-serif;text-anchor:middle}
+.el.red{fill:var(--dead);font-weight:600}
+.bar{fill:var(--ink)}
+@media print{
+  body{background:#fff}
+  figure{break-inside:avoid;page-break-inside:avoid}
+  h2{break-after:avoid}
+  nav.idx{break-after:page}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--ink2)"/></marker>
+  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--dead)"/></marker>
+  <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+  <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+    <line x1="0" y1="0" x2="0" y2="7" stroke="var(--ext)" stroke-width="1.1" opacity=".28"/></pattern>
+</defs></svg>
+
+<div class="wrap">
+
+<header class="top">
+  <h1>Blue Smoke — User Flows</h1>
+  <p class="sub">UML activity diagrams · as-built and target · Day 9, 2026-08-08 · <b>draft for review</b></p>
+</header>
+
+<div class="note accent">
+  <b>How to give feedback.</b> Every node has an ID printed in its top-left corner — <code>F6.4</code>,
+  <code>DE-3</code>. Use them: <i>“F6.4 is wrong, the decline should loop back to F6.2”</i> beats
+  “the third box in the verification one”. IDs match
+  <a href="USER_FLOWS.md">USER_FLOWS.md</a> and <a href="../FLOWS.md">FLOWS.md</a> exactly.
+</div>
+
+<h3 style="margin-top:24px">Legend</h3>
+<figure>
+<svg viewBox="0 0 1060 108" width="1060" role="img" aria-label="Diagram legend">
+  <circle cx="34" cy="30" r="10" class="term"/>
+  <text x="34" y="62" class="t sm">start</text>
+  <circle cx="128" cy="30" r="12" class="termRing"/><circle cx="128" cy="30" r="6" class="term"/>
+  <text x="128" y="62" class="t sm">end</text>
+  <rect x="192" y="14" width="118" height="33" class="box" rx="7"/><text x="251" y="35" class="t">action</text>
+  <text x="251" y="62" class="t sm">a step</text>
+  <polygon points="410,14 476,30.5 410,47 344,30.5" class="dia"/><text x="410" y="35" class="t sm">choice</text>
+  <text x="410" y="62" class="t sm">decision — every edge labelled</text>
+  <rect x="536" y="14" width="118" height="33" class="box dead" rx="7"/><text x="595" y="35" class="t dead">dead end</text>
+  <text x="595" y="62" class="t sm">no way out</text>
+  <rect x="686" y="14" width="118" height="33" class="box blocked" rx="7"/><text x="745" y="35" class="t block">blocked</text>
+  <text x="745" y="62" class="t sm">waiting on an answer</text>
+  <rect x="836" y="14" width="118" height="33" class="box ext" fill="url(#hatch)" rx="7"/>
+  <text x="895" y="35" class="t sm">not ours</text>
+  <text x="895" y="62" class="t sm">vendor / firmware</text>
+  <rect x="986" y="20" width="52" height="7" class="bar"/>
+  <text x="1012" y="62" class="t sm">fork / join</text>
+  <text x="530" y="94" class="t sm">Hatched lanes are processes we do not control and must not design inside.</text>
+</svg>
+</figure>
+
+<nav class="idx">
+  <b>Contents</b>
+  <ol>
+    <li><a href="#d1">As-built — the gate</a></li>
+    <li><a href="#d2">As-built — auth, and its 6 dead ends</a></li>
+    <li><a href="#d3">As-built — why verification never lands</a></li>
+    <li><a href="#f1">F1 — Onboarding &amp; permissions</a></li>
+    <li><a href="#f2">F2 — Signup with email</a></li>
+    <li><a href="#f3">F3 — Phone OTP</a></li>
+    <li><a href="#f5">F5 — Forgot password</a></li>
+    <li><a href="#f6">F6 — Age verification</a></li>
+    <li><a href="#f7">F7 — Pair a device</a></li>
+    <li><a href="#f8">F8 — Lock &amp; unlock</a></li>
+    <li><a href="#f9">F9 — Profile &amp; settings</a></li>
+  </ol>
+</nav>
+
+<!-- ===================== D1 ===================== -->
+<h2 id="d1">1 · As-built — the gate</h2>
+<p class="lede"><code>selectStack()</code>, <code>src/app/navigation.tsx:76-96</code>. Five mutually
+exclusive navigators. A route not in the mounted stack does not exist, so <b>every transition between
+these boxes is implicit</b> — driven by state, never by a screen.</p>
+
+<figure>
+<svg viewBox="0 0 940 470" width="940" role="img" aria-label="Navigation gate decision tree">
+  <circle cx="470" cy="30" r="10" class="term"/>
+  <path class="e" d="M470,42 L470,64"/>
+
+  <polygon points="470,66 596,100 470,134 344,100" class="dia"/>
+  <text x="470" y="97" class="t">sessionStatus?</text>
+  <text x="470" y="112" class="t sm">useSessionStore</text>
+
+  <path class="e" d="M344,100 L150,100 L150,168"/><text x="232" y="92" class="el">hydrating</text>
+  <path class="e" d="M596,100 L800,100 L800,168"/><text x="710" y="92" class="el">signedOut</text>
+  <path class="e" d="M470,134 L470,190"/><text x="508" y="158" class="el">signedIn</text>
+
+  <rect x="72" y="170" width="156" height="40" class="box" rx="7"/>
+  <text x="80" y="184" class="nid">boot</text><text x="150" y="196" class="t">BootSplash</text>
+  <rect x="722" y="170" width="156" height="40" class="box" rx="7"/>
+  <text x="730" y="184" class="nid">auth</text><text x="800" y="196" class="t">7 screens</text>
+
+  <polygon points="470,192 604,228 470,264 336,228" class="dia"/>
+  <text x="470" y="225" class="t">verification?</text>
+  <text x="470" y="240" class="t sm">useVerificationStatus</text>
+
+  <path class="e" d="M336,228 L150,228 L150,300"/><text x="238" y="220" class="el">loading · pending</text>
+  <path class="e" d="M604,228 L800,228 L800,300"/><text x="708" y="220" class="el">verified</text>
+  <path class="e" d="M470,264 L470,300"/><text x="524" y="286" class="el">none · declined</text>
+
+  <rect x="72" y="302" width="156" height="44" class="box dead" rx="7"/>
+  <text x="80" y="316" class="nid">pending</text><text x="150" y="330" class="t">1 screen</text>
+  <text x="150" y="342" class="t sm dead">no exit — DE-8</text>
+
+  <rect x="722" y="302" width="156" height="44" class="box ok" rx="7"/>
+  <text x="730" y="316" class="nid">home</text><text x="800" y="330" class="t">HomeScreen</text>
+  <text x="800" y="342" class="t sm">the only sign-out</text>
+
+  <rect x="392" y="302" width="156" height="44" class="box dead" rx="7"/>
+  <text x="400" y="316" class="nid">verify</text><text x="470" y="330" class="t">Persona</text>
+  <text x="470" y="342" class="t sm dead">no exit — DE-7</text>
+
+  <path class="e red dash" d="M604,246 L640,246 L640,378 L470,378 L470,348"/>
+  <text x="640" y="396" class="el red">SD-3 · a transport error returns 'none' → back to an ID scan</text>
+
+  <rect x="150" y="418" width="640" height="34" rx="6" fill="var(--dead-bg)" stroke="var(--dead)" stroke-width="1.4"/>
+  <text x="470" y="440" class="t dead">Sign-out exists only on `home` — the one stack a blocked user cannot reach</text>
+</svg>
+<figcaption>Only an explicit <code>verified</code> reaches home. <code>loading</code> does not — unknown is never treated as verified.</figcaption>
+</figure>
+
+<div class="note red">
+<b>🔴 The trap.</b> A declined user sits on <code>verify</code> while <code>sessionStatus</code> is
+still <code>signedIn</code>, so the auth stack is not mounted. That stack holds one screen, with no
+sign-out, no support and — per DE-7 — no working retry. <b>There is no exit.</b> Force-quitting and
+relaunching restores the identical state from the Keychain. Resolved by <a href="#f6">F6.Z</a>.
+</div>
+
+<!-- ===================== D2 ===================== -->
+<h2 id="d2">2 · As-built — auth, and its 6 dead ends</h2>
+<p class="lede">Every navigation call in the entire app is on this diagram. <b>Six</b>, all of them a
+user tapping a link between two forms. There are <b>zero</b> calls to <code>replace</code>,
+<code>reset</code>, <code>goBack</code> or <code>push</code> anywhere in <code>src/</code>.</p>
+
+<figure>
+<svg viewBox="0 0 980 620" width="980" role="img" aria-label="As-built auth screen graph with dead ends">
+  <circle cx="180" cy="28" r="10" class="term"/>
+  <path class="e" d="M180,40 L180,64"/>
+
+  <rect x="98" y="66" width="164" height="40" class="box acc" rx="7"/>
+  <text x="106" y="80" class="nid">AuthChoice</text><text x="180" y="93" class="t">Welcome</text>
+
+  <path class="e" d="M180,106 L180,150"/><text x="150" y="132" class="el">tap</text>
+  <path class="e" d="M262,86 L620,86 L620,150"/><text x="440" y="78" class="el">tap “Continue with Phone”</text>
+
+  <rect x="98" y="152" width="164" height="40" class="box" rx="7"/>
+  <text x="106" y="166" class="nid">Login</text><text x="180" y="179" class="t">Log in</text>
+  <rect x="538" y="152" width="164" height="40" class="box" rx="7"/>
+  <text x="546" y="166" class="nid">PhoneInput</text><text x="620" y="179" class="t">Phone number</text>
+
+  <path class="e" d="M180,192 L180,236"/><text x="146" y="218" class="el">tap</text>
+  <path class="e" d="M98,172 L54,172 L54,300 L98,300"/><text x="54" y="240" class="el">tap</text>
+
+  <path class="e acc" d="M620,192 L620,236"/>
+  <text x="700" y="206" class="el" style="fill:var(--accent);font-weight:650">valid + OTP sent</text>
+  <text x="700" y="219" class="el" style="fill:var(--accent)">the only success transition</text>
+
+  <rect x="98" y="238" width="164" height="40" class="box" rx="7"/>
+  <text x="106" y="252" class="nid">Signup</text><text x="180" y="265" class="t">Create account</text>
+  <rect x="538" y="238" width="164" height="40" class="box" rx="7"/>
+  <text x="546" y="252" class="nid">OtpVerify</text><text x="620" y="265" class="t">6-digit code</text>
+
+  <rect x="98" y="282" width="164" height="38" class="box" rx="7"/>
+  <text x="106" y="296" class="nid">PasswordReset</text><text x="180" y="309" class="t">Forgot password</text>
+
+  <rect x="770" y="152" width="180" height="56" class="box blocked" rx="7"/>
+  <text x="778" y="166" class="nid">ResetPasswordConfirm</text>
+  <text x="860" y="182" class="t sm">deep link only</text>
+  <text x="860" y="198" class="t sm block">SD-2 · may be unreachable</text>
+
+  <!-- dead ends -->
+  <path class="e red" d="M262,258 L330,258 L330,364"/>
+  <rect x="238" y="366" width="184" height="42" class="box dead" rx="7"/>
+  <text x="246" y="380" class="nid">DE-1</text><text x="330" y="392" class="t dead">“Check your email”</text>
+  <text x="330" y="403" class="t sm">no resend · no SMTP configured</text>
+
+  <path class="e red" d="M262,248 L446,248 L446,364"/>
+  <rect x="440" y="366" width="140" height="42" class="box dead" rx="7"/>
+  <text x="448" y="380" class="nid">DE-2</text><text x="510" y="392" class="t dead">“Account created”</text>
+  <text x="510" y="403" class="t sm">no navigation</text>
+
+  <path class="e red" d="M262,180 L142,180 L142,364"/>
+  <rect x="72" y="366" width="140" height="42" class="box dead" rx="7"/>
+  <text x="80" y="380" class="nid">DE-3</text><text x="142" y="392" class="t dead">“Signed in”</text>
+  <text x="142" y="403" class="t sm">no navigation</text>
+
+  <path class="e red" d="M620,278 L620,364"/>
+  <rect x="598" y="366" width="152" height="42" class="box dead" rx="7"/>
+  <text x="606" y="380" class="nid">DE-4</text><text x="674" y="392" class="t dead">“Signed in”</text>
+  <text x="674" y="403" class="t sm">no useNavigation at all</text>
+
+  <path class="e red" d="M180,320 L180,446 L232,446"/>
+
+  <rect x="234" y="424" width="196" height="44" class="box dead" rx="7"/>
+  <text x="242" y="438" class="nid">DE-5</text><text x="332" y="450" class="t dead">“Check your email”</text>
+  <text x="332" y="461" class="t sm">zero navigation calls in the file</text>
+
+  <path class="e red" d="M860,208 L860,364"/>
+  <rect x="768" y="366" width="184" height="42" class="box dead" rx="7"/>
+  <text x="776" y="380" class="nid">DE-6</text><text x="860" y="392" class="t dead">“Password updated”</text>
+  <text x="860" y="403" class="t sm">tells you to log in, offers no way</text>
+
+  <rect x="72" y="496" width="880" height="94" rx="8" fill="var(--dead-bg)" stroke="var(--dead)" stroke-width="1.3"/>
+  <text x="512" y="520" class="t dead" style="font-weight:650">Why six dead ends and not one bug</text>
+  <text x="512" y="542" class="t sm">No screen navigates on success, so every success had to be drawn as a terminal panel…</text>
+  <text x="512" y="559" class="t sm">…and each panel then depends on `onAuthStateChange` firing and the navigator swapping the stack out from underneath it.</text>
+  <text x="512" y="576" class="t sm">When it fires, the panel is a pointless flash. When it does not, the user is stuck forever.</text>
+</svg>
+<figcaption>Six <code>navigate()</code> call sites — <code>AuthMethodChoiceScreen:28,37</code> · <code>LoginScreen:150,175</code> · <code>SignupScreen:201</code> · <code>PhoneInputScreen:76</code>.</figcaption>
+</figure>
+
+<!-- ===================== D3 ===================== -->
+<h2 id="d3">3 · As-built — why verification never lands</h2>
+<p class="lede">Four lanes. The hatched one is Persona’s SDK, running in its own process — we design
+nothing inside it. Follow the chain: nothing the user does can ever write a row.</p>
+
+<figure>
+<svg viewBox="0 0 960 636" width="960" role="img" aria-label="As-built verification, four swimlanes">
+  <rect x="0" y="0" width="240" height="34" class="laneHdr"/>
+  <rect x="240" y="0" width="240" height="34" class="laneHdr"/>
+  <rect x="480" y="0" width="240" height="34" class="laneHdrExt"/>
+  <rect x="720" y="0" width="240" height="34" class="laneHdr"/>
+  <rect x="480" y="34" width="240" height="580" fill="url(#hatch)"/>
+  <rect x="0" y="34" width="960" height="580" class="laneBody"/>
+  <line x1="240" y1="0" x2="240" y2="614" class="laneDiv"/>
+  <line x1="480" y1="0" x2="480" y2="614" class="laneDiv"/>
+  <line x1="720" y1="0" x2="720" y2="614" class="laneDiv"/>
+  <text x="120" y="22" class="laneTxt">User</text>
+  <text x="360" y="22" class="laneTxt">App</text>
+  <text x="600" y="22" class="laneTxt">Persona SDK · not ours</text>
+  <text x="840" y="22" class="laneTxt">Our backend</text>
+
+  <circle cx="120" cy="66" r="10" class="term"/>
+  <path class="e" d="M120,78 L120,100"/>
+  <rect x="34" y="102" width="172" height="38" class="box" rx="7"/>
+  <text x="42" y="116" class="nid">A.1</text><text x="120" y="128" class="t">Signed in, not verified</text>
+
+  <path class="e" d="M206,121 L360,121 L360,160"/>
+  <rect x="266" y="162" width="188" height="46" class="box" rx="7"/>
+  <text x="274" y="176" class="nid">A.2</text><text x="360" y="189" class="t">Inquiry.fromTemplate()</text>
+  <text x="360" y="201" class="t sm dead">no user linkage sent</text>
+
+  <path class="e" d="M454,185 L600,185 L600,224"/>
+  <rect x="512" y="226" width="176" height="38" class="box ext" rx="7"/>
+  <text x="520" y="240" class="nid">A.3</text><text x="600" y="252" class="t sm">Captures ID + selfie</text>
+
+  <path class="e" d="M600,264 L600,296"/>
+  <rect x="512" y="298" width="176" height="38" class="box ext" rx="7"/>
+  <text x="520" y="312" class="nid">A.4</text><text x="600" y="324" class="t sm">onComplete fires</text>
+
+  <path class="e" d="M512,317 L360,317 L360,356"/>
+  <rect x="266" y="358" width="188" height="46" class="box" rx="7"/>
+  <text x="274" y="372" class="nid">A.5</text><text x="360" y="385" class="t">setStage('pending')</text>
+  <text x="360" y="397" class="t sm dead">local component state only</text>
+
+  <rect x="750" y="162" width="180" height="60" class="box blocked" rx="7"/>
+  <text x="758" y="176" class="nid">A.6</text><text x="840" y="190" class="t block">create-inquiry</text>
+  <text x="840" y="203" class="t sm">returns 501 NOT_IMPLEMENTED</text>
+  <text x="840" y="215" class="t sm">…and is never called anyway</text>
+
+  <rect x="750" y="246" width="180" height="60" class="box blocked" rx="7"/>
+  <text x="758" y="260" class="nid">A.7</text><text x="840" y="274" class="t block">persona-webhook</text>
+  <text x="840" y="287" class="t sm">implemented — but 404s</text>
+  <text x="840" y="299" class="t sm">on an inquiry it has no row for</text>
+
+  <rect x="750" y="330" width="180" height="46" class="box dead" rx="7"/>
+  <text x="758" y="344" class="nid">A.8</text><text x="840" y="357" class="t dead">no verifications row</text>
+  <text x="840" y="369" class="t sm">is ever written</text>
+
+  <path class="e red dash" d="M750,353 L500,353 L500,430 L360,430"/>
+
+  <rect x="266" y="424" width="188" height="46" class="box" rx="7"/>
+  <text x="274" y="438" class="nid">A.9</text><text x="360" y="451" class="t">useVerificationStatus</text>
+  <text x="360" y="463" class="t sm">→ 'none', forever</text>
+
+  <path class="e red" d="M360,470 L360,506"/>
+  <rect x="248" y="508" width="224" height="46" class="box dead" rx="7"/>
+  <text x="256" y="522" class="nid">A.10</text><text x="360" y="535" class="t dead">selectStack → 'verify'</text>
+  <text x="360" y="547" class="t sm">back to the start. No exit.</text>
+
+  <path class="e red dash" d="M248,531 L120,531 L120,470 L120,440"/>
+  <text x="120" y="486" class="el red">loop</text>
+  <rect x="34" y="404" width="172" height="36" class="box dead" rx="7"/>
+  <text x="42" y="418" class="nid">A.11</text><text x="120" y="430" class="t sm dead">asked to scan again</text>
+
+  <text x="480" y="596" class="t sm">This is increment 1 behaving as specified (§6.1): client-initiated capture proves the SDK works and must never gate anything.</text>
+  <text x="480" y="610" class="t sm">Increment 2 (P2-8.0) makes the backend the only writer. Until then, `home` is reachable only by seeding a row by hand.</text>
+</svg>
+<figcaption>No app code calls any Edge Function — <code>grep functions.invoke src/</code> returns zero hits.</figcaption>
+</figure>
+
+<!-- ===================== F1 ===================== -->
+<h2 id="f1">4 · F1 — Onboarding &amp; permission priming</h2>
+<p class="lede"><span class="tag t-block">unbuilt</span> P1-2.0, 0/9. The rule that shapes it:
+<b>permissions are requested at the moment of need, never at launch.</b></p>
+
+<figure>
+<svg viewBox="0 0 900 560" width="900" role="img" aria-label="F1 onboarding and permission priming">
+  <rect x="0" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="300" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="600" y="0" width="300" height="34" class="laneHdrExt"/>
+  <rect x="600" y="34" width="300" height="504" fill="url(#hatch)"/>
+  <rect x="0" y="34" width="900" height="504" class="laneBody"/>
+  <line x1="300" y1="0" x2="300" y2="538" class="laneDiv"/>
+  <line x1="600" y1="0" x2="600" y2="538" class="laneDiv"/>
+  <text x="150" y="22" class="laneTxt">User</text>
+  <text x="450" y="22" class="laneTxt">App</text>
+  <text x="750" y="22" class="laneTxt">OS</text>
+
+  <circle cx="150" cy="64" r="10" class="term"/>
+  <path class="e" d="M150,76 L150,96"/>
+  <rect x="60" y="98" width="180" height="34" class="box" rx="7"/>
+  <text x="68" y="112" class="nid">F1.1</text><text x="150" y="122" class="t sm">Welcome — what it does</text>
+  <path class="e" d="M150,132 L150,152"/>
+  <rect x="60" y="154" width="180" height="34" class="box" rx="7"/>
+  <text x="68" y="168" class="nid">F1.2</text><text x="150" y="178" class="t sm">How it keeps you safe</text>
+  <path class="e" d="M150,188 L150,208"/>
+  <rect x="48" y="210" width="204" height="44" class="box acc" rx="7"/>
+  <text x="56" y="224" class="nid">F1.3</text><text x="150" y="236" class="t sm">What we never see</text>
+  <text x="150" y="248" class="t sm">your ID photo · your selfie</text>
+
+  <path class="e" d="M150,254 L150,280 L450,280 L450,304"/>
+  <rect x="352" y="306" width="196" height="44" class="box" rx="7"/>
+  <text x="360" y="320" class="nid">F1.P</text><text x="450" y="332" class="t sm">Priming — what, why now,</text>
+  <text x="450" y="344" class="t sm">and what if you say no</text>
+
+  <path class="e" d="M548,328 L750,328 L750,356"/>
+  <polygon points="750,358 862,388 750,418 638,388" class="dia"/>
+  <text x="750" y="392" class="t sm">granted?</text>
+
+  <path class="e" d="M638,388 L450,388 L450,428"/><text x="540" y="380" class="el">yes</text>
+  <rect x="372" y="430" width="156" height="34" class="box ok" rx="7"/>
+  <text x="380" y="444" class="nid">F1.4</text><text x="450" y="454" class="t sm">continue</text>
+
+  <path class="e red" d="M750,418 L750,442"/>
+  <polygon points="750,444 856,470 750,496 644,470" class="dia"/>
+  <text x="750" y="474" class="t sm">asked before?</text>
+
+  <path class="e red" d="M644,470 L150,470 L150,436"/>
+  <rect x="48" y="392" width="204" height="42" class="box" rx="7"/>
+  <text x="56" y="406" class="nid">F1.D1</text><text x="150" y="418" class="t sm">Denied once → explain,</text>
+  <text x="150" y="430" class="t sm">“Try again” re-prompts</text>
+
+  <path class="e red" d="M750,496 L750,516 L252,516"/>
+  <rect x="48" y="498" width="204" height="34" class="box blocked" rx="7"/>
+  <text x="56" y="512" class="nid">F1.D2</text><text x="150" y="522" class="t sm block">Permanently denied → Settings</text>
+</svg>
+<figcaption>“Denied once” and “permanently denied” are different screens. Conflating them produces a button that silently does nothing.</figcaption>
+</figure>
+
+<table>
+<tr><th>ID</th><th>Permission</th><th>Primed at</th><th>If denied</th></tr>
+<tr><td>F1.D3</td><td>Camera</td><td>Start of verification (F6.2)</td><td>Verification cannot proceed → manual fallback <span class="tag t-block">OQ-2</span></td></tr>
+<tr><td>F1.D4</td><td>Bluetooth</td><td>Start of pairing (F7.2)</td><td>No pairing. <b>The rest of the app still works.</b></td></tr>
+<tr><td>F1.D5</td><td>—</td><td>Bluetooth <i>off</i>, not denied</td><td>Distinct screen. No permission involved.</td></tr>
+</table>
+<p>Permission state is re-checked on <b>every app foreground</b>. A user who fixes a permission in
+Settings must find the app already recovered — never still sitting on the screen that sent them there.</p>
+
+<!-- ===================== F2 ===================== -->
+<h2 id="f2">5 · F2 — Signup with email</h2>
+<p class="lede">Resolves <span class="tag t-dead">DE-1</span> <span class="tag t-dead">DE-2</span>.</p>
+
+<figure>
+<svg viewBox="0 0 900 540" width="900" role="img" aria-label="F2 email signup">
+  <rect x="0" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="300" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="600" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="0" y="34" width="900" height="484" class="laneBody"/>
+  <line x1="300" y1="0" x2="300" y2="518" class="laneDiv"/>
+  <line x1="600" y1="0" x2="600" y2="518" class="laneDiv"/>
+  <text x="150" y="22" class="laneTxt">User</text>
+  <text x="450" y="22" class="laneTxt">App</text>
+  <text x="750" y="22" class="laneTxt">Supabase Auth</text>
+
+  <circle cx="150" cy="64" r="10" class="term"/>
+  <path class="e" d="M150,76 L150,96"/>
+  <rect x="60" y="98" width="180" height="34" class="box" rx="7"/>
+  <text x="68" y="112" class="nid">F2.1</text><text x="150" y="122" class="t sm">email · password · confirm</text>
+
+  <path class="e" d="M240,115 L450,115 L450,140"/>
+  <polygon points="450,142 556,170 450,198 344,170" class="dia"/>
+  <text x="450" y="174" class="t sm">valid?</text>
+
+  <path class="e red" d="M344,170 L150,170 L150,146"/><text x="250" y="163" class="el red">no → F2.E1 inline</text>
+  <path class="e" d="M450,198 L450,224"/><text x="474" y="216" class="el">yes</text>
+
+  <rect x="372" y="226" width="156" height="34" class="box" rx="7"/>
+  <text x="380" y="240" class="nid">F2.3</text><text x="450" y="250" class="t sm">signUpWithEmail</text>
+  <path class="e" d="M528,243 L750,243 L750,268"/>
+
+  <polygon points="750,270 862,300 750,330 638,300" class="dia"/>
+  <text x="750" y="298" class="t sm">session</text><text x="750" y="311" class="t sm">established?</text>
+
+  <path class="e acc" d="M638,290 L450,290 L450,348"/><text x="544" y="283" class="el">yes</text>
+  <rect x="378" y="350" width="144" height="34" class="box ok" rx="7"/>
+  <text x="386" y="364" class="nid">F2.5</text><text x="450" y="374" class="t sm">→ the gate (F6)</text>
+  <path class="e" d="M450,384 L450,404"/>
+  <circle cx="450" cy="418" r="12" class="termRing"/><circle cx="450" cy="418" r="6" class="term"/>
+
+  <path class="e" d="M750,330 L750,352 L232,352 L232,376"/><text x="640" y="345" class="el">no — confirmation required</text>
+
+  <rect x="46" y="374" width="212" height="82" class="box acc" rx="7"/>
+  <text x="54" y="392" class="nid">F2.6</text>
+  <text x="152" y="404" class="t">“Check your email”</text>
+  <text x="152" y="420" class="t sm">F2.6a  Resend (cooldown)</text>
+  <text x="152" y="433" class="t sm">F2.6b  Change address</text>
+  <text x="152" y="446" class="t sm">F2.6c  Use phone instead →</text>
+
+  <path class="e" d="M258,440 L300,440 L300,474 L152,474"/>
+  <rect x="46" y="458" width="212" height="32" class="box blocked" rx="7"/>
+  <text x="54" y="472" class="nid">🔴</text>
+  <text x="152" y="478" class="t sm block">no SMTP — this mail may never arrive</text>
+</svg>
+<figcaption>Today F2.6 renders a terminal panel with none of a/b/c, and waits for an email that may never come.</figcaption>
+</figure>
+
+<div class="note red">
+<b>Success states should not be screens.</b> DE-2 renders “Account created / You’re signed in” and
+then relies on <code>onAuthStateChange</code> to move the user. When the listener fires, the panel is
+a pointless flash; when it does not, the user is stuck forever. Either navigate explicitly, or render
+nothing and let the gate move them. Same fix for DE-3 and DE-4.
+</div>
+
+<!-- ===================== F3 ===================== -->
+<h2 id="f3">6 · F3 — Phone OTP</h2>
+<p class="lede">The one flow with a working success transition today. Resolves
+<span class="tag t-dead">DE-4</span>.</p>
+
+<figure>
+<svg viewBox="0 0 900 578" width="900" role="img" aria-label="F3 phone OTP">
+  <rect x="0" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="300" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="600" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="0" y="34" width="900" height="522" class="laneBody"/>
+  <line x1="300" y1="0" x2="300" y2="556" class="laneDiv"/>
+  <line x1="600" y1="0" x2="600" y2="556" class="laneDiv"/>
+  <text x="150" y="22" class="laneTxt">User</text>
+  <text x="450" y="22" class="laneTxt">App</text>
+  <text x="750" y="22" class="laneTxt">Supabase Auth</text>
+
+  <circle cx="150" cy="62" r="10" class="term"/>
+  <path class="e" d="M150,74 L150,94"/>
+  <rect x="54" y="96" width="192" height="34" class="box" rx="7"/>
+  <text x="62" y="110" class="nid">F3.1</text><text x="150" y="120" class="t sm">country + number, live format</text>
+  <path class="e" d="M246,113 L450,113 L450,138"/>
+  <polygon points="450,140 550,166 450,192 350,166" class="dia"/>
+  <text x="450" y="170" class="t sm">valid E.164?</text>
+  <path class="e red" d="M350,166 L150,166 L150,144"/><text x="250" y="159" class="el red">no → F3.E1</text>
+  <path class="e" d="M550,166 L750,166 L750,192"/><text x="650" y="159" class="el">yes</text>
+  <rect x="672" y="194" width="156" height="34" class="box" rx="7"/>
+  <text x="680" y="208" class="nid">F3.3</text><text x="750" y="218" class="t sm">requestPhoneOtp</text>
+
+  <path class="e acc" d="M672,211 L450,211 L450,244"/>
+  <rect x="366" y="246" width="168" height="34" class="box acc" rx="7"/>
+  <text x="374" y="260" class="nid">F3.4</text><text x="450" y="270" class="t sm">→ OtpVerify {phone}</text>
+
+  <path class="e" d="M450,280 L450,300 L150,300 L150,318"/>
+  <rect x="60" y="320" width="180" height="34" class="box" rx="7"/>
+  <text x="68" y="334" class="nid">F3.5</text><text x="150" y="344" class="t sm">6 digits · auto-submits</text>
+
+  <path class="e" d="M240,337 L750,337 L750,362"/>
+  <polygon points="750,364 856,392 750,420 644,392" class="dia"/>
+  <text x="750" y="396" class="t sm">code ok?</text>
+
+  <path class="e acc" d="M644,392 L450,392 L450,420"/><text x="546" y="385" class="el">yes</text>
+  <rect x="378" y="422" width="144" height="32" class="box ok" rx="7"/>
+  <text x="386" y="436" class="nid">F3.6</text><text x="450" y="445" class="t sm">→ the gate (F6)</text>
+  <path class="e" d="M450,454 L450,468"/>
+  <circle cx="450" cy="482" r="12" class="termRing"/><circle cx="450" cy="482" r="6" class="term"/>
+
+  <path class="e red" d="M750,420 L750,512 L250,512"/>
+  <rect x="42" y="480" width="206" height="66" class="box" rx="7"/>
+  <text x="50" y="494" class="nid">F3.E</text>
+  <text x="145" y="506" class="t sm">F3.E2 wrong · F3.E3 expired</text>
+  <text x="145" y="519" class="t sm">F3.E5 rate limited → use email</text>
+  <text x="145" y="532" class="t sm dead">F3.E6 change number ← missing today</text>
+</svg>
+<figcaption>F3.E6 does not exist: <code>OtpEntryScreen</code> imports no <code>useNavigation</code>, so a mistyped number means force-quitting the app.</figcaption>
+</figure>
+
+<!-- ===================== F5 ===================== -->
+<h2 id="f5">7 · F5 — Forgot password</h2>
+<p class="lede">Resolves <span class="tag t-dead">DE-5</span> <span class="tag t-dead">DE-6</span>
+<span class="tag t-block">SD-2</span>.</p>
+
+<figure>
+<svg viewBox="0 0 900 470" width="900" role="img" aria-label="F5 forgot password">
+  <rect x="0" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="300" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="600" y="0" width="300" height="34" class="laneHdr"/>
+  <rect x="0" y="34" width="900" height="414" class="laneBody"/>
+  <line x1="300" y1="0" x2="300" y2="448" class="laneDiv"/>
+  <line x1="600" y1="0" x2="600" y2="448" class="laneDiv"/>
+  <text x="150" y="22" class="laneTxt">User</text>
+  <text x="450" y="22" class="laneTxt">App</text>
+  <text x="750" y="22" class="laneTxt">Supabase Auth</text>
+
+  <circle cx="150" cy="62" r="10" class="term"/>
+  <path class="e" d="M150,74 L150,92"/>
+  <rect x="66" y="94" width="168" height="32" class="box" rx="7"/>
+  <text x="74" y="108" class="nid">F5.1</text><text x="150" y="117" class="t sm">enter email</text>
+  <path class="e" d="M234,110 L750,110 L750,136"/>
+  <rect x="656" y="138" width="188" height="44" class="box" rx="7"/>
+  <text x="664" y="152" class="nid">F5.2</text><text x="750" y="164" class="t sm">resetPasswordForEmail</text>
+  <text x="750" y="176" class="t sm">redirectTo: bluesmoke://…</text>
+
+  <path class="e" d="M656,160 L150,160 L150,186"/>
+  <rect x="42" y="188" width="216" height="58" class="box acc" rx="7"/>
+  <text x="50" y="202" class="nid">F5.3</text>
+  <text x="150" y="214" class="t sm">“If an account exists, we sent…”</text>
+  <text x="150" y="228" class="t sm">resend · change address</text>
+  <text x="150" y="240" class="t sm ok" style="fill:var(--ok)">keep the wording — must not enumerate</text>
+
+  <path class="e" d="M150,246 L150,272"/>
+  <rect x="60" y="274" width="180" height="32" class="box" rx="7"/>
+  <text x="68" y="288" class="nid">F5.4</text><text x="150" y="297" class="t sm">taps the link</text>
+
+  <path class="e" d="M240,290 L450,290 L450,316"/>
+  <rect x="344" y="314" width="212" height="50" class="box blocked" rx="7"/>
+  <text x="352" y="328" class="nid">F5.S</text><text x="450" y="342" class="t sm block">SD-2 · is this route mounted?</text>
+  <text x="450" y="356" class="t sm">a session unmounts the auth stack</text>
+
+  <path class="e" d="M450,364 L450,382"/>
+  <rect x="366" y="384" width="168" height="32" class="box" rx="7"/>
+  <text x="374" y="398" class="nid">F5.5</text><text x="450" y="407" class="t sm">new password ×2</text>
+
+  <path class="e" d="M534,400 L750,400 L750,376"/>
+  <rect x="672" y="342" width="156" height="32" class="box" rx="7"/>
+  <text x="680" y="356" class="nid">F5.6</text><text x="750" y="365" class="t sm">updateUser</text>
+
+  <path class="e acc" d="M750,342 L750,264 L258,264"/>
+  <rect x="60" y="330" width="180" height="44" class="box ok" rx="7"/>
+  <text x="68" y="344" class="nid">F5.7</text><text x="150" y="356" class="t sm">“Password updated”</text>
+  <text x="150" y="368" class="t sm" style="fill:var(--ok);font-weight:600">+ a Continue button ← missing</text>
+  <path class="e" d="M150,374 L150,398"/>
+  <circle cx="150" cy="412" r="12" class="termRing"/><circle cx="150" cy="412" r="6" class="term"/>
+</svg>
+<figcaption>F5.7 currently says “You can now log in with your new password” and offers no way to. Because the recovery session leaves the user signed in, the right destination is the gate, not Login.</figcaption>
+</figure>
+
+<div class="note amber">
+<b>F5.S is unverified.</b> Whether the deep link’s target is still mounted depends on the ordering of
+link delivery vs. session establishment, and nobody has run this on a device. <b>Test it first once
+Track A lands</b> — it is cheap to check and expensive to guess wrong.
+</div>
+
+<!-- ===================== F6 ===================== -->
+<h2 id="f6">8 · F6 — Age verification</h2>
+<p class="lede">Resolves <span class="tag t-dead">DE-7</span> <span class="tag t-dead">DE-8</span>
+<span class="tag t-dead">SD-3</span> and the trap. The hatched lane is Persona’s.</p>
+
+<div class="note red">
+<b>🔴 <code>min_age</code> is upstream of this entire diagram.</b> Persona returns
+<code>approved</code> meaning <i>“passed the checks the template was configured with”</i> — not
+<i>“is over 18”</i>. A template with no age requirement approves a 14-year-old, and every control
+below still functions perfectly while the product’s core promise silently fails.
+<b>No code we write can detect this.</b> A screenshot of the template’s age setting closes it.
+</div>
+
+<figure>
+<svg viewBox="0 0 980 808" width="980" role="img" aria-label="F6 age verification target flow">
+  <rect x="0" y="0" width="245" height="34" class="laneHdr"/>
+  <rect x="245" y="0" width="245" height="34" class="laneHdr"/>
+  <rect x="490" y="0" width="245" height="34" class="laneHdrExt"/>
+  <rect x="735" y="0" width="245" height="34" class="laneHdr"/>
+  <rect x="490" y="34" width="245" height="704" fill="url(#hatch)"/>
+  <rect x="0" y="34" width="980" height="704" class="laneBody"/>
+  <line x1="245" y1="0" x2="245" y2="738" class="laneDiv"/>
+  <line x1="490" y1="0" x2="490" y2="738" class="laneDiv"/>
+  <line x1="735" y1="0" x2="735" y2="738" class="laneDiv"/>
+  <text x="122" y="22" class="laneTxt">User</text>
+  <text x="367" y="22" class="laneTxt">App</text>
+  <text x="612" y="22" class="laneTxt">Persona SDK · not ours</text>
+  <text x="857" y="22" class="laneTxt">Our backend</text>
+
+  <circle cx="122" cy="62" r="10" class="term"/>
+  <path class="e" d="M122,74 L122,92"/>
+  <rect x="30" y="94" width="184" height="44" class="box acc" rx="7"/>
+  <text x="38" y="108" class="nid">F6.1</text><text x="122" y="120" class="t sm">Why we need this</text>
+  <text x="122" y="132" class="t sm">we never see the photo</text>
+
+  <path class="e" d="M122,138 L122,158"/>
+  <rect x="30" y="160" width="184" height="32" class="box" rx="7"/>
+  <text x="38" y="174" class="nid">F6.2</text><text x="122" y="183" class="t sm">camera priming → OS</text>
+
+  <path class="e" d="M214,176 L857,176 L857,202"/>
+  <rect x="763" y="204" width="188" height="44" class="box" rx="7"/>
+  <text x="771" y="218" class="nid">F6.3</text><text x="857" y="230" class="t sm">create-inquiry</text>
+  <text x="857" y="242" class="t sm">bound to user_id · writes pending</text>
+
+  <path class="e" d="M763,226 L612,226 L612,252"/>
+  <rect x="524" y="254" width="176" height="32" class="box ext" rx="7"/>
+  <text x="532" y="268" class="nid">F6.4</text><text x="612" y="277" class="t sm">SDK captures</text>
+
+  <path class="e" d="M612,286 L612,308"/>
+  <polygon points="612,310 712,338 612,366 512,338" class="dia"/>
+  <text x="612" y="342" class="t sm">outcome</text>
+
+  <path class="e" d="M612,366 L612,392"/><text x="654" y="384" class="el">onComplete</text>
+  <rect x="524" y="394" width="176" height="30" class="box ext" rx="7"/>
+  <text x="532" y="408" class="nid">F6.5</text><text x="612" y="415" class="t sm">submitted</text>
+
+  <path class="e" d="M700,409 L857,409 L857,436"/>
+  <rect x="763" y="438" width="188" height="44" class="box" rx="7"/>
+  <text x="771" y="452" class="nid">F6.6</text><text x="857" y="464" class="t sm">webhook → provider_status</text>
+  <text x="857" y="476" class="t sm" style="fill:var(--ok)">the only writer</text>
+
+  <path class="e" d="M763,460 L367,460 L367,486"/>
+  <rect x="273" y="488" width="188" height="32" class="box" rx="7"/>
+  <text x="281" y="502" class="nid">F6.7</text><text x="367" y="511" class="t sm">row poll observes it</text>
+
+  <path class="e" d="M367,520 L367,542"/>
+  <polygon points="367,544 467,572 367,600 267,572" class="dia"/>
+  <text x="367" y="576" class="t sm">decision</text>
+
+  <path class="e acc" d="M467,572 L470,572 L470,640 L367,640"/>
+  <rect x="285" y="624" width="164" height="32" class="box ok" rx="7"/>
+  <text x="293" y="638" class="nid">F6.8</text><text x="367" y="647" class="t sm">verified → F7</text>
+  <path class="e" d="M367,656 L367,676"/>
+  <circle cx="367" cy="690" r="12" class="termRing"/><circle cx="367" cy="690" r="6" class="term"/>
+
+  <!-- cancel / error -->
+  <path class="e" d="M512,338 L367,338 L367,364"/><text x="440" y="331" class="el">onCanceled</text>
+  <rect x="273" y="366" width="188" height="44" class="box" rx="7"/>
+  <text x="281" y="380" class="nid">F6.C</text><text x="367" y="392" class="t sm">“Verification paused”</text>
+  <text x="367" y="404" class="t sm" style="fill:var(--ok);font-weight:600">Resume ← must actually resume</text>
+
+  <path class="e red" d="M267,572 L122,572 L122,540"/><text x="196" y="565" class="el red">declined</text>
+
+  <!-- decline ladder -->
+  <rect x="20" y="410" width="204" height="128" class="box" rx="7"/>
+  <text x="28" y="424" class="nid">F6.D</text>
+  <text x="122" y="437" class="t" style="font-weight:600">Decline ladder · §6.4</text>
+  <text x="122" y="457" class="t sm">1–3  retry, progressive coaching</text>
+  <text x="122" y="473" class="t sm">4–5  retry + “Having trouble?”</text>
+  <text x="122" y="489" class="t sm block">6+   lock 30 min → fallback</text>
+  <text x="122" y="510" class="t sm">coaching, never a score,</text>
+  <text x="122" y="524" class="t sm">never a reason that teaches</text>
+  <text x="122" y="536" class="t sm">someone how to pass</text>
+  <path class="e dash" d="M224,440 L250,440 L250,270 L524,270"/>
+  <text x="352" y="262" class="el">retry (1–5) and Resume both relaunch the SDK</text>
+
+  <path class="e block" d="M122,538 L122,560 L122,596" stroke="var(--block)" marker-end="url(#a)"/>
+  <rect x="20" y="598" width="204" height="46" class="box blocked" rx="7"/>
+  <text x="28" y="612" class="nid">F6.F</text><text x="122" y="624" class="t sm block">Manual fallback</text>
+  <text x="122" y="636" class="t sm">🔴 OQ-2 — no owner, channel or SLA</text>
+
+  <!-- pending timeout + transport -->
+  <rect x="763" y="530" width="188" height="46" class="box" rx="7"/>
+  <text x="771" y="544" class="nid">F6.P</text><text x="857" y="556" class="t sm">pending &gt; ~2 min</text>
+  <text x="857" y="568" class="t sm">“Taking longer than usual”</text>
+  <rect x="763" y="592" width="188" height="46" class="box dead" rx="7"/>
+  <text x="771" y="606" class="nid">F6.X</text><text x="857" y="618" class="t sm dead">transport error</text>
+  <text x="857" y="630" class="t sm">≠ declined. Retry, not re-scan.</text>
+
+  <rect x="30" y="752" width="921" height="46" rx="8" fill="var(--dead-bg)" stroke="var(--dead)" stroke-width="1.4"/>
+  <text x="490" y="772" class="t dead" style="font-weight:650">F6.Z · every screen on `verify` and `pending` carries a persistent sign-out</text>
+  <text x="490" y="789" class="t sm">Without it, a declined user’s only recourse is deleting the app.</text>
+</svg>
+<figcaption>F6.X does not exist today. <code>useVerificationStatus</code> returns <code>'none'</code> on a query error, so a verified user on a flaky network is thrown back into an ID scan — the hook already exports <code>error</code> and <code>refetch</code> for exactly this, and the navigator drops them.</figcaption>
+</figure>
+
+<!-- ===================== F7 ===================== -->
+<h2 id="f7">9 · F7 — Pair a device</h2>
+<p class="lede"><span class="tag t-block">blocked</span> No UI exists. BLE lower layers are built and
+tested; <code>connection.ts</code>, <code>commands.ts</code> and <code>proximity.ts</code> throw.</p>
+
+<div class="note red">
+<b>🔴 OQ-12 — the <code>serial_hash</code> salt.</b> F7.9 cannot run without it, and
+<b>a guessed salt fails silently</b>: the hash is well-formed, the lookup misses, and the failure
+looks like a hardware fault. Do not invent one.
+</div>
+
+<figure>
+<svg viewBox="0 0 980 690" width="980" role="img" aria-label="F7 device pairing">
+  <rect x="0" y="0" width="245" height="34" class="laneHdr"/>
+  <rect x="245" y="0" width="245" height="34" class="laneHdr"/>
+  <rect x="490" y="0" width="245" height="34" class="laneHdrExt"/>
+  <rect x="735" y="0" width="245" height="34" class="laneHdr"/>
+  <rect x="490" y="34" width="245" height="634" fill="url(#hatch)"/>
+  <rect x="0" y="34" width="980" height="634" class="laneBody"/>
+  <line x1="245" y1="0" x2="245" y2="668" class="laneDiv"/>
+  <line x1="490" y1="0" x2="490" y2="668" class="laneDiv"/>
+  <line x1="735" y1="0" x2="735" y2="668" class="laneDiv"/>
+  <text x="122" y="22" class="laneTxt">User</text>
+  <text x="367" y="22" class="laneTxt">App</text>
+  <text x="612" y="22" class="laneTxt">Device firmware</text>
+  <text x="857" y="22" class="laneTxt">Our backend</text>
+
+  <circle cx="122" cy="62" r="10" class="term"/>
+  <path class="e" d="M122,74 L122,92"/>
+  <rect x="30" y="94" width="184" height="32" class="box" rx="7"/>
+  <text x="38" y="108" class="nid">F7.1</text><text x="122" y="117" class="t sm">“Pair a device”</text>
+  <path class="e" d="M122,126 L122,146"/>
+  <rect x="30" y="148" width="184" height="32" class="box" rx="7"/>
+  <text x="38" y="162" class="nid">F7.2</text><text x="122" y="171" class="t sm">Bluetooth priming</text>
+  <path class="e" d="M214,164 L367,164 L367,190"/>
+  <rect x="273" y="192" width="188" height="44" class="box" rx="7"/>
+  <text x="281" y="206" class="nid">F7.3</text><text x="367" y="218" class="t sm">Scan — and tell the user</text>
+  <text x="367" y="230" class="t sm">what to do to the device</text>
+  <path class="e" d="M367,236 L367,258"/>
+  <polygon points="367,260 467,288 367,316 267,288" class="dia"/>
+  <text x="367" y="292" class="t sm">found any?</text>
+  <path class="e red" d="M267,288 L122,288 L122,314"/><text x="196" y="281" class="el red">none</text>
+  <rect x="30" y="316" width="184" height="44" class="box" rx="7"/>
+  <text x="38" y="330" class="nid">F7.E3</text><text x="122" y="342" class="t sm">charged? in range?</text>
+  <text x="122" y="354" class="t sm">already paired elsewhere?</text>
+  <path class="e dash" d="M30,338 L14,338 L14,208 L273,208"/>
+
+  <path class="e" d="M467,288 L612,288 L612,314"/><text x="540" y="281" class="el">select · bond</text>
+  <rect x="524" y="316" width="176" height="32" class="box ext" rx="7"/>
+  <text x="532" y="330" class="nid">F7.6</text><text x="612" y="339" class="t sm">connect + bond</text>
+  <path class="e" d="M612,348 L612,370"/>
+  <rect x="524" y="372" width="176" height="32" class="box ext" rx="7"/>
+  <text x="532" y="386" class="nid">F7.7</text><text x="612" y="395" class="t sm">read deviceInfo §4.3</text>
+  <path class="e" d="M612,404 L612,426"/>
+  <rect x="524" y="428" width="176" height="32" class="box ext" rx="7"/>
+  <text x="532" y="442" class="nid">F7.8</text><text x="612" y="451" class="t sm">handshake §4.5 · CMAC</text>
+
+  <path class="e" d="M700,444 L857,444 L857,470"/>
+  <rect x="763" y="472" width="188" height="60" class="box blocked" rx="7"/>
+  <text x="771" y="486" class="nid">F7.9</text><text x="857" y="498" class="t sm block">issue-device-session</text>
+  <text x="857" y="511" class="t sm">re-reads age_verified server-side</text>
+  <text x="857" y="524" class="t sm block">🔴 OQ-12 · needs the salt</text>
+
+  <path class="e acc" d="M763,502 L367,502 L367,530"/>
+  <rect x="285" y="532" width="164" height="32" class="box ok" rx="7"/>
+  <text x="293" y="546" class="nid">F7.10</text><text x="367" y="555" class="t sm">paired → F8</text>
+  <path class="e" d="M367,564 L367,584"/>
+  <circle cx="367" cy="598" r="12" class="termRing"/><circle cx="367" cy="598" r="6" class="term"/>
+
+  <rect x="20" y="392" width="204" height="118" class="box" rx="7"/>
+  <text x="28" y="406" class="nid">F7.E</text>
+  <text x="122" y="419" class="t" style="font-weight:600">Failures, each its own screen</text>
+  <text x="122" y="437" class="t sm">E5  403 age not verified → F6</text>
+  <text x="122" y="451" class="t sm">E6  403 owned by another account</text>
+  <text x="122" y="465" class="t sm">E7  409 not provisioned (OQ-4)</text>
+  <text x="122" y="479" class="t sm">E8  429 rate limited</text>
+  <text x="122" y="493" class="t sm">E10 incompatible → fail closed</text>
+  <text x="122" y="505" class="t sm">E11 out of range mid-pair</text>
+
+  <rect x="285" y="620" width="666" height="40" rx="8" fill="var(--accent-bg)" stroke="var(--accent)" stroke-width="1.3"/>
+  <text x="618" y="637" class="t" style="font-weight:600">K_dev never leaves the server — the app receives only a scoped, expiring K_sess</text>
+  <text x="618" y="652" class="t sm">Every BLE operation has an explicit timeout. No screen here is an indefinite spinner.</text>
+</svg>
+<figcaption>F7.E5 matters: the server re-checks <code>age_verified</code> and can disagree with the client. That must land on “Verification needed”, not a generic error.</figcaption>
+</figure>
+
+<!-- ===================== F8 ===================== -->
+<h2 id="f8">10 · F8 — Lock &amp; unlock</h2>
+<p class="lede">State names are spec §7.3, <b>verbatim</b>. Thresholds are §7.2 and must not be
+re-derived.</p>
+
+<div class="note accent">
+<b>The firmware dead-man timer locks the device, not the app.</b> The app’s proximity monitor is
+advisory — it makes locking feel <i>fast</i>. If the app is killed, backgrounded, crashed, or the
+battery dies, safety is unaffected. <b>No screen may imply the app must be running for the device to
+be safe.</b>
+</div>
+
+<figure>
+<svg viewBox="0 0 900 560" width="900" role="img" aria-label="F8 lock state machine">
+  <circle cx="120" cy="42" r="10" class="term"/>
+  <path class="e" d="M120,54 L120,76"/>
+  <rect x="26" y="78" width="188" height="42" class="box" rx="7"/>
+  <text x="34" y="92" class="nid">F8.1</text><text x="120" y="104" class="t">DISCONNECTED</text>
+  <text x="120" y="115" class="t sm">“Device not found” · locked</text>
+
+  <path class="e" d="M120,120 L120,154"/><text x="238" y="140" class="el">scan + connect + bond</text>
+  <rect x="26" y="156" width="188" height="42" class="box" rx="7"/>
+  <text x="34" y="170" class="nid">F8.2</text><text x="120" y="182" class="t">CONNECTED_UNAUTH</text>
+  <text x="120" y="193" class="t sm">“Connecting…” · bounded</text>
+
+  <path class="e" d="M120,198 L120,232"/><text x="204" y="218" class="el">handshake §4.5</text>
+  <rect x="26" y="234" width="188" height="36" class="box" rx="7"/>
+  <text x="34" y="248" class="nid">F8.A</text><text x="120" y="258" class="t">AUTHENTICATED</text>
+
+  <path class="e dash" d="M214,252 L268,252 L268,177 L214,177"/>
+  <text x="316" y="214" class="el">auth failure (backoff)</text>
+
+  <path class="e" d="M120,270 L120,306"/><text x="60" y="292" class="el">not activated</text>
+  <rect x="26" y="308" width="188" height="42" class="box" rx="7"/>
+  <text x="34" y="322" class="nid">F8.3</text><text x="120" y="334" class="t">PENDING_ACTIVATION</text>
+  <text x="120" y="345" class="t sm">needs age_verified</text>
+  <path class="e dash" d="M26,329 L10,329 L10,252 L26,252"/>
+  <text x="188" y="384" class="el">ACTIVATE §4.6 0x03 — gated on the server</text>
+
+  <path class="e" d="M214,252 L420,252 L420,290"/><text x="330" y="245" class="el">activated</text>
+  <rect x="326" y="292" width="188" height="36" class="box" rx="7"/>
+  <text x="334" y="306" class="nid">F8.4</text><text x="420" y="316" class="t">LOCKED</text>
+
+  <path class="e" d="M420,328 L420,364"/><text x="466" y="350" class="el">UNLOCK cmd</text>
+  <rect x="326" y="366" width="188" height="42" class="box blocked" rx="7"/>
+  <text x="334" y="380" class="nid">F8.5</text><text x="420" y="392" class="t block">pending — NOT “unlocked”</text>
+  <text x="420" y="403" class="t sm">waits for the device’s notification</text>
+
+  <path class="e" d="M420,408 L420,442"/><text x="470" y="428" class="el">device confirms</text>
+  <rect x="326" y="444" width="188" height="36" class="box ok" rx="7"/>
+  <text x="334" y="458" class="nid">F8.6</text><text x="420" y="468" class="t">UNLOCKED</text>
+
+  <path class="e red" d="M514,462 L560,462 L560,310 L514,310"/>
+  <rect x="576" y="358" width="300" height="118" class="box" rx="7"/>
+  <text x="584" y="372" class="nid">F8.A</text>
+  <text x="726" y="385" class="t" style="font-weight:600">Every way back to LOCKED</text>
+  <text x="726" y="404" class="t sm">user taps Lock</text>
+  <text x="726" y="419" class="t sm">smoothed RSSI &lt; −85 dBm, 3 consecutive</text>
+  <text x="726" y="434" class="t sm">session expiry</text>
+  <text x="726" y="449" class="t sm" style="font-weight:600">disconnect → firmware dead-man timer</text>
+  <text x="726" y="466" class="t sm">disconnect locks immediately, no debounce</text>
+
+  <rect x="576" y="196" width="300" height="132" class="box" rx="7"/>
+  <text x="584" y="210" class="nid">§7.2</text>
+  <text x="726" y="223" class="t" style="font-weight:600">Hysteresis — do not re-derive</text>
+  <text x="726" y="243" class="t sm">sample 1 Hz while UNLOCKED</text>
+  <text x="726" y="258" class="t sm">median of the last 5 (rejects outliers)</text>
+  <text x="726" y="273" class="t sm">enter-lock &lt; −85 dBm × 3</text>
+  <text x="726" y="288" class="t sm">exit-lock &gt; −75 dBm × 2</text>
+  <text x="726" y="303" class="t sm">10 dBm band → cannot flap</text>
+  <text x="726" y="320" class="t sm dead">never show metres — this is not ranging</text>
+
+  <rect x="26" y="500" width="850" height="44" rx="8" fill="var(--accent-bg)" stroke="var(--accent)" stroke-width="1.3"/>
+  <text x="451" y="518" class="t" style="font-weight:600">Invariant: UNLOCKED is reachable only through AUTHENTICATED + activated + an explicit user action</text>
+  <text x="451" y="535" class="t sm">There is no path from DISCONNECTED or CONNECTED_UNAUTH to UNLOCKED.</text>
+</svg>
+<figcaption>F8.5 is the one most likely to be got wrong. A tap must not flip the UI — rendering “unlocked” optimistically means showing unlocked for a device that is locked.</figcaption>
+</figure>
+
+<!-- ===================== F9 ===================== -->
+<h2 id="f9">11 · F9 — Profile &amp; settings</h2>
+<p class="lede"><span class="tag t-block">absent</span> No route, no screen, no file — and
+<b>no roadmap task owns it</b>. It resolves the trap, so it needs one.</p>
+
+<figure>
+<svg viewBox="0 0 900 420" width="900" role="img" aria-label="F9 profile and settings structure">
+  <rect x="330" y="20" width="240" height="40" class="box acc" rx="7"/>
+  <text x="338" y="34" class="nid">F9</text><text x="450" y="46" class="t">Profile &amp; settings</text>
+
+  <path class="e" d="M370,60 L120,60 L120,96"/>
+  <path class="e" d="M400,60 L300,60 L300,96"/>
+  <path class="e" d="M450,60 L450,96"/>
+  <path class="e" d="M500,60 L600,60 L600,96"/>
+  <path class="e" d="M530,60 L780,60 L780,96"/>
+
+  <rect x="30" y="98" width="180" height="52" class="box" rx="7"/>
+  <text x="38" y="112" class="nid">F9.1</text><text x="120" y="124" class="t sm">Account</text>
+  <text x="120" y="138" class="t sm">email · phone · status badge</text>
+
+  <rect x="216" y="98" width="168" height="52" class="box ok" rx="7"/>
+  <text x="224" y="112" class="nid">F9.2</text><text x="300" y="124" class="t sm">Security</text>
+  <text x="300" y="138" class="t sm">change password · sign out</text>
+
+  <rect x="392" y="98" width="164" height="52" class="box" rx="7"/>
+  <text x="400" y="112" class="nid">F9.3</text><text x="474" y="124" class="t sm">Devices</text>
+  <text x="474" y="138" class="t sm">rename · unpair</text>
+
+  <rect x="564" y="98" width="152" height="52" class="box" rx="7"/>
+  <text x="572" y="112" class="nid">F9.4</text><text x="640" y="124" class="t sm">Notifications</text>
+  <text x="640" y="138" class="t sm">alert toggles</text>
+
+  <rect x="724" y="98" width="152" height="52" class="box blocked" rx="7"/>
+  <text x="732" y="112" class="nid">F9.5</text><text x="800" y="124" class="t sm block">Help &amp; support</text>
+  <text x="800" y="138" class="t sm">🔴 OQ-2</text>
+
+  <path class="e" d="M450,150 L450,180"/>
+  <rect x="330" y="182" width="240" height="46" class="box blocked" rx="7"/>
+  <text x="338" y="196" class="nid">F9.7</text><text x="450" y="208" class="t sm block">Delete account &amp; data</text>
+  <text x="450" y="220" class="t sm">🔴 OQ-11(d) — vendor erasure unowned</text>
+
+  <rect x="30" y="256" width="846" height="60" rx="8" fill="var(--dead-bg)" stroke="var(--dead)" stroke-width="1.4"/>
+  <text x="453" y="278" class="t dead" style="font-weight:650">F9.2 is a safety feature, not a settings row</text>
+  <text x="453" y="297" class="t sm">Sign-out exists today in exactly one place — HomeScreen — on the one stack a blocked user cannot reach.</text>
+  <text x="453" y="311" class="t sm">It must be reachable from every signed-in stack, `verify` and `pending` included.</text>
+
+  <rect x="30" y="332" width="846" height="58" rx="8" fill="var(--block-bg)" stroke="var(--block)" stroke-width="1.3"/>
+  <text x="453" y="354" class="t block" style="font-weight:650">F9.7 must not overclaim</text>
+  <text x="453" y="373" class="t sm">Until the vendor-side erasure path exists, we cannot honestly promise Persona’s copy is gone.</text>
+  <text x="453" y="387" class="t sm">The screen states what we delete and what our partner holds. An overclaim here is a compliance problem, not a copy problem.</text>
+</svg>
+<figcaption>Nine flows in this document point at F9.5 as their “contact support” destination. It cannot be built until somebody owns the inbox.</figcaption>
+</figure>
+
+<h2>Blockers, in one place</h2>
+<table>
+<tr><th>Open question</th><th>Blocks</th><th>The ask</th></tr>
+<tr><td><span class="tag t-dead">🔴</span> <code>min_age</code></td><td><b>F6 entirely</b></td><td>Screenshot of the Persona template’s age setting</td></tr>
+<tr><td><span class="tag t-dead">🔴</span> OQ-12</td><td>F7.9, F8</td><td>The <code>serial_hash</code> salt — a guess fails silently</td></tr>
+<tr><td><span class="tag t-dead">🔴</span> OQ-2</td><td>F6.F, F9.5</td><td>Manual-review owner, channel, SLA</td></tr>
+<tr><td><span class="tag t-dead">🔴</span> OQ-11(d)</td><td>F9.7</td><td>Who builds vendor-side erasure</td></tr>
+<tr><td>OQ-1 / OQ-4</td><td>F7, F8</td><td>Hardware ~Day 26; who burns <code>K_dev</code> at manufacture</td></tr>
+<tr><td>OQ-7</td><td>all visual work</td><td>Brand assets — this pass is structural only</td></tr>
+<tr><td>OQ-6</td><td>F7, F8</td><td>Firmware has still never seen §4</td></tr>
+<tr><td>— SMTP</td><td>F2.6, F5.3</td><td>Configure it, or make phone the default signup method</td></tr>
+</table>
+
+<h2>Every “no” a user can say</h2>
+<table>
+<tr><th>Refusal</th><th>Consequence</th><th>Still works</th></tr>
+<tr><td>Skip onboarding</td><td>none</td><td>everything</td></tr>
+<tr><td>Deny camera</td><td>no verification</td><td>nothing gated — needs F6.F</td></tr>
+<tr><td>Deny Bluetooth</td><td>no pairing</td><td>account, profile, verification</td></tr>
+<tr><td>Deny notifications</td><td>no alerts</td><td>everything — <b>the device still locks</b></td></tr>
+<tr><td>Abandon verification</td><td>cannot use a device</td><td><b>must be able to sign out</b> (F6.Z)</td></tr>
+<tr><td>Turn Bluetooth off</td><td>device disconnects</td><td><b>device locks itself</b></td></tr>
+<tr><td>Force-quit the app</td><td>nothing</td><td><b>device locks itself</b> — §7.4</td></tr>
+</table>
+<p>The last three rows are the product’s central safety claim: <b>every way a user can walk away ends
+with the device locked.</b> That is the firmware’s dead-man timer, not ours, and no flow above
+weakens it.</p>
+
+<p style="color:var(--ink3);font-size:13px;margin-top:48px;border-top:1px solid var(--line2);padding-top:16px">
+Companion documents: <a href="../FLOWS.md">FLOWS.md</a> (as-built) ·
+<a href="USER_FLOWS.md">USER_FLOWS.md</a> (target, full detail) ·
+<a href="SCREEN_INVENTORY.md">SCREEN_INVENTORY.md</a> ·
+<a href="../product/VERIFICATION_COPY.md">VERIFICATION_COPY.md</a>.
+Self-contained: no scripts, no network requests, no external assets.
+</p>
+
+</div>
+</body>
+</html>

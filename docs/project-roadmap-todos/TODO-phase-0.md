@@ -306,11 +306,28 @@ silently under the task.)*
       `Card`, `Screen`, `Text` + the three state components, all exported from `shared/ui/index.ts`.
       No sheet component yet — nothing has needed one.)*
 - [x] Loading / empty / error state patterns defined *(`LoadingState`, `EmptyState`, `ErrorState`)*
-- [ ] Wireframes — onboarding + permission priming
-- [ ] Wireframes — device scan, pairing, device list
-- [ ] Wireframes — verification flow (ID capture, selfie, result, retry, fallback)
-- [ ] Wireframes — lock/unlock control + device status
-- [ ] Coaching-oriented copy for verification failures (spec §6.4) — never diagnostic
+- [ ] Wireframes — onboarding + permission priming *(flow agreed: **F1**)*
+- [ ] Wireframes — device scan, pairing, device list *(flow agreed: **F7**)*
+- [ ] Wireframes — verification flow (ID capture, selfie, result, retry, fallback) *(flow agreed:
+      **F6**. Note the scope change: **we do not design ID capture or selfie** — Persona's SDK owns
+      that UI in its own process. This box is now the surround: entry, priming, pending, pass,
+      decline ladder, cancel, error, transport-error, fallback.)*
+- [ ] Wireframes — lock/unlock control + device status *(flow agreed: **F8**)*
+
+      > **All four still open by decision, Day 9.** The flows they wireframe are now settled in
+      > [`docs/system-design-ux/USER_FLOWS.md`](../system-design-ux/USER_FLOWS.md) and drawn in
+      > [`flows.html`](../system-design-ux/flows.html) — wireframing before the flow was agreed
+      > would have meant drawing every screen twice. Two things still gate them: **OQ-7** (no brand
+      > assets, so any visual pass is provisional) and a structural decision flagged in
+      > [`SCREEN_INVENTORY.md`](../system-design-ux/SCREEN_INVENTORY.md) §5 — `tokens.ts` is
+      > light-theme only, and adding dark after eight screens are migrated means touching all eight
+      > again.
+- [x] Coaching-oriented copy for verification failures (spec §6.4) — never diagnostic
+      *(`docs/product/VERIFICATION_COPY.md` — every user-facing string in F6, across the §6.4 ladder,
+      with a banned-word list and a review checklist. This is the one box on this task OQ-7 does not
+      block. Two strings are placeholders pending **OQ-2** (support address, SLA window) and one is
+      held pending **OQ-5** — "you won't need to do it again" is a lie if re-verification is
+      periodic.)*
 - [x] Accessibility pass: contrast, touch targets, dynamic type *(and **enforced**, not just done
       once — five guard tests: WCAG AA contrast on every token pair, a completeness guard so a new
       pair can't skip the check, minimum touch target on interactive primitives, and a guard that
