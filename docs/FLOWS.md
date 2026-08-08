@@ -203,6 +203,15 @@ is the only reason this has not been hit.** It is a shipping blocker, and it is 
 than a code defect: no individual screen is missing a button so much as the gated stacks are missing
 a universal escape. Resolved by [F9](system-design-ux/USER_FLOWS.md#f9).
 
+> **Confirmed live, 2026-08-09** (Track A walkthrough, signed-in-unverified state — no seeded row
+> needed; the trap begins one step earlier than traced above). Observed on the simulator:
+> the canceled state shows *"Verification not completed — You can try again whenever you're
+> ready."* with **no retry control at all** — the copy invites an action the screen doesn't offer —
+> and no sign-out, no support. Second face of the trap: `PersonaVerificationScreen` **auto-launches
+> the Persona SDK on every mount**, so force-quit → relaunch (session restored from Keychain)
+> drops the user straight back into the vendor's modal. Screenshots in the Track A brief's
+> 2026-08-09 session log.
+
 ---
 
 ## 5. What is actually reachable today
@@ -258,6 +267,14 @@ failure that is not a network failure is indistinguishable from one. This was fo
 it sent a debugging session down a connectivity path for an hour while the app was provably able to
 reach Supabase — verified by evaluating `fetch` inside the running app and getting a correct
 HTTP 400 from `/token`.
+
+*Resolution of the failure SD-5 was masking (2026-08-09):* the non-network exception behind "We
+couldn't reach the server" was supabase-js 2.112.0's constructor assigning `realtimeUrl.protocol`,
+which React Native's getter-only `URL` rejects — a synchronous `TypeError` before any request, on
+every auth method. Fixed by adding `react-native-url-polyfill` (imported first in `index.js`), the
+canonical Supabase RN setup step. Sign-in now works end to end. SD-5 itself — no dev-visible
+distinction between exception classes — remains open, and the same session hit it a second way: a
+transient `Network request failed` on `/verify` rendered as "Incorrect or expired code".
 
 ---
 
@@ -348,6 +365,9 @@ an owning target flow. None of them is fixed here. Fixing them is a follow-up ta
 because six of the eight dead ends want the same fix and patching them one screen at a time would
 produce six different answers.
 
-**Not yet validated by running the app.** Everything above is read from source. Nobody has walked
-this app end to end, because doing so needs the two pending migrations applied and a verified row
-seeded (Track A, ~20 min). SD-2 in particular cannot be settled any other way.
+**Validated by running the app, 2026-08-09** (Track A): the full auth walk (`AuthChoice →
+PhoneInput → OtpVerify → verify`), the §4.1 trap, the seeded-row path to Home, gate re-closure
+after deletion, and the five-assertion RLS proof are all now checked against the running app, not
+just source. Still outstanding: **SD-2** (needs a real recovery email — the one claim reading
+cannot settle), DE-4's visibility (transition obscured by a transient error this run), and
+everything below `home` (pairing, BLE), which has no UI yet.

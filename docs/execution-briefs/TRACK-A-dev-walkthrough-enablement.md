@@ -288,16 +288,24 @@ repo. **Do not push**; Sadin pushes when the app works.
 
 ## Definition of done
 
-- [ ] A1 — test OTP live on dev, and **only** dev
-- [ ] A3 — `migration list --linked` shows all five applied
-- [ ] A4 — one seeded verified row
-- [ ] B2 — auth walked on the simulator, screenshots taken, DE-4 and the §4.1 trap observed
-- [ ] B3 — all five RLS assertions pass, reported as a table
-- [ ] B4 — **SD-2 settled**, and the docs updated from "suspected" to a verdict
-- [ ] B5 — row deleted, gate confirmed to re-close
-- [ ] B6 — docs updated, committed, not pushed
-- [ ] `npm run typecheck` · `npm run lint` · `npm test` still green *(expect 0 / 70 warnings / 274
-      tests — this brief changes no `src/`, so any movement is a red flag, not a result)*
+- [x] A1 — test OTP live on dev, and **only** dev *(both pairs; phone provider **toggle** also had
+      to be enabled — see the 2026-08-09 second-attempt log)*
+- [x] A3 — all five migrations applied to dev *(verified via MCP; `migration list --linked` is
+      misleading against dev — see `supabase/README.md`)*
+- [x] A4 — one seeded verified row *(seeded 2026-08-09 via MCP, then deleted again as part of B5)*
+- [x] B2 — auth walked on the simulator, screenshots taken, the §4.1 trap observed live *(DE-4's
+      "Signed in" flash was not observable this run — a transient fetch failure put the screen in
+      its error state during the transition; still unconfirmed either way)*
+- [x] B3 — all five RLS assertions pass, reported as a table (2026-08-09, below)
+- [ ] B4 — **SD-2 settled**, and the docs updated from "suspected" to a verdict *(needs a real
+      recovery email — see "What remains")*
+- [x] B5 — row deleted, gate confirmed to re-close (restart required; foreground alone insufficient)
+- [x] B6 — docs updated, committed, not pushed
+- [ ] `npm run typecheck` · `npm run lint` · `npm test` still green *(typecheck and tests verified
+      green after the fix — 274/274. **`npm run lint` still needs a human run** — the agent session
+      could not execute it. NOTE: this brief now DOES change `src/`-adjacent files — `index.js`,
+      `package.json` — because the sign-in blocker's root cause was a missing dependency, fixed
+      under explicit instruction. See the second-attempt log.)*
 
 ---
 
@@ -378,6 +386,104 @@ a Fast Refresh reload, so arm it and attempt immediately.
 
 **Untried and worth trying first next session:** phone OTP. Test OTP is now configured, it is the
 flow that ships, and it exercises a different path from email.
+
+---
+
+## Session log — 2026-08-09, second attempt (same night, ~01:35–02:30)
+
+**The sign-in blocker is found and fixed.** Root cause, established by evidence rather than
+elimination this time:
+
+> **supabase-js 2.112.0's `SupabaseClient` constructor executes
+> `this.realtimeUrl.protocol = this.realtimeUrl.protocol.replace("http", "ws")`. React Native's
+> built-in `URL` exposes `protocol` as a getter-only property, so the assignment throws a
+> synchronous `TypeError` — inside `createClient`, before any network request, on every auth
+> method.** `runSafely` then converted that to "We couldn't reach the server" (SD-5, exactly as
+> documented). This is why email and phone failed identically and why the server never saw one
+> attempt.
+
+How it was pinned: a `globalThis.fetch` recorder armed over CDP showed **zero** requests on a
+login attempt, which cleared the Keychain suspect (it runs *after* the token response) and moved
+the throw before the transport. Metro dev bundles register modules with verbose names, so
+`__r(<id of supabaseClient.ts>).getSupabaseClient()` evaluated over CDP reproduced the throw with
+the real message and stack — no UI, no guesswork.
+
+Two corrections to the first-attempt elimination table:
+
+- *"react-native-url-polyfill missing"* was **wrongly eliminated**. The analysis covered auth-js's
+  `new URL()` call sites only; the fatal assignment is in supabase-js **core**. The polyfill is
+  Supabase's canonical React Native setup step precisely because of this.
+- The Keychain suspect is **cleared affirmatively**: after the fix, sign-in persisted the session
+  and force-quit → relaunch restored it — `setItem`/`getItem` with
+  `BIOMETRY_ANY_OR_DEVICE_PASSCODE` work on a passcode-less simulator.
+
+**The fix** (explicitly authorized, the one deviation from "no `src/`"): `react-native-url-polyfill`
+added to `package.json`, and `import 'react-native-url-polyfill/auto'` as the first import of
+`index.js`. Typecheck and the full test suite stayed green (274/274). `package.json` is a shared
+file — **Anish and Hardik need to `npm install` after pulling this.**
+
+**Second server-side blocker found and cleared:** `POST /auth/v1/otp` returned
+`400 phone_provider_disabled` — the dev project's **Phone provider toggle was off** even though the
+test-OTP pairs were saved under it. GoTrue checks the toggle before the test-number list. Enabled by
+Sadin in the dashboard (dev only), after which the same request returned success.
+
+**Then the whole Track A core ran end to end, in order:**
+
+1. **B2 first pass** — `AuthChoice → PhoneInput → OtpVerify` with `+1 415 212 7777` / `123456`.
+   `PhoneInputScreen:76` navigates on success as documented. New phone user `4327be3e…` created;
+   `profiles` row auto-created (201). Server: 1 session, 1 refresh token.
+2. **The §4.1 trap, observed on a device for the first time.** Signed-in-unverified lands on
+   "Age Verification / Verification not completed / *You can try again whenever you're ready.*" —
+   with **no retry control, no sign-out, no support**. The copy invites an action the screen does
+   not offer. And the trap has a second face: the Persona sandbox SDK (real "Getting started /
+   Secured with Persona" UI — it renders fine on the simulator) **auto-launches on every mount**,
+   so force-quit → relaunch throws the user straight back into the vendor modal. Both states
+   screenshot-verified.
+3. **A4 seed** (via MCP, service-role path) → **restart** → **Home renders**: "No devices paired…
+   Your account is verified and ready." Sign-out present — the only one in the app, per §4.1.
+   Background → foreground did **not** pick the row up; a restart did. `useVerificationStatus`
+   fetches once per run in this state — worth knowing for how quickly a revocation lands.
+4. **B3 — five-assertion RLS proof, all PASS** (throwaway script, scratchpad only, two real phone
+   sign-ins; user B = `56383b4b…` via `…7778`):
+
+   | # | Assertion | Result |
+   |---|---|---|
+   | 1 | Sign in as user A (test OTP) | OK |
+   | 2 | A `select`s `verifications` | **1 row — PASS** |
+   | 3 | A `insert`s own verified row | **42501 RLS denial — PASS** (gate not self-assertable) |
+   | 4 | B `select`s `verifications` | **0 rows — PASS** (no cross-user read) |
+   | 5 | B `insert`s a row for A's `user_id` | **42501 RLS denial — PASS** |
+
+5. **B5 — row deleted, gate re-closes**: restart lands back on the auto-launched Persona screen.
+   The gate does the work, not the seed. (`verifications` is empty again — re-seed at will with the
+   A4 SQL; user A is now the phone user, `4327be3e…`.)
+
+**Incidental findings, recorded so they aren't re-discovered:**
+
+- The first `/verify` (and the first `/signup` earlier) failed with a **transient**
+  `TypeError: Network request failed`; the immediate retry succeeded. On the OTP screen this
+  rendered as "Incorrect or expired code" — a *second* live instance of SD-5's misdiagnosis
+  pattern (transport failure shown as a credential problem).
+- GoTrue rejects `@example.com` signups (`Email address … is invalid`). Use a real domain
+  (plus-tagging works) for test users.
+- Two extra dev users now exist: `info.zunkireelabs+trackab@gmail.com` (`7d14d5ba…`, email,
+  **unconfirmed** — email confirmation is on) and the `…7778` phone user (B3's user B).
+- Simulator input without typing (typing opens the RN dev menu): put text on the **host**
+  clipboard, tap the field, tap the field again, tap **Paste** in the iOS callout. For the OTP
+  screen's hidden auto-focused `TextInput`, Simulator's **Edit → Paste menu** pastes directly and
+  the auto-submit fires. Tap coordinates from the window model `(1117,34 395x850)`: content is
+  `378×822` at offset `(+8.5, +28)`; map screenshot fractions through that. Verified against
+  known-navigating controls repeatedly.
+
+**What remains:**
+
+- **B4 / SD-2** — needs a real recovery email: dashboard → Auth → Users → "Send password
+  recovery" to `sadinshrestha001@gmail.com` (Sadin's inbox), open the link on the simulator,
+  observe whether `ResetPasswordConfirmScreen` renders before the recovery session unmounts the
+  auth stack. The only Track A box still open besides the human `lint` run.
+- `npm run lint` — agent-blocked this session; run once to confirm the 70-warning baseline.
+- The real-SMS Twilio Verify test (`RESUME-twilio-otp-test.md`) is still a separate, unfinished
+  exercise — test OTP does not prove it.
 
 ---
 

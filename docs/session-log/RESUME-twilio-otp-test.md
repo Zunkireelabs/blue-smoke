@@ -9,6 +9,13 @@ hand-off. Keep it updated as the blockers close, or delete it once the flow actu
 
 Written 2026-08-07, updated 2026-08-07.
 
+> ⚠️ **Stale in two ways, still needed for one thing (2026-08-09).** The machine is now
+> **macOS + zsh** — every `C:\Users\...` path below is dead. And the app-side sign-in blocker is
+> **fixed** (`react-native-url-polyfill`; see the Track A brief's 2026-08-09 log), so the flow
+> below is no longer blocked by the app. What this file still owns: the **real-SMS** Twilio Verify
+> end-to-end test — test OTP (now live on dev) deliberately does not prove SMS delivery, Fraud
+> Guard, or the Verify service config.
+
 ---
 
 ```

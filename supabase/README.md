@@ -122,6 +122,11 @@ for each of the five to rewrite dev's version stamps to match the filenames; or 
 via MCP and treat `db push` as staging-only. **Pick one before anyone tries to push to dev.** The
 mismatch predates Track A — the first three rows already had it — so this is a pre-existing trap
 being written down, not a new one.
+- **Phone provider toggle enabled on dev**, 2026-08-09 — the provider was *configured* (Twilio
+  Verify + test-OTP pairs saved) but the **Enable toggle itself was off**, so every
+  `POST /auth/v1/otp` returned `400 phone_provider_disabled` ("Unsupported phone provider").
+  GoTrue checks the toggle **before** consulting the test-number list, so saved test OTPs do not
+  prove the provider is on. If OTP requests 400 with that code, check the toggle first.
 - **Phone auth (Twilio Verify) configured on dev only**, 2026-08-07 — Dashboard →
   Authentication → Providers → Phone, SMS provider set to **Twilio Verify** (spec §1.2.1),
   backed by Twilio Verify Service `bluesmoke-dev` (`VA193a790c…`, SMS channel, Fraud Guard on).

@@ -222,11 +222,13 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-*(Updated Day 9, 2026-08-08. This block goes stale fastest — distrust it if the date is old.)*
+*(Updated Day 10, 2026-08-09. This block goes stale fastest — distrust it if the date is old.)*
 
-- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code**, and it runs: `typecheck`,
-  `lint`, `test` (273 tests / 30 suites) and `bundle:check` are all green, and iOS runs on the
-  simulator. **Android has never been compiled** — no JDK, no `ANDROID_HOME` — and both platforms on
+- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code, and it now signs in and walks
+  end to end on dev** (phone test-OTP → verify stack → seeded Home; Track A, 2026-08-09 — the
+  sign-in blocker was a missing `react-native-url-polyfill`, see the Track A brief). `typecheck`,
+  `test` (274 tests / 30 suites) and `bundle:check` are green; iOS runs on the simulator.
+  **Android has never been compiled** — no JDK, no `ANDROID_HOME` — and both platforms on
   physical hardware are in the Definition of Done.
 - **Where the work is:** `chore/integrate-auth-db-persona`, ~62 commits, **not pushed**. `stage` is
   far behind it. Reading `stage` or `main` will mislead you about current state.

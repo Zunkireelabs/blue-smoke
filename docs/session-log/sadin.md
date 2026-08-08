@@ -4,6 +4,49 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-09 (late night) — sign-in blocker solved; the app walks end to end for the first time
+
+**Branch:** `chore/integrate-auth-db-persona`, **not pushed**.
+**Landed on `stage`:** nothing.
+
+The Track A blocker fell in one session, and it was neither the Keychain nor anything in the
+elimination table. **supabase-js 2.112.0's constructor assigns `realtimeUrl.protocol` (http→ws);
+React Native's built-in `URL` has a getter-only `protocol`; the resulting synchronous `TypeError`
+killed every auth method before any network request.** `runSafely` dressed it as a connectivity
+error — SD-5 doing exactly the damage FLOWS.md predicted. Diagnosis: a CDP fetch recorder showed
+*zero* requests on a login attempt (clearing Keychain, which runs post-token), then requiring
+`supabaseClient` by Metro module id over CDP and calling `getSupabaseClient()` produced the real
+stack. Fix: `react-native-url-polyfill` (canonical Supabase RN setup), imported first in
+`index.js`. One `npm install` for the others after pulling.
+
+The first-attempt table's *"url-polyfill missing — eliminated"* row is a lesson worth keeping:
+the elimination reasoned over **auth-js**'s `new URL()` sites and the killer was in supabase-js
+**core**. An elimination is only as broad as the code it actually read.
+
+Second blocker behind the first: dev's **Phone provider toggle was off** (`phone_provider_disabled`)
+even with test-OTP pairs saved — GoTrue checks the toggle before the test list. Enabled (dev only).
+
+Then, in order, all screenshot-verified: phone OTP sign-in works (`+1 415 212 7777`/`123456`,
+user `4327be3e…`); **the §4.1 trap observed live** — "Verification not completed / try again
+whenever you're ready" with no retry control, no sign-out, no support, and the Persona sandbox SDK
+auto-relaunching on every mount including after force-quit; seeded row → **Home renders** ("your
+account is verified and ready", the app's only sign-out); **five-assertion RLS proof all green**
+with two real phone JWTs (A sees 1 row; A's self-insert 42501; B sees 0; B's insert-for-A 42501);
+row deleted → **gate re-closes** (restart required — foreground alone doesn't refetch, which is
+also the answer to "how fast does a revocation land": next cold start). Keychain
+`BIOMETRY_ANY_OR_DEVICE_PASSCODE` confirmed working on a passcode-less simulator via session
+restore.
+
+Still open from Track A: **B4/SD-2** (needs a real recovery email to my inbox — the one claim
+source reading cannot settle), a human `npm run lint` run (agent-blocked; typecheck + 274/274
+tests verified green), and the real-SMS Twilio test, which test OTP deliberately does not prove.
+Surprises worth remembering: two *transient* `Network request failed`s (first `/verify`, first
+`/signup`) each misrendered as credential errors — SD-5's pattern, live, twice; GoTrue rejects
+`@example.com` signups; and the simulator can be driven without typing via host-clipboard paste
+(details in the Track A brief's second-attempt log).
+
+---
+
 ## 2026-08-08 — P1-4.0 Part 2a reviewed and accepted; the OQ-6 blocker was mine and was wrong
 
 **Branch:** `chore/integrate-auth-db-persona` — 62 commits, **not pushed**. HEAD `a328da6`.

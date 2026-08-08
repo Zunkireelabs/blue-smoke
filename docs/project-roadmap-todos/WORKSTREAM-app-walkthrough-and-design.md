@@ -54,7 +54,7 @@ closes it.
 
 ## Track A — unblock the walkthrough (~20 min, zero app code)
 
-- [ ] **A1. Test OTP, dev only.** Dashboard → bluesmoke-dev → Authentication → Providers → Phone →
+- [x] **A1. Test OTP, dev only.** Dashboard → bluesmoke-dev → Authentication → Providers → Phone →
       "Test Phone Numbers and OTPs". Register one pair (e.g. `9779800000000 = 123456`). Set
       `SMS_TEST_OTP_VALID_UNTIL` ~2 weeks out so the bypass expires by itself.
       Mapped numbers skip SMS and accept only the mapped code; unmapped numbers keep using Twilio.
@@ -62,12 +62,18 @@ closes it.
       restriction… **Never set this on prod:** a registered pair is a permanent auth bypass for that
       number."* The real client path runs unchanged; nothing is stubbed.
       **Closes P1-1.0's last open checkbox.**
-- [ ] **A2. Apply the two pending migrations** (`20260807090000`, `20260807120000`) to dev, then run
+- [x] **A2. Apply the two pending migrations** (`20260807090000`, `20260807120000`) to dev, then run
       the five `supabase/tests/*.sql` proofs.
       Not housekeeping: until the first is applied, dev still carries `insert_own_verifications`, so
       **any user who can log in can self-assert `age_verified = true`**. Auth works now, so that is
       reachable, not theoretical.
-- [ ] **A3. Seed one verified row** as service role (the anon key cannot, by design):
+      *Done 2026-08-08/09 via MCP (policy state verified directly — evidence table in
+      `supabase/README.md`; the five `tests/*.sql` files were not executed as scripts, but the
+      live RLS proof with two real JWTs covers `verifications` — Track A brief, B3 table).*
+- [x] **A3. Seed one verified row** as service role (the anon key cannot, by design) —
+      *done 2026-08-09; the row was then **deleted again** after the gate-reclose proof (Track A
+      B5), so `verifications` is empty by intent. Re-seed with the SQL below when needed; the
+      current test user is the phone user `4327be3e…` (`+1 415 212 7777`).*
       ```sql
       insert into verifications
         (user_id, age_verified, provider_status, outcome_reason, method, app_version, platform)
