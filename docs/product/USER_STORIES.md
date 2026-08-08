@@ -80,12 +80,17 @@ passport.
 
 ### Step 3 — He enters his number
 
-**User Action:** Selects United Kingdom, types `7700 900123`. The field reformats as he types.
+**User Action:** Selects United Kingdom, types `7911 123456`. The field reformats as he types.
 
 **System Behavior:**
 - `AsYouType` reformats per keystroke. Changing country cleared the field first — deliberate.
-- Parsed to `+447700900123`, validated against `phoneE164Schema`.
-- `authClient.requestPhoneOtp('+447700900123')` → `signInWithOtp({ phone })`.
+- Parsed to `+447911123456`, checked with libphonenumber's `isValid()`, then against
+  `phoneE164Schema`.
+- `authClient.requestPhoneOtp('+447911123456')` → `signInWithOtp({ phone })`.
+
+> **The `isValid()` check is stricter than it looks**, and it bites during testing: the fictional
+> ranges people reach for — US `555`, Ofcom's `07700 900xxx` — **fail it and never reach Supabase**.
+> A test number has to be structurally real. See the Track A brief.
 - On success: `navigation.navigate('OtpVerify', { phone })` — `PhoneInputScreen.tsx:76`.
 
 **UI Shows:** Six empty digit boxes, keyboard up, a resend link disabled with a 30-second countdown.

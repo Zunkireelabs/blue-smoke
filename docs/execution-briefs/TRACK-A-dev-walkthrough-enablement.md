@@ -33,6 +33,32 @@ attempt the left one.
 **Agent: if you find yourself about to run `supabase login`, `link`, `db push`, or open the
 dashboard — stop and ask.** Those are Sadin's steps. Everything else here is yours.
 
+### ⚠️ The two parts interleave — A4 cannot be done up front
+
+**A4 needs a `user_id`, and no user exists until someone signs in.** Signing in needs the app
+running, which is B2. So the real order is:
+
+```
+A1  test OTP on dev
+A2  login + link
+A3  db push                    ← must precede A4: the seed uses columns these migrations add
+B2  agent launches the app; Sadin types the number and code   ← this creates the user
+A4  Sadin seeds the row with that user_id, and tells the agent
+B1  agent re-verifies migration state
+B3  RLS proof (needs a second user — see below)
+B4  SD-2 deep link
+B5  Sadin deletes the row; agent confirms the gate re-closes
+B6  write-up and commit
+```
+
+**B2 therefore happens twice, and that is the point.** The first pass lands on the `verify` stack
+with no seeded row — which is exactly when to observe DE-4 and the §4.1 trap. The second pass, after
+A4, reaches Home. Do not skip the first pass to get to the interesting screen; the first pass *is*
+the finding.
+
+**B3 needs a second user.** Add a second test-OTP pair in A1 while you are already in the dashboard —
+cheaper than going back. `+14152127778` also validates.
+
 ---
 
 ## Read before starting
@@ -58,7 +84,19 @@ and OTPs**. Add one pair:
 
 | Phone | OTP |
 |---|---|
-| `+15551234567` | `123456` |
+| `+14152127777` | `123456` |
+
+🔴 **Use this number, not a `555` one.** `PhoneInputScreen.tsx:51-55` validates with
+libphonenumber's `isValid()` **before** calling Supabase, and `555` area codes are fictional — they
+fail that check and never reach the server. Verified:
+
+```
++15551234567   isValid: false   ← would look exactly like "test OTP is broken"
++14152127777   isValid: true
+```
+
+If you want a UK number too, `+447911123456` passes; the Ofcom fictional range `+447700900xxx`
+does **not**.
 
 This bypasses SMS entirely for that number. It is **server-side configuration on one project** — no
 app code, no build flag, nothing compiled into a binary, and disabling it is deleting the row.
