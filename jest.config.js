@@ -10,7 +10,7 @@ module.exports = {
       // for transformation; several of our deps ship untranspiled ESM and need
       // the same treatment.
       transformIgnorePatterns: [
-        'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|react-native-.*)/)',
+        'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|react-native-.*|@noble/.*)/)',
       ],
       testPathIgnorePatterns: [
         '<rootDir>/node_modules/',

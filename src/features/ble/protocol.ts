@@ -167,6 +167,13 @@ export const AUTH_RESPONSE_FRAME_2_LAYOUT = {
 export const AUTH_HKDF_INFO = 'bluesmoke-session-v1';
 export const SESSION_EXPIRY_MAX_DAYS = 90; // §4.5 — hard cap on session expiry
 
+// §4.5 — sentinel commandId a handshake result is written under (tools/mock-peripheral's
+// deviceCore.ts HANDSHAKE_COMMAND_ID_SENTINEL). Unused by any real command (§4.6); §4.5's prose
+// only documents this for the failure case, but the mock writes it symmetrically on success too
+// (ResultCode.OK) — see deviceCore.ts evaluateHandshake() — and that symmetry is what the app
+// relies on to know a handshake actually succeeded, so it's normative for this app, not a guess.
+export const HANDSHAKE_RESULT_COMMAND_ID = 0x00;
+
 // ── §4.6 — lockCommand layout ────────────────────────────────────────────────
 
 export const LOCK_COMMAND_LAYOUT = {
