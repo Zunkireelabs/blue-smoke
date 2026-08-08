@@ -19,8 +19,8 @@ import {
 } from '../protocol';
 import type { BleDeviceLike, BleManagerLike } from '../BleClientContext';
 
-const K_DEV = new Uint8Array(16).fill(0x11);
-const SESSION_ID = new Uint8Array(16).fill(0x22);
+const K_DEV = Uint8Array.from({ length: 16 }, (_, i) => 0x10 + i);
+const SESSION_ID = Uint8Array.from({ length: 16 }, (_, i) => 0x20 + i);
 const DEVICE_ID = 'mock-device-0001';
 const KEY_GENERATION = 7;
 const EXPIRES_AT_DELTA = 3600;
@@ -72,7 +72,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
     const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
     const handshake = createAuthHandshake(manager);
 
-    const wrongKSess = new Uint8Array(16).fill(0x99); // does not match kDev-derived K_sess
+    const wrongKSess = Uint8Array.from({ length: 16 }, (_, i) => 0x90 + i); // does not match kDev-derived K_sess
     const outcome = await handshake.authenticate(DEVICE_ID, buildInput({ kSess: wrongKSess }));
 
     expect(outcome).toEqual({ ok: false, resultCode: 0x02 /* AUTH_FAILED */ });
@@ -83,7 +83,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
     const clock = new FakeClock(0);
     const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
     const handshake = createAuthHandshake(manager);
-    const wrongKSess = new Uint8Array(16).fill(0x99);
+    const wrongKSess = Uint8Array.from({ length: 16 }, (_, i) => 0x90 + i);
 
     for (let i = 0; i < AUTH_BACKOFF.shortThresholdFailures; i += 1) {
       const failure = await handshake.authenticate(DEVICE_ID, buildInput({ kSess: wrongKSess }));
@@ -182,9 +182,216 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       await jest.advanceTimersByTimeAsync(5000);
       const outcome = await outcomePromise;
 
-      expect(outcome).toEqual({ ok: false, reason: 'timeout' });
+      expect(outcome).toEqual({ ok: false, reason: 'timeout', stage: 'result' });
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  describe('finding 2 — every BLE stage is bounded, not just the commandResult wait', () => {
+    // A manager/device double whose operation for the given stage never
+    // settles, so the only way authenticate() can resolve is via
+    // withTimeout()'s own per-stage budget — not the (real, working)
+    // commandResult path.
+    function hungAtStage(stage: 'connect' | 'discover' | 'read' | 'write'): BleManagerLike {
+      const neverSettles = new Promise<never>(() => {});
+      const device: BleDeviceLike = {
+        id: DEVICE_ID,
+        discoverAllServicesAndCharacteristics: () =>
+          stage === 'discover' ? neverSettles : Promise.resolve(device),
+        readCharacteristicForService: () =>
+          stage === 'read' ? neverSettles : Promise.resolve({ value: bytesToBase64(new Uint8Array(16)) }),
+        writeCharacteristicWithResponseForService: () =>
+          stage === 'write' ? neverSettles : Promise.resolve({ value: null }),
+        monitorCharacteristicForService: () => ({ remove: () => {} }),
+      };
+      return {
+        state: async () => 'PoweredOn',
+        isDeviceConnected: async () => false,
+        cancelDeviceConnection: async (id) => device.id === id ? device : device,
+        connectToDevice: () => (stage === 'connect' ? neverSettles : Promise.resolve(device)),
+      };
+    }
+
+    test('a hung connect times out with stage "connect"', async () => {
+      jest.useFakeTimers();
+      try {
+        const handshake = createAuthHandshake(hungAtStage('connect'));
+        const outcomePromise = handshake.authenticate(DEVICE_ID, buildInput());
+        await jest.advanceTimersByTimeAsync(10_000);
+        expect(await outcomePromise).toEqual({ ok: false, reason: 'timeout', stage: 'connect' });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test('a hung discover times out with stage "discover"', async () => {
+      jest.useFakeTimers();
+      try {
+        const handshake = createAuthHandshake(hungAtStage('discover'));
+        const outcomePromise = handshake.authenticate(DEVICE_ID, buildInput());
+        await jest.advanceTimersByTimeAsync(5000);
+        expect(await outcomePromise).toEqual({ ok: false, reason: 'timeout', stage: 'discover' });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test('a hung authChallenge read times out with stage "read"', async () => {
+      jest.useFakeTimers();
+      try {
+        const handshake = createAuthHandshake(hungAtStage('read'));
+        const outcomePromise = handshake.authenticate(DEVICE_ID, buildInput());
+        await jest.advanceTimersByTimeAsync(3000);
+        expect(await outcomePromise).toEqual({ ok: false, reason: 'timeout', stage: 'read' });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test('a hung authResponse write times out with stage "write"', async () => {
+      jest.useFakeTimers();
+      try {
+        const handshake = createAuthHandshake(hungAtStage('write'));
+        const outcomePromise = handshake.authenticate(DEVICE_ID, buildInput());
+        await jest.advanceTimersByTimeAsync(3000);
+        expect(await outcomePromise).toEqual({ ok: false, reason: 'timeout', stage: 'write' });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe('finding 3 — authenticate() never throws, every failure is a typed outcome', () => {
+    test('a rejecting connectToDevice resolves to a typed transport outcome', async () => {
+      const rejectingManager: BleManagerLike = {
+        state: async () => 'PoweredOn',
+        isDeviceConnected: async () => false,
+        cancelDeviceConnection: async (id) => {
+          throw new Error(`not connected: ${id}`);
+        },
+        connectToDevice: async () => {
+          throw new Error('connection failed');
+        },
+      };
+      const handshake = createAuthHandshake(rejectingManager);
+
+      await expect(handshake.authenticate(DEVICE_ID, buildInput())).resolves.toEqual({
+        ok: false,
+        reason: 'transport',
+        stage: 'connect',
+        detail: 'connection failed',
+      });
+    });
+
+    test('authChallenge returning no value resolves to a typed transport outcome', async () => {
+      const clock = new FakeClock(0);
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const manager: BleManagerLike = {
+        state: () => realManager.state(),
+        isDeviceConnected: (id) => realManager.isDeviceConnected(id),
+        cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        connectToDevice: async (id) => {
+          const device = await realManager.connectToDevice(id);
+          return {
+            id: device.id,
+            discoverAllServicesAndCharacteristics: () => device.discoverAllServicesAndCharacteristics(),
+            readCharacteristicForService: async () => ({ value: null }),
+            writeCharacteristicWithResponseForService: (s, c, v) =>
+              device.writeCharacteristicWithResponseForService(s, c, v),
+            monitorCharacteristicForService: (s, c, l) => device.monitorCharacteristicForService(s, c, l),
+          } satisfies BleDeviceLike;
+        },
+      };
+      const handshake = createAuthHandshake(manager);
+
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
+      expect(outcome).toEqual({
+        ok: false,
+        reason: 'transport',
+        stage: 'read',
+        detail: 'authChallenge read returned no value',
+      });
+    });
+
+    test('a wrong-length authChallenge resolves to a typed transport outcome', async () => {
+      const clock = new FakeClock(0);
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const manager: BleManagerLike = {
+        state: () => realManager.state(),
+        isDeviceConnected: (id) => realManager.isDeviceConnected(id),
+        cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        connectToDevice: async (id) => {
+          const device = await realManager.connectToDevice(id);
+          return {
+            id: device.id,
+            discoverAllServicesAndCharacteristics: () => device.discoverAllServicesAndCharacteristics(),
+            readCharacteristicForService: async () => ({ value: bytesToBase64(new Uint8Array(3)) }),
+            writeCharacteristicWithResponseForService: (s, c, v) =>
+              device.writeCharacteristicWithResponseForService(s, c, v),
+            monitorCharacteristicForService: (s, c, l) => device.monitorCharacteristicForService(s, c, l),
+          } satisfies BleDeviceLike;
+        },
+      };
+      const handshake = createAuthHandshake(manager);
+
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
+      expect(outcome).toEqual({
+        ok: false,
+        reason: 'transport',
+        stage: 'read',
+        detail: 'authChallenge: expected 16 bytes, got 3',
+      });
+    });
+  });
+
+  describe('finding 5 — a non-OK, non-AUTH_FAILED/RATE_LIMITED result code is a typed outcome, not a timeout', () => {
+    test('an unexpected result code (FAULT) does not present as a timeout', async () => {
+      const clock = new FakeClock(0);
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+
+      // A manager double whose device behaves normally except its
+      // commandResult notification carries a code the handshake never
+      // produces itself (FAULT, 0x08) — models firmware reporting a fault
+      // mid-handshake. There is no way to reach this through the real mock's
+      // evaluateHandshake(), which only ever writes OK/AUTH_FAILED/
+      // RATE_LIMITED for a handshake result (core.forceNextCommandResult
+      // only intercepts the lockCommand path, and a lockCommand result is
+      // written under a different commandId that this handshake's listener
+      // correctly ignores) — see this execution report's deviations.
+      const faultManager: BleManagerLike = {
+        state: () => realManager.state(),
+        isDeviceConnected: (id) => realManager.isDeviceConnected(id),
+        cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        connectToDevice: async (id) => {
+          const realDevice = await realManager.connectToDevice(id);
+          return {
+            id: realDevice.id,
+            discoverAllServicesAndCharacteristics: () => realDevice.discoverAllServicesAndCharacteristics(),
+            readCharacteristicForService: (s, c) => realDevice.readCharacteristicForService(s, c),
+            writeCharacteristicWithResponseForService: async (s, c, v) => {
+              const result = await realDevice.writeCharacteristicWithResponseForService(s, c, v);
+              const bytes = new Uint8Array(4);
+              bytes[0] = 0x00; // HANDSHAKE_RESULT_COMMAND_ID
+              bytes[1] = 0x08; // ResultCode.FAULT
+              lastListener?.(null, { value: bytesToBase64(bytes) });
+              return result;
+            },
+            monitorCharacteristicForService: (_s, _c, listener) => {
+              lastListener = listener;
+              return { remove: () => {} };
+            },
+          } satisfies BleDeviceLike;
+        },
+      };
+      let lastListener:
+        | ((error: Error | null, characteristic: { value: string | null } | null) => void)
+        | undefined;
+
+      const handshake = createAuthHandshake(faultManager);
+      const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
+
+      expect(outcome).toEqual({ ok: false, reason: 'unexpected-result-code', resultCode: 0x08 });
+    });
   });
 });

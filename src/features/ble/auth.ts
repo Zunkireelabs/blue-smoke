@@ -26,9 +26,17 @@ import {
   ResultCode,
 } from './protocol';
 
-// §4.5 step 2 — there is no spec-defined value for this timeout; it is an
-// app-level operational choice, not a §4 constant, so it does not belong in
-// protocol.ts. Well inside AUTH_NONCE_TTL_MS (30s) so a timeout here still
+// None of the timeouts below are spec-defined values; they are app-level
+// operational choices, not §4 constants, so they do not belong in
+// protocol.ts. Each handshake stage gets its own budget rather than one
+// number for everything — connecting to a real device legitimately takes
+// longer than a single characteristic read/write, and a shared budget would
+// either time out real connects or let a hung read/write stall too long.
+const CONNECT_TIMEOUT_MS = 10_000; // BLE connection setup, incl. Android's slower stack
+const DISCOVER_TIMEOUT_MS = 5000; // GATT service/characteristic discovery
+const READ_TIMEOUT_MS = 3000; // single characteristic read (authChallenge)
+const WRITE_TIMEOUT_MS = 3000; // single characteristic write (one authResponse frame)
+// §4.5 step 2 — well inside AUTH_NONCE_TTL_MS (30s) so a timeout here still
 // leaves room to retry against the same nonce.
 const HANDSHAKE_RESPONSE_TIMEOUT_MS = 5000;
 
@@ -45,13 +53,45 @@ export interface AuthResponseInput {
   expiresAtDelta: number; // seconds, ≤ SESSION_EXPIRY_MAX_DAYS worth
 }
 
+export type HandshakeStage = 'connect' | 'discover' | 'read' | 'write' | 'result';
+
 export type HandshakeOutcome =
   | { ok: true; session: AuthSession }
   | { ok: false; resultCode: typeof ResultCode.AUTH_FAILED | typeof ResultCode.RATE_LIMITED }
-  | { ok: false; reason: 'timeout' };
+  | { ok: false; reason: 'timeout'; stage: HandshakeStage }
+  | { ok: false; reason: 'transport'; stage: HandshakeStage; detail: string }
+  | { ok: false; reason: 'unexpected-result-code'; resultCode: ResultCode };
 
 export interface AuthHandshake {
   authenticate(deviceId: string, input: AuthResponseInput): Promise<HandshakeOutcome>;
+}
+
+class HandshakeTimeoutError extends Error {
+  readonly stage: HandshakeStage;
+
+  constructor(stage: HandshakeStage) {
+    super(`§4.5 handshake stage "${stage}" exceeded its timeout budget`);
+    this.name = 'HandshakeTimeoutError';
+    this.stage = stage;
+  }
+}
+
+// Bounds every BLE operation (CLAUDE.md: "Every BLE operation has an
+// explicit timeout. No unbounded await."). Rejects with a typed
+// HandshakeTimeoutError on expiry rather than resolving to an outcome
+// directly, so it composes as a plain awaited promise at each call site;
+// authenticate()'s single catch block is what turns that into the typed
+// HandshakeOutcome that crosses the function boundary.
+async function withTimeout<T>(operation: Promise<T>, ms: number, stage: HandshakeStage): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => reject(new HandshakeTimeoutError(stage)), ms);
+  });
+  try {
+    return await Promise.race([operation, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 // Hand-rolled base64, not `btoa`/`atob`: React Native/Hermes doesn't polyfill
@@ -146,66 +186,93 @@ export function createAuthHandshake(manager: BleManagerLike): AuthHandshake {
     async authenticate(deviceId: string, input: AuthResponseInput): Promise<HandshakeOutcome> {
       const { sessionId, kSess, keyGeneration, expiresAtDelta } = input;
 
-      // §4.5 step 1 — connect. `BleManagerLike` (§4) has no method to fetch a
-      // Device handle for an already-open connection other than calling
-      // connectToDevice() again, so "if not already connected" can't be
-      // implemented against this interface as scoped — see this execution
-      // report's findings section (real BleManager.connectToDevice forces a
-      // disconnect+reconnect on Android when already connected).
-      const device: BleDeviceLike = await manager.connectToDevice(deviceId);
-      await device.discoverAllServicesAndCharacteristics();
-
-      // §4.5 step 2 — subscribe to commandResult BEFORE writing anything: the
-      // device notifies once, asynchronously, and a read issued after the
-      // write could race a notification that already fired.
-      let settleResult: (outcome: HandshakeOutcome) => void;
-      const resultPromise = new Promise<HandshakeOutcome>((resolve) => {
-        settleResult = resolve;
-      });
-      let settled = false;
-      const resolveOnce = (outcome: HandshakeOutcome): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        settleResult(outcome);
-      };
-
-      const subscription = device.monitorCharacteristicForService(
-        BLE_SERVICE_UUID,
-        BLE_CHARACTERISTIC_UUIDS.commandResult,
-        (error, characteristic) => {
-          if (error || !characteristic?.value) {
-            return;
-          }
-          const bytes = base64ToBytes(characteristic.value);
-          const commandId = readUint8(bytes, COMMAND_RESULT_LAYOUT.commandId.offset);
-          if (commandId !== HANDSHAKE_RESULT_COMMAND_ID) {
-            // Something unrelated wrote to this characteristic (e.g. an
-            // in-flight lockCommand result) — not this handshake's answer.
-            return;
-          }
-          const resultCode = readUint8(bytes, COMMAND_RESULT_LAYOUT.resultCode.offset);
-          if (resultCode === ResultCode.OK) {
-            resolveOnce({
-              ok: true,
-              session: {
-                sessionId: bytesToBase64(sessionId),
-                keyGeneration,
-                expiresAt: Date.now() + expiresAtDelta * 1000,
-              },
-            });
-          } else if (resultCode === ResultCode.AUTH_FAILED || resultCode === ResultCode.RATE_LIMITED) {
-            resolveOnce({ ok: false, resultCode });
-          }
-        },
-      );
+      // Tracks which stage a plain (non-timeout) thrown error should be
+      // attributed to in the catch block below — HandshakeTimeoutError
+      // already carries its own stage, this is only for the transport path.
+      let stage: HandshakeStage = 'connect';
+      // Only assigned once discoverAllServicesAndCharacteristics() has
+      // resolved — a connect/discover failure must not try to remove a
+      // subscription that was never created.
+      let subscription: { remove(): void } | undefined;
 
       try {
-        // §4.5 step 3 — read authChallenge (C2) → N.
-        const challengeCharacteristic = await device.readCharacteristicForService(
+        // §4.5 step 1 — connect. `BleManagerLike` (§4) has no method to fetch
+        // a Device handle for an already-open connection other than calling
+        // connectToDevice() again, so "if not already connected" can't be
+        // implemented against this interface as scoped — see this execution
+        // report's findings section (real BleManager.connectToDevice forces a
+        // disconnect+reconnect on Android when already connected).
+        const device: BleDeviceLike = await withTimeout(
+          manager.connectToDevice(deviceId),
+          CONNECT_TIMEOUT_MS,
+          'connect',
+        );
+
+        stage = 'discover';
+        await withTimeout(
+          device.discoverAllServicesAndCharacteristics(),
+          DISCOVER_TIMEOUT_MS,
+          'discover',
+        );
+
+        // §4.5 step 2 — subscribe to commandResult BEFORE writing anything:
+        // the device notifies once, asynchronously, and a read issued after
+        // the write could race a notification that already fired.
+        let settleResult: (outcome: HandshakeOutcome) => void;
+        const resultPromise = new Promise<HandshakeOutcome>((resolve) => {
+          settleResult = resolve;
+        });
+        let settled = false;
+        const resolveOnce = (outcome: HandshakeOutcome): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          settleResult(outcome);
+        };
+
+        subscription = device.monitorCharacteristicForService(
           BLE_SERVICE_UUID,
-          BLE_CHARACTERISTIC_UUIDS.authChallenge,
+          BLE_CHARACTERISTIC_UUIDS.commandResult,
+          (error, characteristic) => {
+            if (error || !characteristic?.value) {
+              return;
+            }
+            const bytes = base64ToBytes(characteristic.value);
+            const commandId = readUint8(bytes, COMMAND_RESULT_LAYOUT.commandId.offset);
+            if (commandId !== HANDSHAKE_RESULT_COMMAND_ID) {
+              // Something unrelated wrote to this characteristic (e.g. an
+              // in-flight lockCommand result) — not this handshake's answer.
+              return;
+            }
+            const resultCode = readUint8(bytes, COMMAND_RESULT_LAYOUT.resultCode.offset) as ResultCode;
+            if (resultCode === ResultCode.OK) {
+              resolveOnce({
+                ok: true,
+                session: {
+                  sessionId: bytesToBase64(sessionId),
+                  keyGeneration,
+                  expiresAt: Date.now() + expiresAtDelta * 1000,
+                },
+              });
+            } else if (resultCode === ResultCode.AUTH_FAILED || resultCode === ResultCode.RATE_LIMITED) {
+              resolveOnce({ ok: false, resultCode });
+            } else {
+              // §4.7 — every one of the ten result codes is handled
+              // distinctly; anything past AUTH_FAILED/RATE_LIMITED still
+              // gets a typed outcome rather than falling through to look
+              // like a silent timeout.
+              resolveOnce({ ok: false, reason: 'unexpected-result-code', resultCode });
+            }
+          },
+        );
+
+        // §4.5 step 3 — read authChallenge (C2) → N.
+        stage = 'read';
+        const challengeCharacteristic = await withTimeout(
+          device.readCharacteristicForService(BLE_SERVICE_UUID, BLE_CHARACTERISTIC_UUIDS.authChallenge),
+          READ_TIMEOUT_MS,
+          'read',
         );
         if (!challengeCharacteristic.value) {
           throw new Error('authChallenge read returned no value');
@@ -219,36 +286,47 @@ export function createAuthHandshake(manager: BleManagerLike): AuthHandshake {
         const proof = computeProof({ kSess, nonce, sessionId, expiresAtDelta });
 
         // §4.5 step 5 — write frame 1, fully awaited before frame 2.
+        stage = 'write';
         const frame1 = buildFrame1(sessionId, keyGeneration);
-        await device.writeCharacteristicWithResponseForService(
-          BLE_SERVICE_UUID,
-          BLE_CHARACTERISTIC_UUIDS.authResponse,
-          bytesToBase64(frame1),
+        await withTimeout(
+          device.writeCharacteristicWithResponseForService(
+            BLE_SERVICE_UUID,
+            BLE_CHARACTERISTIC_UUIDS.authResponse,
+            bytesToBase64(frame1),
+          ),
+          WRITE_TIMEOUT_MS,
+          'write',
         );
 
         // §4.5 step 6 — write frame 2, as a separate write.
         const frame2 = buildFrame2(proof, expiresAtDelta);
-        await device.writeCharacteristicWithResponseForService(
-          BLE_SERVICE_UUID,
-          BLE_CHARACTERISTIC_UUIDS.authResponse,
-          bytesToBase64(frame2),
+        await withTimeout(
+          device.writeCharacteristicWithResponseForService(
+            BLE_SERVICE_UUID,
+            BLE_CHARACTERISTIC_UUIDS.authResponse,
+            bytesToBase64(frame2),
+          ),
+          WRITE_TIMEOUT_MS,
+          'write',
         );
 
         // §4.5 step 7 — await the commandResult notification, or time out.
-        // `resolveOnce` is idempotent, so whichever fires first — the
-        // monitor callback above, or this timer — wins; the other is a no-op.
-        const timeoutHandle = setTimeout(
-          () => resolveOnce({ ok: false, reason: 'timeout' }),
-          HANDSHAKE_RESPONSE_TIMEOUT_MS,
-        );
-        try {
-          return await resultPromise;
-        } finally {
-          clearTimeout(timeoutHandle);
+        stage = 'result';
+        return await withTimeout(resultPromise, HANDSHAKE_RESPONSE_TIMEOUT_MS, 'result');
+      } catch (error) {
+        if (error instanceof HandshakeTimeoutError) {
+          return { ok: false, reason: 'timeout', stage: error.stage };
         }
+        // Never across this boundary throws (module doc above) — every other
+        // failure (connect rejection, malformed authChallenge, ...) becomes a
+        // typed transport outcome instead. `detail` is for logs: never put
+        // kSess, the proof, or the nonce in it — `error.message` here only
+        // ever carries lengths/ids, never key material.
+        const detail = error instanceof Error ? error.message : 'unknown error';
+        return { ok: false, reason: 'transport', stage, detail };
       } finally {
         // §4.5 step 9 — unsubscribe in a finally, whichever branch was taken.
-        subscription.remove();
+        subscription?.remove();
       }
     },
   };
