@@ -82,9 +82,25 @@ cheaper than going back. `+14152127778` also validates.
 Dashboard → project `hejwrhijrztgdysycvto` → **Authentication → Phone provider → Test phone numbers
 and OTPs**. Add one pair:
 
+The field takes a comma-separated list of `<phone>=<otp>` pairs. Enter **exactly** this:
+
+```
+14152127777=123456,14152127778=123456
+```
+
+🔴 **The leading `1` is mandatory and easy to miss.** The field wants E.164 **without the `+` but
+with the country code**. The dashboard's own example is `18005550123=789012`, and Supabase's docs use
+`16505551234:123456` — both carry the country code. The app sends `+14152127777`, which GoTrue
+normalises to `14152127777`.
+
+Enter `4152127777=…` and it will **not** match — and the failure is nasty rather than obvious,
+because the request **falls through to real Twilio**, which on the 30-day trial only delivers to
+verified numbers. The symptom is no SMS and no error: indistinguishable from "test OTP is broken".
+
 | Phone | OTP |
 |---|---|
-| `+14152127777` | `123456` |
+| `14152127777` | `123456` |
+| `14152127778` | `123456` |
 
 🔴 **Use this number, not a `555` one.** `PhoneInputScreen.tsx:51-55` validates with
 libphonenumber's `isValid()` **before** calling Supabase, and `555` area codes are fictional — they
@@ -107,6 +123,13 @@ app code, no build flag, nothing compiled into a binary, and disabling it is del
 ⚠️ **Dev only.** Test OTP on staging or prod is on the project's do-not list — a known
 number/code pair that reaches a real account is an open door. Twilio Verify stays configured on dev
 for the *real* end-to-end test; test OTP does not replace it and does not prove it.
+
+**While you are on that screen — raise `SMS OTP Expiry` from 60 to 300 seconds.** At 60s the code
+expires *before* `OtpEntryScreen`'s 30-second resend cooldown gives the user a second attempt, so
+there is a dead window where the code is dead and Resend is still disabled. That turns F3.E3
+("that code expired") from an edge case into the normal path, and it is a real finding about the
+shipped flow, not just a testing nuisance — the cooldown and the expiry need to be chosen together.
+Recorded in [`USER_FLOWS.md`](../system-design-ux/USER_FLOWS.md#f3).
 
 ## A2–A3 · Apply the two pending migrations
 
@@ -296,6 +319,65 @@ repo. **Do not push**; Sadin pushes when the app works.
 - **Do not run `npm ci`** (node_modules is current) **or `supabase start`** (port 54322 belongs to
   another project).
 - **Do not claim something works without running it.** If a step fails, report it with the output.
+
+---
+
+---
+
+## Session log — 2026-08-09, first attempt
+
+**Done and verified:**
+
+- **A1** test OTP live on dev, both pairs. The country-code trap above was hit and corrected before
+  saving.
+- **A2/A3** both migrations applied to dev via MCP. **The age-gate hole was confirmed live before
+  closing it** — `pg_policies` showed `insert_own_verifications` as an `INSERT` policy with
+  `with_check (user_id = auth.uid())`. It is now gone; `read_own_verifications [SELECT]` is the only
+  policy left. Full evidence table in [`supabase/README.md`](../../supabase/README.md).
+- A user exists (`auth.users` = 1, email, auto-confirmed).
+
+**Blocked: the app cannot sign in.** Email login returns *"We couldn't reach the server."*
+
+What that message actually means: it is `runSafely`'s catch-all (`supabaseAuthClient.ts:45`), which
+only fires on a **non-Auth exception**. A genuine network failure would surface as *"Incorrect email
+or password"*, because auth-js wraps transport failures as `AuthError` and `signInWithEmail` returns
+`GENERIC_LOGIN_ERROR` for those. So something throws outside auth-js's own error handling.
+
+**Ruled out — each tested, not reasoned about:**
+
+| Hypothesis | Verdict | Evidence |
+|---|---|---|
+| Env not inlined | ❌ | Bundle contains the literal URL and a 208-char anon JWT |
+| Simulator has no network | ❌ | `fetch` **inside the app** → HTTP 401 from `/auth/v1/health` |
+| Anon key wrong/disabled | ❌ | POST to `/token` **inside the app** → HTTP 400 `invalid_credentials` — correct |
+| `react-native-url-polyfill` missing | ❌ | Every `new URL()` in auth-js is a browser path disabled by `detectSessionInUrl: false` |
+| Keychain pod not linked | ❌ | Podspec registered, `Manifest.lock` current, 60 refs in the pods project |
+| Server received the attempt | ❌ | 0 sessions, 0 refresh tokens, `last_sign_in_at` null |
+
+**Prime remaining suspect:** `authKeychainStorage.setItem` (`authKeychainStorage.ts:30-36`). It is the
+only app-specific code injected into supabase-js, it runs inside `_saveSession` **after** the token
+request, and a Keychain failure is not an `AuthError` — so auth-js rethrows it and `runSafely`
+converts it to the network message. Its `ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE` is
+documented at `authKeychainStorage.ts:19-22` as an **assumption** about devices with no enrolled
+biometrics — and a simulator has neither biometrics nor a passcode. That assumption has never been
+tested. *Not yet confirmed*, because it does not explain 0 server-side sessions on its own.
+
+**How to finish the diagnosis in one tap:** the app's `fetch` is lazily resolved by auth-js
+(`resolveFetch` returns `(...args) => fetch(...args)`), so patching `globalThis.fetch` via the Metro
+CDP endpoint **is** observed by supabase-js. Arm it, then attempt a login:
+
+```bash
+curl -s http://localhost:8081/json/list          # get webSocketDebuggerUrl
+# connect with an Origin: http://localhost:8081 header (the proxy 401s without it)
+# Runtime.evaluate: wrap globalThis.fetch to push URLs into globalThis.__calls
+```
+
+If `/token` appears in `__calls`, the throw is **after** the request → Keychain. If it never appears,
+the throw is **before** it → `getSupabaseClient()` or `createClient`. Note the patch does not survive
+a Fast Refresh reload, so arm it and attempt immediately.
+
+**Untried and worth trying first next session:** phone OTP. Test OTP is now configured, it is the
+flow that ships, and it exercises a different path from email.
 
 ---
 

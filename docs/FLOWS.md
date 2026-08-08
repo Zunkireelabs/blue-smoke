@@ -235,6 +235,32 @@ This is by design for increment 1 (spec §6.1): the client-initiated flow proves
 
 ---
 
+## 5.1 Found by running the app — 2026-08-09
+
+Two defects the source read missed, both visible on the first walkthrough.
+
+**SD-4 — six of seven auth screens show their raw route name as the page title.** Only `AuthChoice`
+(`'Welcome'`), `Home` (`'BlueSmoke'`) and `VerifyAge` (`'Age Verification'`) pass a `title`. `Signup`,
+`Login`, `PhoneInput`, `OtpVerify`, `PasswordReset` and `ResetPasswordConfirm` are registered bare
+(`navigation.tsx:144-149`), so React Navigation falls back to the route name and the user sees
+**"Login"**, **"PhoneInput"**, **"OtpVerify"**, **"ResetPasswordConfirm"** as headings. Confirmed on
+the simulator. One-line-per-screen fix, but invisible to every test in the suite.
+
+**SD-5 — the catch-all auth error message misdiagnoses, and it costs real time.**
+`runSafely`'s `UNEXPECTED_ERROR` (`supabaseAuthClient.ts:45`) is *"We couldn't reach the server.
+Check your connection and try again."* It fires on **any** non-`AuthError` exception, most of which
+have nothing to do with connectivity — a genuine transport failure is wrapped by auth-js as an
+`AuthError` and takes the *different* branch that renders "Incorrect email or password".
+
+So the one message that names a cause names the wrong one. Being non-diagnostic **to the user** is
+correct and should stay; the defect is that there is no dev-visible distinction at all, so a
+failure that is not a network failure is indistinguishable from one. This was found the hard way:
+it sent a debugging session down a connectivity path for an hour while the app was provably able to
+reach Supabase — verified by evaluating `fetch` inside the running app and getting a correct
+HTTP 400 from `/token`.
+
+---
+
 ## 6. Structural defects — SD-1 … SD-3
 
 Distinct from dead ends: these are navigator and state-plumbing bugs, not missing recovery paths.
@@ -312,7 +338,7 @@ build goes red on eight screens and nobody can merge. Full per-screen breakdown 
 | `replace` / `reset` / `goBack` / `push` | **0** |
 | Success transitions | **1** (`PhoneInput → OtpVerify`) |
 | Dead ends | **8**, plus the §4.1 trap |
-| Structural defects | 3 |
+| Structural defects | 5 |
 | Edge Function calls from the app | **0** |
 | Screens on the design system | 2 of 10 |
 

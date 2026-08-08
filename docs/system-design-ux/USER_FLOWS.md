@@ -200,6 +200,13 @@ number when the country changes, auto-submit on the sixth digit, and a 30 s rese
 | F3.E2 | Wrong code | Inline, code cleared | Retype |
 | F3.E3 | Expired code | Distinct from wrong — "That code expired" | Resend, cooldown reset |
 | F3.E4 | Resend cooldown | Button disabled with visible countdown | Waits |
+
+> 🔴 **The expiry and the cooldown must be chosen together, and currently are not.** Found on dev,
+> 2026-08-09: `SMS OTP Expiry` was **60 s** while `OtpEntryScreen.tsx:29`'s resend cooldown is
+> **30 s**. A user who misses the SMS therefore has a window where the code is already dead and
+> **Resend is still disabled** — F3.E3 becomes the normal path, not an edge case. Raised to 300 s on
+> dev. **Prod needs a deliberate number**, and whatever it is, `RESEND_COOLDOWN_SECONDS` has to be
+> comfortably below it.
 | F3.E5 | **Rate limited** | Honest: "Too many attempts. Try again in N minutes." | **"Use email instead"** → F2 |
 | F3.E6 | **Wrong number entered** | — | **"Change number"** → F3.1. Today `OtpEntryScreen` has no `useNavigation` at all (DE-4), so a typo means force-quitting the app |
 | F3.E7 | SMS never arrives | Surfaced after the first cooldown expires | Resend · change number · use email |
