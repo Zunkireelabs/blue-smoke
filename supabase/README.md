@@ -73,6 +73,55 @@ follow-up migration should be needed for that reconciliation.
 - All three migrations applied to **staging** (`rwhawlvigzakmjwpzvnc`) too, 2026-08-06, via
   `npx supabase db push` (user's own credentials, run outside chat). Confirmed via
   `npx supabase migration list --linked`: all three timestamps show matching Local/Remote.
+
+- **`20260807090000_verifications_persona_v15` and `20260807120000_k_dev_accessor` applied to
+  dev** (`hejwrhijrztgdysycvto`), 2026-08-08, via MCP `apply_migration` — Track A. Dev now has all
+  five. Verified after applying, rather than assumed:
+
+  | Check | Result |
+  |---|---|
+  | `INSERT` policies on `verifications` | **0** — `insert_own_verifications` gone |
+  | Policies remaining | `read_own_verifications [SELECT]` only |
+  | `inquiry_id`, `provider_status` | both present |
+  | `threshold_version` | now nullable |
+  | `age_verified` | now defaults `false` |
+  | `verifications_inquiry_id_key` partial unique index | present |
+  | `get_device_key_material` | `SECURITY DEFINER`, `search_path=""`, EXECUTE granted to `postgres` + `service_role` **only** — `anon` and `authenticated` revoked |
+  | Tables in `public` without RLS | **0** of 8 |
+  | Security advisors | unchanged — same `device_keys` INFO and two `rls_auto_enable` WARNs as before. Nothing new introduced |
+
+  🔴 **The hole this closed was live, and was confirmed before closing it.** `pg_policies` showed
+  `insert_own_verifications` as an `INSERT` policy with `with_check (user_id = auth.uid())` — so any
+  authenticated user could insert their own row with `age_verified = true` and pass the age gate.
+  It existed on dev from 2026-08-05 until 2026-08-08.
+
+  🔴 **Staging still has that hole.** It is still on three migrations. Deliberately not fixed in
+  passing — pushing to staging is a separate, deliberate act — but it should not sit there long.
+
+### ⚠️ `db push` will not work against dev — read before running it
+
+Dev's migrations were applied by **MCP `apply_migration`**, which stamps `version` with the *time of
+application*, not the migration filename's prefix. Staging's were applied by `db push`, which uses
+the filename. So the two environments disagree about what a version number means:
+
+```
+file                                          dev version      staging version
+20260806060100_core_schema.sql                20260806062905   20260806060100
+20260807090000_verifications_persona_v15.sql  20260808172716   (not applied)
+```
+
+The CLI compares **versions**, not names. Against dev it will therefore conclude that *none* of the
+five local files are applied and try to run them all — and `20260806060100` has a bare
+`create table verifications (…)` with no `if not exists`, so it fails on the first statement.
+
+**Consequences:** `npx supabase migration list --linked` against dev is misleading, and `db push`
+against dev errors. Neither is data loss, but both will look like something is badly wrong.
+
+**Options, none urgent:** run `npx supabase migration repair --status applied <filename-version>`
+for each of the five to rewrite dev's version stamps to match the filenames; or keep applying to dev
+via MCP and treat `db push` as staging-only. **Pick one before anyone tries to push to dev.** The
+mismatch predates Track A — the first three rows already had it — so this is a pre-existing trap
+being written down, not a new one.
 - **Phone auth (Twilio Verify) configured on dev only**, 2026-08-07 — Dashboard →
   Authentication → Providers → Phone, SMS provider set to **Twilio Verify** (spec §1.2.1),
   backed by Twilio Verify Service `bluesmoke-dev` (`VA193a790c…`, SMS channel, Fraud Guard on).
