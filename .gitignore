@@ -58,6 +58,14 @@ yarn-error.log*
 .yarn/install-state.gz
 .eslintcache
 
+# tools/lint-guard/__tests__/verificationGuard.test.ts's ESLint probe filename. The test
+# writes deliberate rule violations to this name inside src/features/verification/ and the
+# persona-webhook/create-inquiry Edge Functions, then deletes it in a `finally` block — this
+# entry is the second line of defence in case a crash ever skips that cleanup. It must never
+# be committed inside those directories: a live violation there would fail `npm run lint` for
+# everyone.
+__eslint_probe__.ts
+
 # ══ React Native / Metro ══
 .expo/
 .expo-shared/
@@ -130,6 +138,11 @@ dist/
 build/
 out/
 *.tsbuildinfo
+
+# ══ Claude Code ══
+# .claude/settings.json (if ever added) is shared team config; settings.local.json is
+# per-session/per-user (enabled MCP servers, local permissions) and never shared.
+.claude/settings.local.json
 
 # ══ Editors & OS ══
 .vscode/*

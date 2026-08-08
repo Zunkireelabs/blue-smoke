@@ -33,6 +33,16 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <!-- P1-1.0 §3.2 — password-reset deep link (src/features/auth/deepLink.ts).
+             Plain custom scheme, not an App Link — no verified domain exists for
+             this project yet, so no autoVerify/assetlinks.json. Unverified
+             on-device (brief §2). -->
+        <intent-filter android:autoVerify="false">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="bluesmoke" android:host="reset-password" />
+        </intent-filter>
       </activity>
     </application>
 </manifest>

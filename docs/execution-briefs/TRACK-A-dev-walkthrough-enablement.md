@@ -1,0 +1,498 @@
+# Track A — make the app walkable on dev
+
+**Goal:** Get a real session, apply the two pending migrations, and seed one verified row — so that
+for the first time someone can walk Blue Smoke end to end and check
+[`docs/FLOWS.md`](../FLOWS.md) against the running app rather than against source reading.
+
+**Written:** 2026-08-08 (Day 9) · **Est:** ~20 min of credentialed work + ~40 min of verification
+**Branch:** work on `chore/integrate-auth-db-persona` (current). No new branch — this is enablement,
+not a PRD task.
+
+**Supersedes** [`../session-log/RESUME-twilio-otp-test.md`](../session-log/RESUME-twilio-otp-test.md)
+for the OTP half. That file is stale in one important way: it gives Windows paths and a
+`C:\Users\Projects\blue-smoke` root. **The build machine is macOS + zsh.** Its Twilio facts are
+still good.
+
+---
+
+## 🔴 Read this first: who does what
+
+**The Supabase CLI and dashboard need Sadin's own credentials. Those are not handed to an agent and
+not pasted into chat** (`supabase/README.md`). So this brief has two columns, and the agent must not
+attempt the left one.
+
+| Sadin only — credentialed | The agent — everything else |
+|---|---|
+| A1 · Enable test OTP on the dev project | B1 · Confirm migration state |
+| A2 · `supabase login` + `link` | B2 · Run the app, walk auth, screenshot |
+| A3 · `db push` (applies the 2 pending migrations) | B3 · Prove the RLS gate with a second user |
+| A4 · Run the seed SQL, and report the `user_id` used | B4 · Test SD-2 (the deep link) |
+| | B5 · Delete the row, confirm the gate re-closes |
+| | B6 · Write up findings, update the docs |
+
+**Agent: if you find yourself about to run `supabase login`, `link`, `db push`, or open the
+dashboard — stop and ask.** Those are Sadin's steps. Everything else here is yours.
+
+### ⚠️ The two parts interleave — A4 cannot be done up front
+
+**A4 needs a `user_id`, and no user exists until someone signs in.** Signing in needs the app
+running, which is B2. So the real order is:
+
+```
+A1  test OTP on dev
+A2  login + link
+A3  db push                    ← must precede A4: the seed uses columns these migrations add
+B2  agent launches the app; Sadin types the number and code   ← this creates the user
+A4  Sadin seeds the row with that user_id, and tells the agent
+B1  agent re-verifies migration state
+B3  RLS proof (needs a second user — see below)
+B4  SD-2 deep link
+B5  Sadin deletes the row; agent confirms the gate re-closes
+B6  write-up and commit
+```
+
+**B2 therefore happens twice, and that is the point.** The first pass lands on the `verify` stack
+with no seeded row — which is exactly when to observe DE-4 and the §4.1 trap. The second pass, after
+A4, reaches Home. Do not skip the first pass to get to the interesting screen; the first pass *is*
+the finding.
+
+**B3 needs a second user.** Add a second test-OTP pair in A1 while you are already in the dashboard —
+cheaper than going back. `+14152127778` also validates.
+
+---
+
+## Read before starting
+
+- `CLAUDE.md` — especially the three inviolable rules and the commit conventions
+- [`../FLOWS.md`](../FLOWS.md) — what the app does today; this exercise validates it
+- [`../system-design-ux/USER_FLOWS.md`](../system-design-ux/USER_FLOWS.md) §F3, §F5 — the flows walked
+- `supabase/README.md` — environments and the migration procedure
+- [`../project-roadmap-todos/WORKSTREAM-app-walkthrough-and-design.md`](../project-roadmap-todos/WORKSTREAM-app-walkthrough-and-design.md)
+  — Track A's origin and its "Not to be done" list
+
+**Dev project:** `hejwrhijrztgdysycvto` · https://hejwrhijrztgdysycvto.supabase.co
+**Never staging (`rwhawlvigzakmjwpzvnc`) or prod for any of this.**
+
+---
+
+# Part A — Sadin's steps
+
+## A1 · Enable test OTP on the dev project
+
+Dashboard → project `hejwrhijrztgdysycvto` → **Authentication → Phone provider → Test phone numbers
+and OTPs**. Add one pair:
+
+The field takes a comma-separated list of `<phone>=<otp>` pairs. Enter **exactly** this:
+
+```
+14152127777=123456,14152127778=123456
+```
+
+🔴 **The leading `1` is mandatory and easy to miss.** The field wants E.164 **without the `+` but
+with the country code**. The dashboard's own example is `18005550123=789012`, and Supabase's docs use
+`16505551234:123456` — both carry the country code. The app sends `+14152127777`, which GoTrue
+normalises to `14152127777`.
+
+Enter `4152127777=…` and it will **not** match — and the failure is nasty rather than obvious,
+because the request **falls through to real Twilio**, which on the 30-day trial only delivers to
+verified numbers. The symptom is no SMS and no error: indistinguishable from "test OTP is broken".
+
+| Phone | OTP |
+|---|---|
+| `14152127777` | `123456` |
+| `14152127778` | `123456` |
+
+🔴 **Use this number, not a `555` one.** `PhoneInputScreen.tsx:51-55` validates with
+libphonenumber's `isValid()` **before** calling Supabase, and `555` area codes are fictional — they
+fail that check and never reach the server. Verified:
+
+```
++15551234567   isValid: false   ← would look exactly like "test OTP is broken"
++14152127777   isValid: true
+```
+
+If you want a UK number too, `+447911123456` passes; the Ofcom fictional range `+447700900xxx`
+does **not**.
+
+This bypasses SMS entirely for that number. It is **server-side configuration on one project** — no
+app code, no build flag, nothing compiled into a binary, and disabling it is deleting the row.
+
+> The local equivalent is already sitting commented out at `supabase/config.toml:267-269`
+> (`[auth.sms.test_otp]`). It is not used here because this machine has no local Supabase stack.
+
+⚠️ **Dev only.** Test OTP on staging or prod is on the project's do-not list — a known
+number/code pair that reaches a real account is an open door. Twilio Verify stays configured on dev
+for the *real* end-to-end test; test OTP does not replace it and does not prove it.
+
+**While you are on that screen — raise `SMS OTP Expiry` from 60 to 300 seconds.** At 60s the code
+expires *before* `OtpEntryScreen`'s 30-second resend cooldown gives the user a second attempt, so
+there is a dead window where the code is dead and Resend is still disabled. That turns F3.E3
+("that code expired") from an edge case into the normal path, and it is a real finding about the
+shipped flow, not just a testing nuisance — the cooldown and the expiry need to be chosen together.
+Recorded in [`USER_FLOWS.md`](../system-design-ux/USER_FLOWS.md#f3).
+
+## A2–A3 · Apply the two pending migrations
+
+```bash
+npx supabase login                                     # one-time, opens a browser
+npx supabase link --project-ref hejwrhijrztgdysycvto   # prompts for the DB password
+npx supabase migration list --linked                   # BEFORE — expect 3 applied, 2 pending
+npx supabase db push                                   # applies the 2
+npx supabase migration list --linked                   # AFTER  — expect all 5
+```
+
+The two pending are:
+- `20260807090000_verifications_persona_v15.sql`
+- `20260807120000_k_dev_accessor.sql`
+
+> 🔴 **This is worth doing regardless of design work.** Until `20260807090000` is applied, dev and
+> staging still carry the `insert_own_verifications` policy — **any logged-in user can insert their
+> own `verifications` row and set `age_verified = true`**. That is the age gate bypassed with a
+> single insert. The migration drops that policy.
+
+**Staging is left alone in this exercise**, and still carries the hole. Flag it, don't fix it here —
+pushing to staging is a separate, deliberate act.
+
+## A4 · Seed one verified row
+
+Sign in through the app first (or the dashboard's Auth → Users) so a user exists, then take that
+user's UUID.
+
+Dashboard → **SQL Editor** (the editor runs as service role, which is why this works — RLS denies
+client writes to `verifications` by design, and that is correct):
+
+```sql
+-- Track A seed. DEV ONLY. Delete after the walkthrough — see step B5.
+insert into verifications
+  (user_id, age_verified, method, app_version, platform, provider_status, outcome_reason)
+values
+  ('PASTE-USER-UUID-HERE', true, 'persona-v1', 'dev-seed-track-a', 'ios', 'approved', 'pass');
+```
+
+Column notes, so nothing is guessed: `threshold_version` was `not null` in the original schema and is
+made nullable by `20260807090000` — so **this insert only works after A3**. `provider_status` is
+added by the same migration. `verified_at` defaults to `now()`. `id` defaults to
+`gen_random_uuid()`.
+
+**Then tell the agent the `user_id` you used.** It needs it for B5.
+
+⚠️ Do not paste the service-role key anywhere. The SQL Editor already has the privilege; nothing
+needs to leave the dashboard.
+
+---
+
+# Part B — the agent's steps
+
+## B1 · Confirm the state you were handed
+
+Do not take Part A on trust. Verify, and report what you actually see:
+
+```bash
+npx supabase migration list --linked   # read-only; if this fails on auth, STOP and tell Sadin
+```
+
+Expect five migrations, all applied. If `20260807090000` is missing, **stop** — every RLS claim below
+is invalid and the seed will have failed on `threshold_version`.
+
+## B2 · Walk the auth flow
+
+```bash
+npm run ios -- --simulator "iPhone 17 Pro"
+xcrun simctl io booted screenshot out.png   # then Read the file
+```
+
+🔴 **Typing into a React Native `TextInput` from the agent side does not work on this setup. Do not
+burn turns retrying it — ask Sadin to type.** `cliclick` taps do work; click twice, since the first
+click focuses the simulator window.
+
+Walk `AuthChoice → PhoneInput → OtpVerify` with `+15551234567` / `123456`, and **record what you
+observe against [`FLOWS.md`](../FLOWS.md)**:
+
+- Does `PhoneInputScreen:76` navigate on success as documented?
+- **Is DE-4 visible?** `OtpEntryScreen:99-107` renders "Signed in" with no navigation. Does the user
+  see it flash, or does the stack swap fast enough to hide it? *Either answer is useful:* invisible
+  means it is latent, visible means it is a bug users hit today.
+- After sign-in and before the seed lands, you should be on the `verify` stack — the Persona screen.
+  **Confirm there is no sign-out on it.** That is `FLOWS.md` §4.1, the trap, and this is the first
+  chance anyone has had to see it rather than infer it.
+
+## B3 · Prove the RLS gate with a second user
+
+This is a Definition-of-Done item (*"RLS written and tested with a second user's JWT"*) and it has
+never been done for `verifications`.
+
+`.env` holds `SUPABASE_URL` and `SUPABASE_ANON_KEY`. **Read those two values; do not print them, do
+not write them into any file, and do not commit anything containing them.**
+
+Write a throwaway script in the scratchpad (not the repo) that:
+
+1. Signs in as user A (the seeded one) via phone OTP with the test number.
+2. `select`s from `verifications` → **expect exactly one row.**
+3. Attempts `insert` into `verifications` for user A → **expect denied.** After `20260807090000`
+   there is no INSERT policy at all, so this must fail. *If it succeeds, the migration did not apply
+   and the age gate is bypassable — stop and report that immediately; it outranks everything else in
+   this brief.*
+4. Signs in as a **second** user (add a second test-OTP pair, or use an email signup), then `select`s
+   from `verifications` → **expect zero rows.** User B must not see user A's row.
+5. Attempts to `insert` a row for **user A's** `user_id` while authenticated as B → **expect denied.**
+
+Report the five results as a table. Keep the script out of the repo.
+
+## B4 · Test SD-2 — the one claim source reading cannot settle
+
+`FLOWS.md` §6 flags this as *suspected, not proven*. This is the moment to settle it.
+
+Trigger a password reset for an email account, open the `bluesmoke://reset-password` link on the
+simulator, and observe:
+
+- Does `ResetPasswordConfirmScreen` actually render?
+- Or does the recovery session flip `sessionStatus` to `signedIn` first, unmounting the auth stack
+  where that route lives — leaving the deep link pointing at nothing?
+
+**Whatever happens, record it precisely** (which screen appeared, in what order) and update
+`FLOWS.md` §6 SD-2 and `USER_FLOWS.md` F5.S from "suspected" to confirmed or refuted, with the
+evidence.
+
+## B5 · Delete the row and confirm the gate re-closes
+
+**This is the step that proves the gate does the work rather than the seed.** Skipping it means you
+have proved nothing.
+
+Ask Sadin to run:
+
+```sql
+delete from verifications where user_id = 'THE-SAME-UUID' and app_version = 'dev-seed-track-a';
+```
+
+Then confirm the app falls back from Home to the Persona screen. `useVerificationStatus` polls only
+while `pending`, so you may need to background/foreground the app or restart it — note which was
+required, because that is itself a finding about how quickly a revoked verification takes effect.
+
+## B6 · Write it up
+
+1. **`docs/FLOWS.md`** — update §6 SD-2 with the B4 result. Update the closing note, which currently
+   says *"Not yet validated by running the app"* — that stops being true.
+2. **`docs/system-design-ux/USER_FLOWS.md`** — F5.S callout, same.
+3. **`docs/session-log/sadin.md`** — a short narrative entry: what was enabled, what was proven, what
+   surprised you.
+4. **`docs/execution-briefs/`** — tick this brief's boxes below, in the same commit.
+5. **Delete `docs/session-log/RESUME-twilio-otp-test.md`** if its Twilio content is now fully covered,
+   or fix its Windows paths. Do not leave a stale Windows-era brief sitting next to a correct one.
+6. **`WORKSTREAM-app-walkthrough-and-design.md`** — tick Track A.
+
+Commit with `git commit -F -` heredoc, `chore:` or `docs:` prefix.
+**No `Co-Authored-By: Claude` and no Anthropic attribution** — the most-repeated mistake in this
+repo. **Do not push**; Sadin pushes when the app works.
+
+---
+
+## Definition of done
+
+- [x] A1 — test OTP live on dev, and **only** dev *(both pairs; phone provider **toggle** also had
+      to be enabled — see the 2026-08-09 second-attempt log)*
+- [x] A3 — all five migrations applied to dev *(verified via MCP; `migration list --linked` is
+      misleading against dev — see `supabase/README.md`)*
+- [x] A4 — one seeded verified row *(seeded 2026-08-09 via MCP, then deleted again as part of B5)*
+- [x] B2 — auth walked on the simulator, screenshots taken, the §4.1 trap observed live *(DE-4's
+      "Signed in" flash was not observable this run — a transient fetch failure put the screen in
+      its error state during the transition; still unconfirmed either way)*
+- [x] B3 — all five RLS assertions pass, reported as a table (2026-08-09, below)
+- [ ] B4 — **SD-2 settled**, and the docs updated from "suspected" to a verdict *(needs a real
+      recovery email — see "What remains")*
+- [x] B5 — row deleted, gate confirmed to re-close (restart required; foreground alone insufficient)
+- [x] B6 — docs updated, committed, not pushed
+- [ ] `npm run typecheck` · `npm run lint` · `npm test` still green *(typecheck and tests verified
+      green after the fix — 274/274. **`npm run lint` still needs a human run** — the agent session
+      could not execute it. NOTE: this brief now DOES change `src/`-adjacent files — `index.js`,
+      `package.json` — because the sign-in blocker's root cause was a missing dependency, fixed
+      under explicit instruction. See the second-attempt log.)*
+
+---
+
+## Do not
+
+- **Do not touch `src/`.** This is enablement. The eight dead ends are recorded, not fixed — that is
+  a separate task against a signed-off flow, and six of them want the same fix.
+- **Do not enable test OTP on staging or prod.**
+- **Do not push migrations to staging.** Dev only here. Staging's `insert_own_verifications` hole is
+  real — flag it, don't fix it in passing.
+- **Do not relax RLS on `verifications`**, and do not make `selectStack` treat unknown as verified,
+  to "make the walkthrough work". If the walkthrough is blocked, that is the finding.
+- **Do not wire `mockAuthClient` into the app.** It creates no Supabase session, so
+  `useSessionStore` stays `signedOut` and the navigator never leaves the auth stack. Verified, not
+  assumed.
+- **Do not add a dev-bypass env flag.** It needs adding to `babel.config.js`'s inline `include` list,
+  which makes it a build-time constant that ships unless someone remembers to strip it.
+- **Do not commit `.env`, the anon key, the service-role key, or the RLS script.** Scratchpad only.
+- **Do not run `npm ci`** (node_modules is current) **or `supabase start`** (port 54322 belongs to
+  another project).
+- **Do not claim something works without running it.** If a step fails, report it with the output.
+
+---
+
+---
+
+## Session log — 2026-08-09, first attempt
+
+**Done and verified:**
+
+- **A1** test OTP live on dev, both pairs. The country-code trap above was hit and corrected before
+  saving.
+- **A2/A3** both migrations applied to dev via MCP. **The age-gate hole was confirmed live before
+  closing it** — `pg_policies` showed `insert_own_verifications` as an `INSERT` policy with
+  `with_check (user_id = auth.uid())`. It is now gone; `read_own_verifications [SELECT]` is the only
+  policy left. Full evidence table in [`supabase/README.md`](../../supabase/README.md).
+- A user exists (`auth.users` = 1, email, auto-confirmed).
+
+**Blocked: the app cannot sign in.** Email login returns *"We couldn't reach the server."*
+
+What that message actually means: it is `runSafely`'s catch-all (`supabaseAuthClient.ts:45`), which
+only fires on a **non-Auth exception**. A genuine network failure would surface as *"Incorrect email
+or password"*, because auth-js wraps transport failures as `AuthError` and `signInWithEmail` returns
+`GENERIC_LOGIN_ERROR` for those. So something throws outside auth-js's own error handling.
+
+**Ruled out — each tested, not reasoned about:**
+
+| Hypothesis | Verdict | Evidence |
+|---|---|---|
+| Env not inlined | ❌ | Bundle contains the literal URL and a 208-char anon JWT |
+| Simulator has no network | ❌ | `fetch` **inside the app** → HTTP 401 from `/auth/v1/health` |
+| Anon key wrong/disabled | ❌ | POST to `/token` **inside the app** → HTTP 400 `invalid_credentials` — correct |
+| `react-native-url-polyfill` missing | ❌ | Every `new URL()` in auth-js is a browser path disabled by `detectSessionInUrl: false` |
+| Keychain pod not linked | ❌ | Podspec registered, `Manifest.lock` current, 60 refs in the pods project |
+| Server received the attempt | ❌ | 0 sessions, 0 refresh tokens, `last_sign_in_at` null |
+
+**Prime remaining suspect:** `authKeychainStorage.setItem` (`authKeychainStorage.ts:30-36`). It is the
+only app-specific code injected into supabase-js, it runs inside `_saveSession` **after** the token
+request, and a Keychain failure is not an `AuthError` — so auth-js rethrows it and `runSafely`
+converts it to the network message. Its `ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE` is
+documented at `authKeychainStorage.ts:19-22` as an **assumption** about devices with no enrolled
+biometrics — and a simulator has neither biometrics nor a passcode. That assumption has never been
+tested. *Not yet confirmed*, because it does not explain 0 server-side sessions on its own.
+
+**How to finish the diagnosis in one tap:** the app's `fetch` is lazily resolved by auth-js
+(`resolveFetch` returns `(...args) => fetch(...args)`), so patching `globalThis.fetch` via the Metro
+CDP endpoint **is** observed by supabase-js. Arm it, then attempt a login:
+
+```bash
+curl -s http://localhost:8081/json/list          # get webSocketDebuggerUrl
+# connect with an Origin: http://localhost:8081 header (the proxy 401s without it)
+# Runtime.evaluate: wrap globalThis.fetch to push URLs into globalThis.__calls
+```
+
+If `/token` appears in `__calls`, the throw is **after** the request → Keychain. If it never appears,
+the throw is **before** it → `getSupabaseClient()` or `createClient`. Note the patch does not survive
+a Fast Refresh reload, so arm it and attempt immediately.
+
+**Untried and worth trying first next session:** phone OTP. Test OTP is now configured, it is the
+flow that ships, and it exercises a different path from email.
+
+---
+
+## Session log — 2026-08-09, second attempt (same night, ~01:35–02:30)
+
+**The sign-in blocker is found and fixed.** Root cause, established by evidence rather than
+elimination this time:
+
+> **supabase-js 2.112.0's `SupabaseClient` constructor executes
+> `this.realtimeUrl.protocol = this.realtimeUrl.protocol.replace("http", "ws")`. React Native's
+> built-in `URL` exposes `protocol` as a getter-only property, so the assignment throws a
+> synchronous `TypeError` — inside `createClient`, before any network request, on every auth
+> method.** `runSafely` then converted that to "We couldn't reach the server" (SD-5, exactly as
+> documented). This is why email and phone failed identically and why the server never saw one
+> attempt.
+
+How it was pinned: a `globalThis.fetch` recorder armed over CDP showed **zero** requests on a
+login attempt, which cleared the Keychain suspect (it runs *after* the token response) and moved
+the throw before the transport. Metro dev bundles register modules with verbose names, so
+`__r(<id of supabaseClient.ts>).getSupabaseClient()` evaluated over CDP reproduced the throw with
+the real message and stack — no UI, no guesswork.
+
+Two corrections to the first-attempt elimination table:
+
+- *"react-native-url-polyfill missing"* was **wrongly eliminated**. The analysis covered auth-js's
+  `new URL()` call sites only; the fatal assignment is in supabase-js **core**. The polyfill is
+  Supabase's canonical React Native setup step precisely because of this.
+- The Keychain suspect is **cleared affirmatively**: after the fix, sign-in persisted the session
+  and force-quit → relaunch restored it — `setItem`/`getItem` with
+  `BIOMETRY_ANY_OR_DEVICE_PASSCODE` work on a passcode-less simulator.
+
+**The fix** (explicitly authorized, the one deviation from "no `src/`"): `react-native-url-polyfill`
+added to `package.json`, and `import 'react-native-url-polyfill/auto'` as the first import of
+`index.js`. Typecheck and the full test suite stayed green (274/274). `package.json` is a shared
+file — **Anish and Hardik need to `npm install` after pulling this.**
+
+**Second server-side blocker found and cleared:** `POST /auth/v1/otp` returned
+`400 phone_provider_disabled` — the dev project's **Phone provider toggle was off** even though the
+test-OTP pairs were saved under it. GoTrue checks the toggle before the test-number list. Enabled by
+Sadin in the dashboard (dev only), after which the same request returned success.
+
+**Then the whole Track A core ran end to end, in order:**
+
+1. **B2 first pass** — `AuthChoice → PhoneInput → OtpVerify` with `+1 415 212 7777` / `123456`.
+   `PhoneInputScreen:76` navigates on success as documented. New phone user `4327be3e…` created;
+   `profiles` row auto-created (201). Server: 1 session, 1 refresh token.
+2. **The §4.1 trap, observed on a device for the first time.** Signed-in-unverified lands on
+   "Age Verification / Verification not completed / *You can try again whenever you're ready.*" —
+   with **no retry control, no sign-out, no support**. The copy invites an action the screen does
+   not offer. And the trap has a second face: the Persona sandbox SDK (real "Getting started /
+   Secured with Persona" UI — it renders fine on the simulator) **auto-launches on every mount**,
+   so force-quit → relaunch throws the user straight back into the vendor modal. Both states
+   screenshot-verified.
+3. **A4 seed** (via MCP, service-role path) → **restart** → **Home renders**: "No devices paired…
+   Your account is verified and ready." Sign-out present — the only one in the app, per §4.1.
+   Background → foreground did **not** pick the row up; a restart did. `useVerificationStatus`
+   fetches once per run in this state — worth knowing for how quickly a revocation lands.
+4. **B3 — five-assertion RLS proof, all PASS** (throwaway script, scratchpad only, two real phone
+   sign-ins; user B = `56383b4b…` via `…7778`):
+
+   | # | Assertion | Result |
+   |---|---|---|
+   | 1 | Sign in as user A (test OTP) | OK |
+   | 2 | A `select`s `verifications` | **1 row — PASS** |
+   | 3 | A `insert`s own verified row | **42501 RLS denial — PASS** (gate not self-assertable) |
+   | 4 | B `select`s `verifications` | **0 rows — PASS** (no cross-user read) |
+   | 5 | B `insert`s a row for A's `user_id` | **42501 RLS denial — PASS** |
+
+5. **B5 — row deleted, gate re-closes**: restart lands back on the auto-launched Persona screen.
+   The gate does the work, not the seed. (`verifications` is empty again — re-seed at will with the
+   A4 SQL; user A is now the phone user, `4327be3e…`.)
+
+**Incidental findings, recorded so they aren't re-discovered:**
+
+- The first `/verify` (and the first `/signup` earlier) failed with a **transient**
+  `TypeError: Network request failed`; the immediate retry succeeded. On the OTP screen this
+  rendered as "Incorrect or expired code" — a *second* live instance of SD-5's misdiagnosis
+  pattern (transport failure shown as a credential problem).
+- GoTrue rejects `@example.com` signups (`Email address … is invalid`). Use a real domain
+  (plus-tagging works) for test users.
+- Two extra dev users now exist: `info.zunkireelabs+trackab@gmail.com` (`7d14d5ba…`, email,
+  **unconfirmed** — email confirmation is on) and the `…7778` phone user (B3's user B).
+- Simulator input without typing (typing opens the RN dev menu): put text on the **host**
+  clipboard, tap the field, tap the field again, tap **Paste** in the iOS callout. For the OTP
+  screen's hidden auto-focused `TextInput`, Simulator's **Edit → Paste menu** pastes directly and
+  the auto-submit fires. Tap coordinates from the window model `(1117,34 395x850)`: content is
+  `378×822` at offset `(+8.5, +28)`; map screenshot fractions through that. Verified against
+  known-navigating controls repeatedly.
+
+**What remains:**
+
+- **B4 / SD-2** — needs a real recovery email: dashboard → Auth → Users → "Send password
+  recovery" to `sadinshrestha001@gmail.com` (Sadin's inbox), open the link on the simulator,
+  observe whether `ResetPasswordConfirmScreen` renders before the recovery session unmounts the
+  auth stack. The only Track A box still open besides the human `lint` run.
+- `npm run lint` — agent-blocked this session; run once to confirm the 70-warning baseline.
+- The real-SMS Twilio Verify test (`RESUME-twilio-otp-test.md`) is still a separate, unfinished
+  exercise — test OTP does not prove it.
+
+---
+
+## What this unblocks
+
+Design work past the auth screens — today the app stops at the `verify` stack and nothing beyond it
+has ever been seen. It also converts `FLOWS.md` from *read from source* to *checked against the
+running app*, and settles SD-2, the single claim in that document that reading cannot resolve.
+
+**What it does not unblock:** F6 still cannot complete (`create-inquiry` returns 501 by design), and
+F7 still cannot complete (OQ-12, the `serial_hash` salt). A seeded row makes Home *reachable*; it
+does not make verification or pairing *work*. Nobody should read a green walkthrough as either.

@@ -20,7 +20,7 @@ A React Native (iOS + Android) app controlling a **Bluetooth-enabled vape device
 
 Check these on **every** change. A breach is an automatic block, not a review comment.
 
-1. **No image, video frame, or biometric embedding is ever written to disk, logged, sent to a crash reporter, or transmitted.** RAM only, zeroised in a `finally` block.
+1. **No image, video frame, or biometric embedding ever enters our process, is written to disk, logged, sent to a crash reporter, or transmitted by us.** *(Restated for the Persona architecture — spec v1.5 §6.)* Capture and upload happen inside Persona's SDK, in its own process, so the rule is no longer "zeroise it" but **"never acquire it"**: do not fetch inquiry payloads from the vendor API, do not add DB columns for them, do not proxy or screenshot the SDK's UI. The one handle we hold, `inquiry_id`, must never be logged beside anything that re-identifies the person.
 2. **`K_dev` never leaves the server.** The app receives only a derived, scoped, expiring `K_sess`.
 3. **`age_verified` is validated server-side before any privileged action.** A client-side boolean is a UX hint, never an authority.
 
@@ -35,7 +35,7 @@ Check these on **every** change. A breach is an automatic block, not a review co
 | Anything architectural | [`docs/TECHNICAL_SPEC.md`](docs/TECHNICAL_SPEC.md) — the build contract |
 | BLE UUIDs, byte layouts, commands, result codes | Spec **§4** — and `src/features/ble/protocol.ts` once it exists |
 | DB schema, RLS, Edge Functions | Spec **§5** |
-| OCR / DOB rules / face-match thresholds | Spec **§6** |
+| Persona flow, webhook, what we may/may not store | Spec **§6** *(rewritten in v1.5 — OCR/DOB/face-match thresholds are gone, vendor-owned)* |
 | Proximity, hysteresis, state machine | Spec **§7** |
 | Security, threat model, data classes | Spec **§8** |
 | What am I building today | [`docs/project-roadmap-todos/`](docs/project-roadmap-todos/) — ROADMAP + per-phase TODOs |
@@ -138,27 +138,33 @@ frame order is mandatory per spec. Constant-time CMAC comparison.
 
 ### Committing — mechanics in this repo
 
-- **Git is not on PATH.** Prefix: `$env:PATH = "C:\Program Files\Git\cmd;$env:PATH"`
-- **PowerShell 5.1 mangles `-m` messages containing double quotes.** Write the message to a file and use `git commit -F <file>`.
+- **The build machine is macOS + zsh** (it used to be Windows/PowerShell — the `P0-4.0` and `P1-1.0`
+  briefs still say otherwise in their §2 and are stale there). Git is on PATH.
+- **Use a `git commit -F -` heredoc** for multi-line messages, rather than stacked `-m` flags.
 - Never `--no-verify`. **Never force-push `main` or `stage`** — everyone's work lives on `stage`.
+- **No Claude co-authorship on commits or pushes.** Do not add a `Co-Authored-By: Claude ...` trailer, "Generated with Claude Code" line, or any other Claude/Anthropic attribution to commit messages. Commits are authored under the developer's own git identity (`git config user.name` / `user.email`) only, same as if they'd typed it themselves.
 
 ---
 
 ## Commands
 
-**No application code exists yet.** The scaffold lands in `P0-4.0`. Until then there is nothing to run.
+The scaffold landed in `P0-4.0`. These all work today (verified Day 9) — the build machine is
+**macOS**, so any PowerShell / `git`-not-on-PATH workaround in the older execution briefs describes a
+machine that no longer exists:
 
-Once scaffolded, expect (verify against `package.json` before relying on these):
-
-```powershell
-npm install
-npm run ios / npm run android
-npm run typecheck        # tsc --noEmit
-npm run lint
-npm test
-npm run test:e2e         # Detox
+```bash
+npm run typecheck        # tsc --noEmit, x3 projects (app, mock, tests)
+npm run lint             # 0 errors; a ruled warning baseline, see below
+npm test                 # 273 tests / 30 suites
+npm run bundle:check     # iOS + Android Metro bundle — catches what tsc can't
+npm run ios              # works; `npm run android` has never been run (no JDK)
 npx supabase db push     # migrations
 ```
+
+**`npm run lint` has a ruled warning baseline, currently 70.** It is *not* "≤ 70 forever" — the rule
+is **no `eslint-disable`, and no `no-bitwise` outside `src/features/ble`, `crypto`, `byteLayout`**,
+where byte-level work makes bitwise operators unavoidable. Adding a file to those directories may
+legitimately raise the count. Suppressing a warning to hold the number down is a breach.
 
 **Run the mock BLE peripheral** (`P0-2.5`) for any BLE work — real hardware isn't available until ~Day 26. It implements spec §4 including failure paths. See its README.
 
@@ -216,7 +222,27 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-- **Phase:** Pre-development. Docs complete, no code.
-- **Next:** Phase 0 — `docs/project-roadmap-todos/TODO-phase-0.md`
-- **Blocking the whole plan:** **OQ-1** (sample IDs by Day 15, hardware by Day 26) and **OQ-4** (who burns the device root key into OTP at manufacture). Both answered by the client, both take longer to answer than to implement. Chase daily.
-- **9 open questions** — spec §13. Read them before assuming an answer.
+*(Updated Day 10, 2026-08-09. This block goes stale fastest — distrust it if the date is old.)*
+
+- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code, and it now signs in and walks
+  end to end on dev** (phone test-OTP → verify stack → seeded Home; Track A, 2026-08-09 — the
+  sign-in blocker was a missing `react-native-url-polyfill`, see the Track A brief). `typecheck`,
+  `test` (274 tests / 30 suites) and `bundle:check` are green; iOS runs on the simulator.
+  **Android has never been compiled** — no JDK, no `ANDROID_HOME` — and both platforms on
+  physical hardware are in the Definition of Done.
+- **Where the work is:** `chore/integrate-auth-db-persona`, ~62 commits, **not pushed**. `stage` is
+  far behind it. Reading `stage` or `main` will mislead you about current state.
+- **Blocking the whole plan:** **OQ-1** (sample IDs, hardware ~Day 26), **OQ-4** (who burns the
+  device root key into OTP at manufacture), and 🔴 **OQ-12** (the `serial_hash` salt — same factory
+  conversation as OQ-4, so chase them together). All answered by the client; all take longer to
+  answer than to implement. Chase daily.
+- **`P1-4.0` has nothing executable left.** Part 1 (§4.5 handshake + CMAC) and Part 2a (§4.3
+  `deviceInfo`) are done and reviewed. Everything remaining is gated on OQ-12 (`salt → serial_hash →
+  issue-device-session → K_sess`) or on hardware. Do not "unblock" it by inventing a salt — a guessed
+  value fails **silently**.
+- **OQ-6 is overdue, not blocking.** The firmware team has still never been contacted, so §4 is an
+  unratified contract that several tasks are already built against. That is a real risk, but it is
+  not what stops the next commit.
+- **11 open questions registered** — spec §13 (OQ-1…OQ-9, OQ-11, OQ-12). **OQ-10 has no row** while
+  being referenced in `session-log/sadin.md` — reconstruct it or retire the ID. Read them before
+  assuming an answer.

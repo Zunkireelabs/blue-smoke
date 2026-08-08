@@ -134,17 +134,30 @@ export const AUTH_PROOF_LENGTH_BYTES = 16; // §4.5 — AES-128-CMAC(K_sess, ...
 // unauthenticated copy would let a compromised app self-extend to SESSION_EXPIRY_MAX_DAYS.
 export const AUTH_PROOF_FIXED_PREFIX = 0x01;
 
-/** §4.5 — written to C3 (authResponse) first. Frame order is mandatory. */
+// §4.5 (v1.4) — byte 0 of both authResponse frames is frameIndex, making each frame
+// self-describing on the wire (F12). Deliberately NOT part of the proof CMAC: it is
+// framing, not a security parameter — forging it without K_sess achieves nothing beyond
+// a handshake reset.
+export const AuthResponseFrameIndex = {
+  FRAME_1: 0x01, // §4.5 (v1.4)
+  FRAME_2: 0x02, // §4.5 (v1.4)
+} as const;
+export type AuthResponseFrameIndex =
+  (typeof AuthResponseFrameIndex)[keyof typeof AuthResponseFrameIndex];
+
+/** §4.5 (v1.4) — written to C3 (authResponse) first. Identified by frameIndex, not position (F12). */
 export const AUTH_RESPONSE_FRAME_1_LAYOUT = {
-  sessionId: { offset: 0, length: 16 }, // §4.5
-  keyGeneration: { offset: 16, length: 1 }, // §4.5
-  reserved: { offset: 17, length: 3 }, // §4.5
+  frameIndex: { offset: 0, length: 1 }, // §4.5 (v1.4) — must be AuthResponseFrameIndex.FRAME_1
+  sessionId: { offset: 1, length: 16 }, // §4.5
+  keyGeneration: { offset: 17, length: 1 }, // §4.5
+  reserved: { offset: 18, length: 2 }, // §4.5 (v1.4) — narrowed from 3B to free byte 0 for frameIndex
 } as const;
 
-/** §4.5 — written to C3 (authResponse) second. An out-of-order frame resets the handshake. */
+/** §4.5 (v1.4) — written to C3 (authResponse) second. Identified by frameIndex, not position (F12). */
 export const AUTH_RESPONSE_FRAME_2_LAYOUT = {
-  proof: { offset: 0, length: 16 }, // §4.5
-  expiresAtDelta: { offset: 16, length: 4 }, // §4.5 — uint32
+  frameIndex: { offset: 0, length: 1 }, // §4.5 (v1.4) — must be AuthResponseFrameIndex.FRAME_2
+  proof: { offset: 1, length: 16 }, // §4.5
+  expiresAtDelta: { offset: 17, length: 3 }, // §4.5 (v1.4) — uint24 LE, narrowed from uint32
 } as const;
 
 // §4.5 — K_sess = HKDF(ikm = K_dev, salt = session_id, info = AUTH_HKDF_INFO ‖ keyGeneration).
@@ -153,6 +166,13 @@ export const AUTH_RESPONSE_FRAME_2_LAYOUT = {
 // clock, and is never told either — binding them makes K_sess underivable device-side.
 export const AUTH_HKDF_INFO = 'bluesmoke-session-v1';
 export const SESSION_EXPIRY_MAX_DAYS = 90; // §4.5 — hard cap on session expiry
+
+// §4.5 — sentinel commandId a handshake result is written under (tools/mock-peripheral's
+// deviceCore.ts HANDSHAKE_COMMAND_ID_SENTINEL). Unused by any real command (§4.6); §4.5's prose
+// only documents this for the failure case, but the mock writes it symmetrically on success too
+// (ResultCode.OK) — see deviceCore.ts evaluateHandshake() — and that symmetry is what the app
+// relies on to know a handshake actually succeeded, so it's normative for this app, not a guess.
+export const HANDSHAKE_RESULT_COMMAND_ID = 0x00;
 
 // ── §4.6 — lockCommand layout ────────────────────────────────────────────────
 
@@ -231,3 +251,27 @@ export const CONNECTION_PARAMS = {
  * Long Range support back in.
  */
 export const LONG_RANGE_PHY_SUPPORTED = false; // §4.9
+
+// ── §4.8 F2 — dead-man auto-lock default ────────────────────────────────────
+
+export const AUTOLOCK_GRACE_MS_DEFAULT = 5000; // §4.8 F2 — within AUTOLOCK_GRACE_MS_MIN/MAX
+
+// ── §4.8 F6 — auth backoff ───────────────────────────────────────────────────
+
+/**
+ * §4.8 F6 — after AUTH_BACKOFF.shortThresholdFailures consecutive auth
+ * failures, reject all auth attempts for shortBackoffMs; after
+ * longThresholdFailures, for longBackoffMs. Counter resets on success or
+ * power cycle.
+ */
+export const AUTH_BACKOFF = {
+  shortThresholdFailures: 5, // §4.8 F6
+  shortBackoffMs: 30_000, // §4.8 F6
+  longThresholdFailures: 10, // §4.8 F6
+  longBackoffMs: 300_000, // §4.8 F6
+} as const;
+
+// ── §4.4 — low-battery hysteresis ───────────────────────────────────────────
+
+export const LOW_BATTERY_LATCH_PERCENT = 15; // §4.4 — flags bit2 sets below this
+export const LOW_BATTERY_CLEAR_PERCENT = 20; // §4.4 — flags bit2 clears at/above this

@@ -13,7 +13,24 @@
 > still outstanding.** The PRD text above is left verbatim rather than rewritten, because it's the
 > client's original instruction and the thing that needs their sign-off to actually change.
 
-**Progress:** 0 / 4 tasks · 0 / 30 sub-tasks
+**Progress:** 0 / 4 tasks · **20 / 30 sub-tasks** *(audited Day 9, 2026-08-08 — it read `0 / 30`
+while the entire Persona integration, the webhook, the server-side age gate and the RLS proofs were
+already built and merged. See the audit note below.)*
+
+> **Day 9 audit — this file was the worst-lying of the four.** Phase 2 work landed across several
+> branches and **no box was ever ticked**, so the roadmap reported nothing done while ~two thirds of
+> the phase existed in the tree. Every tick below was verified against the code, not against a
+> report, and each carries the file that proves it.
+>
+> **What is genuinely left is small but sharp**, and none of it is "write more code":
+>
+> 1. 🔴 **Nobody has confirmed the Persona template enforces an age requirement.** `approved` means
+>    "passed the template's checks", not "is over 18". This is the whole product promise and it is a
+>    dashboard setting no test in this repo can reach. Blocks the three `P2-1.0` sandbox boxes.
+> 2. **`create-inquiry` returns 501 on purpose** — server-side inquiry creation needs answers §6.6
+>    says not to guess. So no `verifications` row is ever *inserted*; only the webhook's update path
+>    exists.
+> 3. Manual-fallback policy (**OQ-2**), `FLAG_SECURE`, and the remaining `P2-6.0` flow states.
 
 > **Denominator re-derived for the vendor architecture — it was 97 (Sadin's correction of the
 > original 74) under the on-device design; it is not 97 under this one.** `P2-1.0` is now Persona
@@ -50,25 +67,49 @@ protect, and it's been removed. What still applies:
 > its own capture UI, auto-capture, and liveness checks — we integrate and wire the result, we
 > don't build camera/OCR/liveness code ourselves.
 
-- [ ] `react-native-persona` installed
-- [ ] Android: Persona Maven repo added, `compileSdkVersion ≥ 33` and AGP8 confirmed
-- [ ] iOS: `Podfile` minimum deployment target 13.0, `pod install` run clean
-- [ ] `NSCameraUsageDescription` text corrected — no longer claims "nothing leaves your phone"
+- [x] `react-native-persona` installed *(`^2.7.0`, package.json)*
+- [x] Android: Persona Maven repo added, `compileSdkVersion ≥ 33` and AGP8 confirmed
+      *(`android/build.gradle` — Maven repo present, `compileSdkVersion = 36`. ⚠️ **AGP8 is
+      inherited from RN 0.86's plugin, not build-verified — Android has never been compiled**
+      on this machine, see `P0-4.0`)*
+- [x] iOS: `Podfile` minimum deployment target 13.0, `pod install` run clean
+      *(`min_ios_version_supported`, already above 13.0 on RN 0.86; `Podfile.lock` resolves
+      `PersonaInquirySDK2 2.52.1` + `RNPersonaInquiry2 2.49.0`, so the install ran)*
+- [x] `NSCameraUsageDescription` text corrected — no longer claims "nothing leaves your phone"
       now that data is sent to Persona; this was an App Store compliance issue, not cosmetic
-- [ ] `PersonaVerificationScreen` renders `PersonaInquiryView` via `Inquiry.fromTemplate(...)`
-      against `Environment.SANDBOX`
-- [ ] `onComplete` navigates to a pending/result screen; status treated as UI-only, never written
-      as an authoritative verification result (inviolable rule 3)
-- [ ] `VerifyAge` route registered in `src/app/navigation.tsx` (route added only, nothing else
+      *(names Persona explicitly and scopes our own access honestly)*
+- [x] ~~`PersonaVerificationScreen` renders `PersonaInquiryView`~~ **via
+      `Inquiry.fromTemplate(...).build().start()`** against `Environment.SANDBOX`
+      *(**deliberate deviation, documented in the screen's header.** `PersonaInquiryView` is
+      registered with `requireNativeComponent` — old-architecture only — and
+      `react-native-persona` has no Fabric/codegen support; RN 0.82+ makes the New Architecture
+      mandatory and its interop layer **hard-crashes on mount** for custom native views with
+      custom children. The modal `.start()` path is a plain native-module call and works. Intent
+      met by a different mechanism; the box text is struck rather than rewritten.)*
+- [x] `onComplete` → pending/result screen; status treated as UI-only, never written as an
+      authoritative verification result (inviolable rule 3) *(parks the screen on "Confirming
+      your verification…" rather than navigating away; `useVerificationStatus` resolves it by
+      polling the **webhook-written** row, so the SDK callback never decides anything)*
+- [x] `VerifyAge` route registered in `src/app/navigation.tsx` (route added only, nothing else
       touched — contested file)
-- [ ] `PERSONA_TEMPLATE_ID` / `PERSONA_ENVIRONMENT` added to env config, same lazy-throw-if-missing
-      pattern as `getSupabaseClient()`
+- [x] `PERSONA_TEMPLATE_ID` / `PERSONA_ENVIRONMENT` added to env config, same lazy-throw-if-missing
+      pattern as `getSupabaseClient()` *(`personaConfig.ts`)*
 - [ ] End-to-end sandbox test: back-camera ID capture completes without a real document, via
-      Persona's file-upload capture method and/or Simulate
-- [ ] End-to-end sandbox test: front-camera selfie + liveness challenge completes
-- [ ] Forced-pass and forced-fail Simulate runs both handled without a crash
-- [ ] Dead on-device scaffolding removed: `capture/`, `facematch/`, `liveness/`, `ocr/` stubs,
+      Persona's file-upload capture method and/or Simulate 🔴 *(needs a configured Persona
+      template — OQ-11)*
+- [ ] End-to-end sandbox test: front-camera selfie + liveness challenge completes 🔴 *(same)*
+- [ ] Forced-pass and forced-fail Simulate runs both handled without a crash 🔴 *(same)*
+- [x] Dead on-device scaffolding removed: `capture/`, `facematch/`, `liveness/`, `ocr/` stubs,
       `decision.ts`, the native Vision/ML Kit bridge files, `react-native-vision-camera` dependency
+      *(verified — `src/features/verification/` holds only the three Persona files, and
+      `react-native-vision-camera` is absent from package.json)*
+
+**Status: 9 / 12.** The integration is built. The three open boxes are all the same blocker: nobody
+has confirmed a Persona template exists with an **age requirement configured**. 🔴 Persona
+`approved` means "passed the template's checks", **not** "is over 18" — a template that scans an ID
+and matches a selfie but carries no `min_age` returns `approved` for a 14-year-old, and **no code in
+this repo can detect that.** It is dashboard configuration. See the same warning in
+`create-inquiry/index.ts`.
 
 **Assumption:** Persona sandbox account + a Government ID + Selfie template exist (manual
 prerequisite, not something buildable in code).
@@ -109,8 +150,9 @@ plan; it no longer exists as in-app work. See `P2-1.0`.
 > capture. What's still ours: showing the confirmed result, and the manual-fallback path for users
 > Persona can't verify.
 
-- [ ] Pending/result screen surfaces `provider_status` from the webhook-confirmed row
-      *(Increment 2 dependency — `P2-8.0`)*
+- [x] Pending/result screen surfaces `provider_status` from the webhook-confirmed row
+      *(`useVerificationStatus.ts` — reads server state, polls only while non-terminal, and
+      documents in its own header that it is a UX hint and never an authority)*
 - [ ] Manual fallback route implemented — carries only user ID, never images
 - [ ] Manual fallback operational policy agreed with client *(OQ-2 🔴, unrelated to the vendor
       change — still open)*
@@ -131,13 +173,19 @@ plan; it no longer exists as in-app work. See `P2-1.0`.
 > sure our own code doesn't accidentally log or persist what little it does see (`inquiry_id`,
 > status, any prefilled fields the template returns).
 
-- [ ] Confirmed which fields (if any) `PersonaInquiryView`'s `onComplete` returns for the
-      configured template, and that none of them are logged or persisted
-- [ ] No image or biometric data in any log statement — verified by audit
-- [ ] Backend schema re-verified: `verifications` holds no column that could carry an image, DOB,
-      or embedding *(Increment 2 dependency — `P2-8.0`'s migration)*
-- [ ] Screenshot prevention active while `PersonaInquiryView` is presented (`FLAG_SECURE` on
-      Android; iOS screenshot obscuring)
+- [x] Confirmed which fields (if any) `onComplete` returns for the configured template, and that
+      none of them are logged or persisted *(the handler takes **no arguments at all** — it sets a
+      local UI stage and nothing more, so there is no field to leak)*
+- [x] No image or biometric data in any log statement — verified by audit *(and no longer resting
+      on audit alone: `P2-1.0-inquiry-id-lint-guard.md` restored enforcement, 7 guard tests,
+      reviewed — verified by stripping the overrides and confirming the assertions fail)*
+- [x] Backend schema re-verified: `verifications` holds no column that could carry an image, DOB,
+      or embedding *(migration `20260807090000` adds only `inquiry_id` + `provider_status`;
+      write-denial proven in `supabase/tests/verifications_write_denial_proof.sql`)*
+- [ ] Screenshot prevention active while the Persona flow is presented (`FLAG_SECURE` on
+      Android; iOS screenshot obscuring) *(**not built** — no `FLAG_SECURE` anywhere in the repo.
+      Lower value than it looks under the vendor architecture, since the frames belong to
+      Persona's own SDK surface, but it is genuinely not done)*
 
 **Assumption:** security design from Phase 0 finalised.
 **Excludes:** retaining ID/selfie for audit; auditing Persona's own infrastructure (covered by
@@ -154,17 +202,24 @@ their compliance program, not ours to verify).
 > flagged separately).
 
 - [ ] `verifications` row inserted `pending` on inquiry creation, updated by the webhook (pass
-      **and** decline — declines are useful signal, minus the evidence)
-- [ ] RLS verified: insert-own and select-own only; no client update, no delete; webhook write
-      goes through the service role
-- [ ] Verification status surfaced in the app UI
-- [ ] **Server-side gate live** — `issue-device-session` returns `AGE_NOT_VERIFIED` when no
+      **and** decline) *(**half done.** The webhook update path is built and is the sole writer.
+      The *insert* is not: `create-inquiry` returns **501 NOT_IMPLEMENTED** on purpose — server-side
+      inquiry creation needs Persona's API key plus the `reference-id` and `min_age` conventions
+      §6.6 says not to guess. A plausible stub would let the app appear to work while verifying
+      nobody, so the gap is left visible.)*
+- [x] RLS verified: insert-own and select-own only; no client update, no delete; webhook write
+      goes through the service role *(`verifications_write_denial_proof.sql`)*
+- [x] Verification status surfaced in the app UI *(`useVerificationStatus` + the navigation gate)*
+- [x] **Server-side gate live** — `issue-device-session` returns `AGE_NOT_VERIFIED` when no
       approved verification exists (spec §5.4 step 2)
-- [ ] **Client-side flag is a UX hint only** — the server is the authority (spec §2.2 rule 3)
-- [ ] **Tamper test:** modify the client-side flag and confirm activation still fails server-side
-- [ ] Unverified user attempting activation is routed into the verification flow, not shown an
-      error
-- [ ] `audit_log` entry `verification_submitted`, metadata only
+- [x] **Client-side flag is a UX hint only** — the server is the authority (spec §2.2 rule 3)
+- [x] **Tamper test:** modify the client-side flag and confirm activation still fails server-side
+      *(check 1 of `verifications_write_denial_proof.sql` is exactly this — it is the regression
+      test for a real hole: before `20260807090000`, `insert_own_verifications` let any logged-in
+      user INSERT their own `age_verified = true` row)*
+- [x] Unverified user attempting activation is routed into the verification flow, not shown an
+      error *(`navigation.tsx` — `none` and `declined` both land on the Persona flow)*
+- [x] `audit_log` entry `verification_submitted`, metadata only *(`persona-webhook/index.ts`)*
 
 **Assumption:** `verifications` schema updated for the async/provider flow (Increment 2 migration).
 **Excludes:** re-verification scheduling / expiry policy. *(OQ-5)*

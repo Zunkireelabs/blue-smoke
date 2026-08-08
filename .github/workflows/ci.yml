@@ -70,3 +70,8 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Only gate that actually loads the app the way Metro does — typecheck/lint/test
+      # all resolve zod's CJS build and would stay green through an ESM-only bundle break.
+      - name: Bundle check
+        run: npm run bundle:check
