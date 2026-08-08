@@ -85,7 +85,10 @@ function buildMockPeripheral(provisioningState?: ProvisioningState) {
 
 describe('readDeviceInfo — §4.3, against the mock peripheral', () => {
   test('a real mock read parses every field correctly, deviceUid byte-for-byte', async () => {
-    const { manager } = buildMockPeripheral();
+    // protocolVersion (1) and provisioningState must differ (brief §5's
+    // fixture rule) — ACTIVATED (2), not UNPROVISIONED (0), which is what a
+    // zeroed buffer produces and would reintroduce a different blind spot.
+    const { manager } = buildMockPeripheral(ProvisioningState.ACTIVATED);
     const device = await manager.connectToDevice(DEVICE_ID);
     await device.discoverAllServicesAndCharacteristics();
 
@@ -99,7 +102,7 @@ describe('readDeviceInfo — §4.3, against the mock peripheral', () => {
     expect(outcome.info.hwRevision).toBe(MOCK_HW_REVISION);
     expect(outcome.info.fwVersion).toEqual(MOCK_FW_VERSION);
     expect(Array.from(outcome.info.deviceUid)).toEqual(Array.from(MOCK_DEVICE_UID));
-    expect(outcome.info.provisioningState).toBe(ProvisioningState.PROVISIONED);
+    expect(outcome.info.provisioningState).toBe(ProvisioningState.ACTIVATED);
     expect(outcome.info.keyGeneration).toBe(MOCK_KEY_GENERATION);
   });
 
@@ -138,7 +141,10 @@ describe('readDeviceInfo — protocol-version mismatch, which the mock cannot pr
       hwRevision: 0x08,
       fwVersion: { major: 0x0d, minor: 0x0e },
       deviceUid: Uint8Array.from({ length: 12 }, (_, i) => 0x50 + i),
-      provisioningState: ProvisioningState.ACTIVATED,
+      // protocolVersion here is PROTOCOL_VERSION + 1 (2) — provisioningState
+      // must differ from it (brief §5's fixture rule), so PROVISIONED (1),
+      // not ACTIVATED (2), which would collide.
+      provisioningState: ProvisioningState.PROVISIONED,
       keyGeneration: 0x11,
     });
     const device = deviceInfoOnlyDevice(async () => ({ value: bytesToBase64(mismatchedBytes) }));
@@ -153,6 +159,7 @@ describe('readDeviceInfo — protocol-version mismatch, which the mock cannot pr
     expect(outcome.info.protocolVersion).toBe(PROTOCOL_VERSION + 1);
     expect(outcome.info.hwRevision).toBe(0x08);
     expect(outcome.info.fwVersion).toEqual({ major: 0x0d, minor: 0x0e });
+    expect(outcome.info.provisioningState).toBe(ProvisioningState.PROVISIONED);
     expect(outcome.info.keyGeneration).toBe(0x11);
   });
 });
@@ -186,16 +193,42 @@ describe('readDeviceInfo — typed failure paths, nothing throws', () => {
     });
   });
 
-  test('a wrong-length deviceInfo resolves to a typed transport outcome naming both lengths', async () => {
-    const shortBytes = Uint8Array.from({ length: 5 }, (_, i) => 0x70 + i);
-    const device = deviceInfoOnlyDevice(async () => ({ value: bytesToBase64(shortBytes) }));
+  test.each([
+    [
+      'under-length',
+      Uint8Array.from({ length: 5 }, (_, i) => 0x70 + i),
+      5,
+    ],
+    [
+      'over-length',
+      (() => {
+        const valid = buildDeviceInfoBytes({
+          protocolVersion: PROTOCOL_VERSION,
+          hwRevision: 0x09,
+          fwVersion: { major: 0x02, minor: 0x03 },
+          deviceUid: Uint8Array.from({ length: 12 }, (_, i) => 0x60 + i),
+          provisioningState: ProvisioningState.PROVISIONED,
+          keyGeneration: 0x13,
+        });
+        const overLength = new Uint8Array(valid.length + 1);
+        overLength.set(valid);
+        overLength[valid.length] = 0xff;
+        return overLength;
+      })(),
+      CHARACTERISTIC_LENGTH_BYTES.deviceInfo + 1,
+    ],
+  ] as const)(
+    'a wrong-length (%s) deviceInfo resolves to a typed transport outcome naming both lengths',
+    async (_label, bytes, gotLength) => {
+      const device = deviceInfoOnlyDevice(async () => ({ value: bytesToBase64(bytes) }));
 
-    await expect(readDeviceInfo(device)).resolves.toEqual({
-      ok: false,
-      reason: 'transport',
-      detail: `deviceInfo: expected ${CHARACTERISTIC_LENGTH_BYTES.deviceInfo} bytes, got 5`,
-    });
-  });
+      await expect(readDeviceInfo(device)).resolves.toEqual({
+        ok: false,
+        reason: 'transport',
+        detail: `deviceInfo: expected ${CHARACTERISTIC_LENGTH_BYTES.deviceInfo} bytes, got ${gotLength}`,
+      });
+    },
+  );
 
   test('a hung read times out instead of hanging', async () => {
     jest.useFakeTimers();
