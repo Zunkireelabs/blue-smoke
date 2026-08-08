@@ -265,8 +265,28 @@ template = "Your code is {{ .Code }}"
 max_frequency = "5s"
 
 # Use pre-defined map of phone number to OTP for testing.
-# [auth.sms.test_otp]
-# 4152127777 = "123456"
+#
+# Track A (docs/execution-briefs/TRACK-A-dev-walkthrough-enablement.md). Fixed number/code pairs
+# that bypass SMS entirely, so the auth flow can be walked without Twilio delivering anything.
+#
+# Numbers are NOT arbitrary. PhoneInputScreen.tsx:51-55 runs libphonenumber's isValid() BEFORE
+# calling Supabase, so fictional ranges are rejected client-side and never reach the server —
+# which looks identical to "test OTP is broken". Verified: +15551234567 and +447700900123 both
+# fail isValid(); the two below pass. Do not swap them for 555 numbers.
+#
+# Two pairs because the RLS proof needs a second user to test one user's JWT against another's row.
+[auth.sms.test_otp]
+4152127777 = "123456"
+4152127778 = "123456"
+
+# 🔴 This block configures a LOCAL Supabase stack only, and this project does not run one — there is
+# no Docker on the build machine and port 54322 belongs to another project. It is committed so the
+# intent is versioned and so `supabase start` would work if anyone ever runs it. The dev project's
+# test numbers are set in the DASHBOARD (Authentication → Phone provider), and that is what the
+# simulator actually talks to.
+#
+# NEVER add test numbers to staging or production. A known number/code pair that reaches a real
+# account is an open door.
 
 # Configure logged in session timeouts.
 # [auth.sessions]
