@@ -167,6 +167,12 @@ region — not yet assessed for target markets (relates to OQ-3).
 >
 > *(This note was required by `P1-4.0-bonding-seam-and-handshake.md` §7 and was missed in the Part 1
 > PR — so for three commits this list read as 0/12 while 3 were done. Added on review, Day 9.)*
+>
+> **Part 2a landed on `chore/integrate-auth-db-persona`** — the `deviceInfo` read and
+> `protocolVersion` compatibility report (`src/features/ble/deviceInfo.ts`). Still 3 of 12 boxes
+> ticked above; this closes 1 of the remaining 9 but stays unticked pending the rest of Part 2. The
+> mismatch policy question (what the app should do when `protocolVersion` disagrees) is unresolved
+> per §4.3 and needs an OQ-6 answer before the pairing screen (Part 2b) can route on it.
 
 **Assumption:** firmware supports BLE bonding and token exchange per spec.
 **Excludes:** out-of-band / NFC pairing.

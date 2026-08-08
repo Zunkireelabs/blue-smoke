@@ -25,6 +25,10 @@
     // this entry the root (Buffer-free) program would pick the file up as a root entry itself and
     // fail on the same Buffer/node:crypto errors tsconfig.test.json exists to avoid — confirmed by
     // removing this entry and running `npm run typecheck`. See this execution report's deviations.
-    "src/features/ble/__tests__/auth.test.ts"
+    "src/features/ble/__tests__/auth.test.ts",
+    // Same reason as auth.test.ts above — deviceInfo.test.ts also imports
+    // tools/mock-peripheral/bleAdapter.ts, so it type-checks under
+    // tsconfig.test.json instead.
+    "src/features/ble/__tests__/deviceInfo.test.ts"
   ]
 }
