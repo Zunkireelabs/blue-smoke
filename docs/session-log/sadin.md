@@ -4,6 +4,49 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-08 — P1-4.0 Part 2a reviewed and accepted; the OQ-6 blocker was mine and was wrong
+
+**Branch:** `chore/integrate-auth-db-persona` — 62 commits, **not pushed**. HEAD `a328da6`.
+**Landed on `stage`:** nothing.
+
+**Part 2a (`deviceInfo` §4.3 read + `protocolVersion` compatibility) is accepted.** Every green claim
+in the execution report was re-run here rather than believed: typecheck 0, lint 0 errors / 70
+warnings, 273 tests / 30 suites, `bundle:check` 0. All 8 mutations the brief named were re-applied
+independently and all 8 die. The 🔴 `deviceUid` rule holds — no `console`, no serialisation, no
+storage, and it never reaches a `detail` string. No `serial_hash`, no salt, no `eslint-disable`.
+The fixture rule was actually followed: `deviceUid` is `0x40..0x4B`, not a `fill()`, which was the
+failure mode I was watching for.
+
+**Four extra mutations of my own; two survived.** The exact-length check weakened from `!==` to `<`
+leaves 10/10 green — there is no over-length fixture, so a 21-byte `deviceInfo` parses instead of
+being rejected, which is precisely what an extended future characteristic would produce.
+`READ_TIMEOUT_MS 3000 → 1500` also survives (the test advances exactly 3000, which fires any budget
+at or below it) — lower value, since 3000 is an app-level choice and *that* it times out is pinned.
+Both are recorded in `TODO-phase-1.md` under P1-4.0.
+
+**The warning count moving 65 → 70 is fine and I ruled it so.** All 5 are the base64 decoder
+duplicated from `auth.ts` (4 `no-bitwise`, 1 `no-div-regex`); the 4 bitwise ones are inside
+`src/features/ble/`, squarely in the ruled carve-out. The baseline was never "≤65 forever" — it was
+"no suppressions, no bitwise outside `ble`/`crypto`/`byteLayout`". Both still hold. Flagging rather
+than suppressing was the right call.
+
+**The correction worth keeping:** I told Sadin OQ-6 blocked "Part 2b". That was wrong twice over —
+"Part 2b" isn't a defined brief (I coined the label), and OQ-6 is the *weakest* of the three
+constraints on what's left. The mismatch policy touches one branch of the pairing screen and has a
+safe default available now: **fail closed**. Firmware input shapes the message, not the refusal.
+The real blocker is 🔴 **OQ-12** — the chain is `salt → serial_hash → issue-device-session → K_sess`,
+and until it completes the Part 1 handshake has no real key to consume, so the pairing screen's
+*spine* is gated, not just one branch of it. Everything else in P1-4.0 is gated on hardware
+(~Day 26). **After Part 2a, P1-4.0 has nothing executable left.** That is a scheduling fact, not a
+review finding, and it means OQ-12 is now the single highest-value thing to chase.
+
+**Method note, five sessions running:** every finding in this repo has come from breaking the thing
+a test claims to check and confirming it still passed. Reading has still never found one. Both of
+today's gaps came from mutations the brief did *not* name — which is an argument for always running
+a few of your own past the briefed list, not just re-running the list.
+
+---
+
 ## 2026-08-07 (later) — three streams merged; two live security holes closed; five false-green tests found
 
 **Branch:** `chore/integrate-auth-db-persona` — 17 commits, **not pushed**. Everything below is on it.

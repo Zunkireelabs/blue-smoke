@@ -168,11 +168,29 @@ region — not yet assessed for target markets (relates to OQ-3).
 > *(This note was required by `P1-4.0-bonding-seam-and-handshake.md` §7 and was missed in the Part 1
 > PR — so for three commits this list read as 0/12 while 3 were done. Added on review, Day 9.)*
 >
-> **Part 2a landed on `chore/integrate-auth-db-persona`** — the `deviceInfo` read and
-> `protocolVersion` compatibility report (`src/features/ble/deviceInfo.ts`). Still 3 of 12 boxes
-> ticked above; this closes 1 of the remaining 9 but stays unticked pending the rest of Part 2. The
-> mismatch policy question (what the app should do when `protocolVersion` disagrees) is unresolved
-> per §4.3 and needs an OQ-6 answer before the pairing screen (Part 2b) can route on it.
+> **Part 2a landed and was reviewed on `chore/integrate-auth-db-persona` (`a328da6`)** — the
+> `deviceInfo` read and `protocolVersion` compatibility report (`src/features/ble/deviceInfo.ts`),
+> 10 tests, all 8 briefed mutations independently re-run and killed. Still 3 of 12 boxes ticked
+> above; this closes 1 of the remaining 9 but stays unticked pending the rest of Part 2.
+>
+> **Two review gaps left open** (found by mutations the brief didn't name; the production code is
+> correct in both cases, the *tests* are blind):
+>
+> 1. The exact-length check survives being weakened from `!==` to `<` — only an under-length (5-byte)
+>    fixture exists, so a 21-byte `deviceInfo` would be parsed instead of rejected. §4.2 says exactly
+>    20. This is the case a future firmware that extends the characteristic would actually produce.
+> 2. `protocolVersion` and `provisioningState` hold the same value in both main fixtures (`1`/`1`,
+>    then `2`/`2`), so swapping their offsets dies only because a third fixture happens to use
+>    `provisioningState: 3`. Deliberate, not lucky, is the standard here.
+>
+> **Correction to the earlier note here: OQ-6 does *not* block the rest of Part 2.** The mismatch
+> policy (§4.3 defines a version-bump process but never client behaviour) affects one *branch* of the
+> pairing screen and has a safe default available today — **fail closed**, refuse to proceed, tell
+> the user the device needs an update. Firmware input shapes the message, not the refusal. The
+> binding constraint on everything remaining is 🔴 **OQ-12** (`salt → serial_hash →
+> issue-device-session → K_sess → the Part 1 handshake has a real key to consume`) and, separately,
+> hardware. Chase OQ-12; OQ-6 is still overdue for the §4 walkthrough but is not what stops the next
+> commit.
 
 **Assumption:** firmware supports BLE bonding and token exchange per spec.
 **Excludes:** out-of-band / NFC pairing.
