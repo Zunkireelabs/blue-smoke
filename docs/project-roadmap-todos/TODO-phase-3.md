@@ -8,7 +8,10 @@
 > the phone leaves BLE range; the app is the controller and never relies on the phone alone to keep
 > the device locked.
 
-**Progress:** 0 / 8 tasks · 0 / 119 sub-tasks
+**Progress:** 0 / 8 tasks · 0 / 119 sub-tasks *(audited Day 9, 2026-08-08 — **0 is correct here**,
+unlike Phases 0–2. `src/features/ble/proximity.ts`, `commands.ts` and `connection.ts` exist but are
+explicit `P0-4.0` scaffolding stubs, each carrying a header naming the task that will implement it
+(`P3-3.0`, `P3-2.0`, `P1-7.0`). Nothing in this phase has been started.)*
 
 > **Denominator corrected — it was never 84.** Counting the boxes under the eight PRD tasks gives
 > **119**: `P3-1.0` 11 · `2.0` 16 · `3.0` 15 · `4.0` 13 · `5.0` 10 · `6.0` 19 · `7.0` 21 · `8.0` 14.

@@ -8,7 +8,9 @@
 > architecture, hands a clear BLE protocol to the client's firmware team, and gets the app
 > building on both iOS and Android.
 
-**Progress:** 1 / 7 tasks · 24 / 78 sub-tasks *(down 2 ticks — see the v1.5 note)*
+**Progress:** 1 / 7 tasks · **46 / 78 sub-tasks** *(audited Day 9, 2026-08-08. Was `24 / 78`, which
+was wrong twice over — it never counted `P0-3.0`'s 8 already-ticked boxes, and `P0-6.0` and `P0-7.0`
+had 11 boxes of finished work nobody had ticked.)*
 
 > **Denominator corrected — it was never 62.** Counting the boxes under the seven PRD tasks
 > (`P0-1.0`, `2.0`, `3.0`, `4.0`, `5.0`, `6.0`, `7.0`) gives **76**, and has since this file was
@@ -18,12 +20,21 @@
 > the two Edge Functions (spec §5.4/§5.4.1) were always in scope but missing from this list;
 > now **78**.
 >
-> **Ticked so far:** `P0-1.0` 8 · `P0-4.0` 6 · `P0-2.0` 10 → 24. Only `P0-1.0` is a *completed
-> task*. `P0-4.0` holds two physical-device boxes open (no Android toolchain, no iOS simulator
-> runtime on the machine it was built on) and `P0-2.0` holds three open pending the firmware
-> team (OQ-6). `P0-3.0` has real progress — schema + RLS + Vault applied and proven on dev and
-> staging — which is merged onto `chore/integrate-auth-db-persona` but not yet ticked here,
-> since nothing has landed on `stage` via a PR.
+> **Ticked so far:** `P0-1.0` 8 · `P0-2.0` 10 · `P0-3.0` 11 · `P0-4.0` 6 · `P0-6.0` 7 ·
+> `P0-7.0` 4 → **46**. (`P0-2.5`'s 8 are deliberately outside this denominator.) Only `P0-1.0` is a
+> *completed task*.
+>
+> **Day-9 audit — two separate errors, both in the same direction.** The old numerator said `24` and
+> excluded `P0-3.0` entirely on the grounds that "nothing has landed on `stage` via a PR" — but the
+> boxes were already ticked in this file, so the prose and the list disagreed with each other. That
+> rule was also wrong: **these files track what is built, not what has been promoted.** `stage` is
+> deliberately far behind `chore/integrate-auth-db-persona`, so gating ticks on promotion would keep
+> the roadmap permanently false. Separately, `P0-6.0` (the §8 security *design*, which is written)
+> and `P0-7.0` (the design system, which is built and guard-tested) had 11 finished boxes nobody had
+> ever ticked.
+>
+> `P0-4.0` holds two physical-device boxes open (Android has still never been compiled) and `P0-2.0`
+> holds three open pending the firmware team (**OQ-6**).
 >
 > **Two `P0-4.0` boxes unticked by the v1.5 Persona switch — recorded, not silently patched.**
 > The native ML bridges and the verification-subtree ESLint guard were both built and both
@@ -145,7 +156,9 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 > — never raw documents or biometrics.
 
 - [ ] Three Supabase projects provisioned: dev / staging / prod — dev + staging provisioned and migrated; prod not created yet (deferred)
-- [ ] Auth configured: email/password + password-reset email flow
+- [x] Auth configured: email/password + password-reset email flow *(dev project `bluesmoke-dev`
+      only — staging and prod unconfigured. Phone/OTP via Twilio Verify configured alongside it,
+      see `P1-1.0`.)*
 - [x] Schema written as versioned migrations (spec §5.2) — `profiles`, `verifications`, `devices`, `device_ownership`, `device_keys`, `device_sessions`, `push_tokens`, `audit_log`
 - [x] **`verifications` contains no DOB, name, ID number, image, or embedding column** — verified by schema review
 - [x] RLS enabled on **every** table (spec §5.3) — applied to dev, confirmed via advisors; applied to staging 2026-08-06
@@ -155,10 +168,14 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 - [x] Supabase Vault configured for `K_dev` wrapping — `device_keys.k_dev_secret_id` references `vault.secrets`; round-trip + client-denial proven in `supabase/tests/vault_k_dev_proof.sql` (dev 2026-08-05, staging 2026-08-06, all 4 checks pass on both). Mechanism only — no real `K_dev` exists yet, blocked on OQ-4
 - [ ] APNs + FCM credentials configured
 - [x] Migration workflow documented; no dashboard schema edits
-- [ ] Edge Function `issue-device-session` implemented (spec §5.4) — the sole path from `K_dev`
+- [x] Edge Function `issue-device-session` implemented (spec §5.4) — the sole path from `K_dev`
       to anything outside the database; this is where the server-side `age_verified` gate
-      (CLAUDE.md rule 3) actually runs
-- [ ] Edge Function `revoke-device-session` implemented (spec §5.4.1)
+      (CLAUDE.md rule 3) actually runs *(`AGE_NOT_VERIFIED` 403, `DEVICE_OWNED_BY_ANOTHER_USER`
+      via a translated `23505`, `audit_log` write. ⚠️ **Never called by a client** — `P1-4.0` is
+      blocked on 🔴 OQ-12 — so it is implemented and unit-reasoned, not exercised end-to-end.)*
+- [x] Edge Function `revoke-device-session` implemented (spec §5.4.1) *(brief executed and
+      reviewed — 6/6 SQL checks, 11 unit tests; one review finding, a vacuous idempotency check,
+      returned and fixed)*
 
 *(Two boxes above added — spec'd in §5.4/§5.4.1 but missing from this list since the file was
 written; flagged in `supabase/README.md` on `feature/P0-3.0-baas-setup` rather than built
@@ -244,16 +261,30 @@ silently under the task.)*
 > secure storage of tokens, HTTPS everywhere, and the deletion policy that runs after each
 > verification decision.
 
-- [ ] Data classification defined — 🔴 never-persisted / 🟠 secret-at-rest / 🟡 server-only / 🟢 ordinary (spec §8.1)
-- [ ] Secure storage design: Keychain `WhenUnlockedThisDeviceOnly` / Android Keystore, biometric-gated
-- [ ] **"Bonding is not authorisation" documented and understood by the whole team** (spec §8.2)
-- [ ] Threat model completed (spec §8.3)
-- [ ] Key rotation strategy defined given one-time-programmable OTP (spec §8.4)
-- [ ] **Residual risks documented and accepted:** relay attack, offline revocation lag, on-device ML accuracy (spec §8.5)
-- [ ] Zeroisation policy defined — `finally`-block, no disk, no logs, no crash reports
-- [ ] TLS 1.3 enforced; certificate handling reviewed
-- [ ] GDPR/CCPA posture documented (spec §8.6)
-- [ ] Security review checklist drafted for use in Block E
+> **Audited Day 9: this task is a *design* task, and the design exists** — spec §8.1–§8.6 are
+> written, and were rewritten for the v1.5 vendor architecture. Seven boxes were open purely because
+> nobody ticked them. The three that stay open are genuinely undone, not undocumented.
+
+- [x] Data classification defined — 🔴 never-persisted / 🟠 secret-at-rest / 🟡 server-only / 🟢 ordinary (spec §8.1)
+- [x] Secure storage design: Keychain `WhenUnlockedThisDeviceOnly` / Android Keystore, biometric-gated
+      *(designed in §8.1; `authKeychainStorage.ts` implements the session half. The biometric gate
+      belongs to `K_sess`, which does not exist yet — `P1-4.0`, 🔴 OQ-12.)*
+- [x] **"Bonding is not authorisation" documented** (spec §8.2) *(§8.2 is explicit; the "understood
+      by the whole team" half is a conversation, not an artefact, and has not been held)*
+- [x] Threat model completed (spec §8.3) *(15 threats incl. the four v1.5 additions — forged
+      webhook, replayed webhook, vendor outage, vendor breach)*
+- [x] Key rotation strategy defined given one-time-programmable OTP (spec §8.4)
+- [x] **Residual risks documented and accepted:** relay attack, offline revocation lag,
+      ~~on-device ML accuracy~~ *(§8.5 — the ML risk is void under v1.5 and is replaced by the
+      vendor-dependency risks; "accepted" by us, **not** yet by the client)*
+- [ ] ~~Zeroisation policy defined — `finally`-block, no disk, no logs, no crash reports~~
+      **Largely void under v1.5** — Persona's SDK holds the imagery, so we acquire nothing to
+      zeroise. Left open rather than ticked or deleted: the `finally` convention still applies to
+      `K_sess` once it exists.
+- [ ] TLS 1.3 enforced; certificate handling reviewed *(not verified — no traffic audit has been run)*
+- [x] GDPR/CCPA posture documented (spec §8.6) *(documented, **not satisfied** — the DPA and the
+      vendor-side erasure path are unowned, 🔴 OQ-11)*
+- [ ] Security review checklist drafted for use in Block E *(no such document exists in `docs/`)*
 
 **Assumption:** ~~on-device ML is sufficient for the verification flow (no KYC vendor)~~ — **void as of spec v1.5.** Verification is Persona. Several boxes above change meaning: the data classification, the threat model (four new threats, incl. **webhook forgery**), the residual-risk list, and the GDPR posture (a **DPA** is now required and erasure is no longer complete on our side). The zeroisation-policy box is largely moot — we hold nothing to zeroise.
 **Excludes:** ~~third-party / government ID validation APIs~~ — **Persona is now in scope.** Government ID-validation APIs beyond Persona remain excluded.
@@ -267,17 +298,24 @@ silently under the task.)*
 > Produce the design system (colour, type, components) and wireframes for key screens:
 > onboarding, device pairing, age verification flow, and lock/unlock control.
 
-- [ ] Brand assets received or agreed *(OQ-7)*
-- [ ] Colour, typography, spacing scales defined
-- [ ] Core component library: buttons, inputs, cards, sheets, states
-- [ ] Loading / empty / error state patterns defined
+- [ ] Brand assets received or agreed *(OQ-7 — the token palette is a **placeholder** until these
+      arrive; every colour is swappable in one file by design)*
+- [x] Colour, typography, spacing scales defined *(`src/shared/ui/tokens.ts`, token-first — a guard
+      test fails the build on any literal colour outside that file)*
+- [x] Core component library: buttons, inputs, cards, sheets, states *(`Button`, `TextField`,
+      `Card`, `Screen`, `Text` + the three state components, all exported from `shared/ui/index.ts`.
+      No sheet component yet — nothing has needed one.)*
+- [x] Loading / empty / error state patterns defined *(`LoadingState`, `EmptyState`, `ErrorState`)*
 - [ ] Wireframes — onboarding + permission priming
 - [ ] Wireframes — device scan, pairing, device list
 - [ ] Wireframes — verification flow (ID capture, selfie, result, retry, fallback)
 - [ ] Wireframes — lock/unlock control + device status
 - [ ] Coaching-oriented copy for verification failures (spec §6.4) — never diagnostic
-- [ ] Accessibility pass: contrast, touch targets, dynamic type
-- [ ] **Design system and wireframes approved**
+- [x] Accessibility pass: contrast, touch targets, dynamic type *(and **enforced**, not just done
+      once — five guard tests: WCAG AA contrast on every token pair, a completeness guard so a new
+      pair can't skip the check, minimum touch target on interactive primitives, and a guard that
+      no component disables dynamic type)*
+- [ ] **Design system and wireframes approved** *(unsent — same gate as `ARCHITECTURE-SIGNOFF.md`)*
 
 **Assumption:** brand assets provided by client or agreed early.
 **Excludes:** full high-fidelity design for add-on / admin screens.

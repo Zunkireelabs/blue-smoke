@@ -7,7 +7,8 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · 15 / 91 sub-tasks
+**Progress:** 0 / 8 tasks · **20 / 91 sub-tasks** *(audited Day 9, 2026-08-08: `P1-1.0` 15 ·
+`P1-2.0` 1 · `P1-4.0` 4. Was `15 / 91`, which pre-dated all of P1-4.0.)*
 
 > **Denominator corrected — it was never 77.** Counting the boxes under the eight PRD tasks gives
 > **91**: `P1-1.0` 17 · `2.0` 9 · `3.0` 9 · `4.0` 13 · `5.0` 12 · `6.0` 11 · `7.0` 12 · `8.0` 8.
@@ -88,8 +89,13 @@ region — not yet assessed for target markets (relates to OQ-3).
 - [ ] Onboarding carousel explaining the product and the privacy model
 - [ ] BLE permission priming screen, requested **at the moment of need**, not at launch
 - [ ] Camera permission priming, requested at the start of verification
-- [ ] iOS: `NSBluetoothAlwaysUsageDescription`, `NSCameraUsageDescription` written to justify, not just declare
-- [ ] Android: runtime permissions — `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `CAMERA`, and location where required by API level
+- [x] iOS: `NSBluetoothAlwaysUsageDescription`, `NSCameraUsageDescription` written to justify, not
+      just declare *(both present in `Info.plist` and both genuinely justificatory — the camera one
+      names Persona, the Bluetooth one explains the proximity behaviour)*
+- [ ] Android: runtime permissions — `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `CAMERA`, and location
+      where required by API level *(**declared, not requested.** All five are in
+      `AndroidManifest.xml`; no runtime request flow exists anywhere in `src/`, which is the part
+      this box is about)*
 - [ ] **Denial recovery path** — explanation + deep link to Settings
 - [ ] "Permanently denied" state handled distinctly from "denied once"
 - [ ] Permission state re-checked on app foreground
@@ -129,22 +135,38 @@ region — not yet assessed for target markets (relates to OQ-3).
 > Secure BLE bonding plus an app-level device token bound to the verified account, so only the
 > bonded, verified user's app can later command the device.
 
-- [ ] LE Secure Connections bonding implemented
-- [ ] `deviceInfo` read post-connect; `protocolVersion` compatibility checked (spec §4.3)
-- [ ] `serial_hash = SHA-256(deviceUid ‖ salt)` computed — **raw UID never transmitted**
-- [ ] `issue-device-session` Edge Function called (spec §5.4)
-- [ ] `AGE_NOT_VERIFIED` response handled → routed into the verification flow
-- [ ] `DEVICE_OWNED_BY_ANOTHER_USER` handled with a clear message
-- [ ] `K_sess` stored in Keychain/Keystore, **biometric-gated** (spec §8.1)
-- [ ] **§4.5 auth handshake implemented** — read nonce, compute CMAC, 2-frame `authResponse` write
-- [ ] AES-128-CMAC implementation unit-tested against known-answer vectors
-- [ ] Handshake failure paths handled: `AUTH_FAILED`, `RATE_LIMITED`
-- [ ] Bond-lost recovery path implemented
+- [ ] LE Secure Connections bonding implemented *(hardware — OQ-1)*
+- [x] `deviceInfo` read post-connect; `protocolVersion` compatibility checked (spec §4.3)
+      *(Part 2a, `a328da6` + `c48cd4a`; `src/features/ble/deviceInfo.ts`)*
+- [ ] `serial_hash = SHA-256(deviceUid ‖ salt)` computed — **raw UID never transmitted** *(🔴 OQ-12)*
+- [ ] `issue-device-session` Edge Function called (spec §5.4) *(🔴 OQ-12 — the **server** half is
+      built and ticked under `P0-3.0`; nothing in the app can call it until the salt is known)*
+- [ ] `AGE_NOT_VERIFIED` response handled → routed into the verification flow *(🔴 OQ-12)*
+- [ ] `DEVICE_OWNED_BY_ANOTHER_USER` handled with a clear message *(🔴 OQ-12)*
+- [ ] `K_sess` stored in Keychain/Keystore, **biometric-gated** (spec §8.1) *(🔴 OQ-12 — nothing to
+      store until a real `K_sess` flows)*
+- [x] **§4.5 auth handshake implemented** — read nonce, compute CMAC, 2-frame `authResponse` write
+      *(Part 1, `39da3cb` → `3d15000` → `6bad269`; `src/features/ble/auth.ts`)*
+- [x] AES-128-CMAC implementation unit-tested against known-answer vectors
+      *(independent implementation, RFC 4493 / FIPS-197 vectors; `src/features/ble/crypto.ts`)*
+- [x] Handshake failure paths handled: `AUTH_FAILED`, `RATE_LIMITED`
+- [ ] Bond-lost recovery path implemented *(hardware — OQ-1)*
 - [ ] **Verified: a bonded-but-unauthenticated app can read `lockState` and nothing more** (spec §8.2)
-- [ ] Tested against the mock peripheral, including every failure path
+      *(hardware — OS/radio-level, the mock cannot prove it)*
+- [ ] Tested against the mock peripheral, including every failure path *(partial — the handshake and
+      `deviceInfo` paths are, exhaustively and by mutation; bonding/session paths are unbuilt, so the
+      box stays open until the whole surface is covered)*
 
-> **Part 1 landed on `chore/integrate-auth-db-persona` (`39da3cb`, `3d15000`, `6bad269`) — 3 of the
-> 12 boxes above are done and reviewed, but stay unticked until the whole task is.** Done: the §4.5
+> ⚠️ **Convention changed on the Day-9 audit: done sub-task boxes are now ticked when they are done.**
+> This task previously held its boxes closed "until the whole task is", which is not what `CLAUDE.md`
+> says ("tick the TODO box in the same PR that completes the work") and which produced exactly the
+> failure it was meant to avoid — for three commits this list read `0/13` while three boxes were
+> finished and reviewed. The **task** counter (`0 / 8 tasks`) is what stays closed until a task is
+> whole; the sub-task boxes are the progress signal and must be honest. *(The note below also said
+> "12" where the list has always had **13** boxes — corrected.)*
+>
+> **Part 1 landed on `chore/integrate-auth-db-persona` (`39da3cb`, `3d15000`, `6bad269`) — 3 boxes,
+> now ticked.** Done: the §4.5
 > handshake (read nonce → CMAC proof → two-frame `authResponse`), the independent AES-128-CMAC
 > against RFC 4493 / FIPS-197 vectors, and the `AUTH_FAILED` / `RATE_LIMITED` failure paths. Also
 > landed underneath them: the `BleClientContext` seam, `byteLayout`, and 19 handshake tests, every
@@ -170,8 +192,9 @@ region — not yet assessed for target markets (relates to OQ-3).
 >
 > **Part 2a landed and was reviewed on `chore/integrate-auth-db-persona` (`a328da6`)** — the
 > `deviceInfo` read and `protocolVersion` compatibility report (`src/features/ble/deviceInfo.ts`),
-> 10 tests, all 8 briefed mutations independently re-run and killed. Still 3 of 12 boxes ticked
-> above; this closes 1 of the remaining 9 but stays unticked pending the rest of Part 2.
+> 10 tests, all 8 briefed mutations independently re-run and killed. **This is the 4th of 13 boxes,
+> now ticked** — 9 remain, and every one of them is blocked (🔴 OQ-12 for five, hardware for three,
+> and the "tested against the mock" box waits on both).
 >
 > **Two review gaps were found by mutations the brief didn't name, and are now closed** (`c48cd4a`,
 > briefed in `P1-4.0-part2a-followup-two-unpinned-properties.md`). Both were test-side — the
@@ -248,6 +271,14 @@ region — not yet assessed for target markets (relates to OQ-3).
 - [ ] `audit_log` entries for `device_bonded` and `device_unpaired`, **metadata only, no PII**
 - [ ] RLS verified — user A cannot see or modify user B's device rows
 - [ ] Offline queue for sync operations, with retry
+
+> **Nothing here is ticked, but the *server* half of several boxes already exists** and is ticked
+> under `P0-3.0`: `issue-device-session` resolves the `devices` row, inserts `device_ownership`
+> service-side, lets the `device_ownership_one_active_owner` partial unique index arbitrate a race,
+> translates the `23505` into a 403 `DEVICE_OWNED_BY_ANOTHER_USER` rather than a 500, and writes
+> `audit_log`. These boxes stay open because **no client has ever called it** — that is `P1-4.0`'s
+> job and it is blocked on 🔴 OQ-12 — so none of the behaviour is exercised end-to-end and the
+> concurrency and reinstall boxes are unproven in the only way that counts.
 
 **Assumption:** backend device model defined in Phase 0.
 **Excludes:** cross-user device transfer workflow.

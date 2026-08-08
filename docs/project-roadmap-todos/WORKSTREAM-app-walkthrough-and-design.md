@@ -107,10 +107,15 @@ closes it.
       One PR per flow, not one wide diff. Reuse the existing primitives; needing a ninth is a finding
       to raise, not to invent.
 
-- [ ] **B3. Establish whether the token-only guard actually reaches those 8 screens.** They predate
-      it and are full of hex. Either the guard excludes them or it does not reach them — if the
-      latter, a guard that passes while 8 screens violate the rule is the same false-green shape as
-      the contrast-pair gap. Worth 10 minutes.
+- [x] **B3. Establish whether the token-only guard actually reaches those 8 screens.** **Answered on
+      the Day-9 audit: it does not reach them.** Both source-scanning guards call
+      `listSourceFiles('src/shared/ui')` — the kit directory only
+      (`tokenOnlyGuard.test.ts:18`, `contrastCompleteness.test.ts:20`). Nothing under
+      `src/features/**` is scanned, so **every one of the 8 screens can carry raw hex while the
+      guard reports green.** That is the false-green shape this box suspected, confirmed.
+      *Not fixed here — widening the guard's scope would fail the build on the 8 screens
+      immediately, so it belongs with **B2**: migrate the screens, then widen the guard in the same
+      change. Doing it the other way round just produces a red build nobody can merge.*
 
 > **Constraint: OQ-7 is open.** Brand assets have never arrived and `tokens.ts` says the palette is
 > provisional. This pass is **structural** — get every screen onto tokens and primitives so a later
