@@ -143,6 +143,31 @@ region — not yet assessed for target markets (relates to OQ-3).
 - [ ] **Verified: a bonded-but-unauthenticated app can read `lockState` and nothing more** (spec §8.2)
 - [ ] Tested against the mock peripheral, including every failure path
 
+> **Part 1 landed on `chore/integrate-auth-db-persona` (`39da3cb`, `3d15000`, `6bad269`) — 3 of the
+> 12 boxes above are done and reviewed, but stay unticked until the whole task is.** Done: the §4.5
+> handshake (read nonce → CMAC proof → two-frame `authResponse`), the independent AES-128-CMAC
+> against RFC 4493 / FIPS-197 vectors, and the `AUTH_FAILED` / `RATE_LIMITED` failure paths. Also
+> landed underneath them: the `BleClientContext` seam, `byteLayout`, and 19 handshake tests, every
+> property verified by mutation.
+>
+> **Part 2 is not one task and must not be briefed as one** — it splits three ways by what blocks it:
+>
+> - **Blocked on 🔴 OQ-12 (the `serial_hash` salt, spec §13):** `serial_hash`, the
+>   `issue-device-session` call, `AGE_NOT_VERIFIED` / `DEVICE_OWNED_BY_ANOTHER_USER` handling, and
+>   biometric-gated `K_sess` Keychain storage (nothing to store until a real `K_sess` flows). A
+>   guessed salt fails *silently* — every device misses its row and looks permanently unseen — so
+>   this waits for an answer rather than a plausible value.
+> - **Blocked on UI + hardware:** the pairing/bonding screen (and wiring `BleClientProvider` into
+>   `providers.tsx`), LESC bonding, bond-lost recovery, and the §8.2 "bonded-but-unauthenticated app
+>   can read `lockState` and nothing more" check. The last three are OS/radio-level — the mock
+>   cannot prove them, so they are genuinely gated on hardware (OQ-1, ~Day 26), not on effort.
+> - **Ready now:** the `deviceInfo` read + `protocolVersion` compatibility check (§4.3) — a
+>   characteristic read against the seam Part 1 already built. No salt, no UI, no hardware. Briefed
+>   in `docs/execution-briefs/P1-4.0-part2a-deviceinfo-protocol-version.md`.
+>
+> *(This note was required by `P1-4.0-bonding-seam-and-handshake.md` §7 and was missed in the Part 1
+> PR — so for three commits this list read as 0/12 while 3 were done. Added on review, Day 9.)*
+
 **Assumption:** firmware supports BLE bonding and token exchange per spec.
 **Excludes:** out-of-band / NFC pairing.
 **Risk:** bonding edge cases and lost-bond recovery.
