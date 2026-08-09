@@ -7,8 +7,10 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · **20 / 91 sub-tasks** *(audited Day 9, 2026-08-08: `P1-1.0` 15 ·
-`P1-2.0` 1 · `P1-4.0` 4. Was `15 / 91`, which pre-dated all of P1-4.0.)*
+**Progress:** 0 / 8 tasks · **30 / 91 sub-tasks** *(Day 10, 2026-08-09: `P1-3.0` +8 (8/9 — everything
+except the ≥2-Android-OEM hardware box), `P1-7.0` +2 (2/12 — auto-reconnect-with-backoff and
+re-handshake-on-reconnect). Previously `20 / 91`, audited Day 9: `P1-1.0` 15 · `P1-2.0` 1 ·
+`P1-4.0` 4.)*
 
 > **Denominator corrected — it was never 77.** Counting the boxes under the eight PRD tasks gives
 > **91**: `P1-1.0` 17 · `2.0` 9 · `3.0` 9 · `4.0` 13 · `5.0` 12 · `6.0` 11 · `7.0` 12 · `8.0` 8.
@@ -120,15 +122,28 @@ the app working** — account, profile and verification are all reachable withou
 > Scan for nearby Blue Smoke devices over BLE and present discoverable devices to the user for
 > selection, filtering to the project's GATT service.
 
-- [ ] Scan **filtered on the service UUID** (spec §4.1) — never present arbitrary peripherals
-- [ ] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1)
-- [ ] Discovered-device list UI with signal strength indication
-- [ ] Scan timeout + explicit "no devices found" state with troubleshooting help
-- [ ] Bluetooth-off state detected and handled with a prompt to enable
-- [ ] Duplicate-advertisement handling; stable list ordering
-- [ ] Scan stopped on screen exit — no battery leak
-- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors
-- [ ] Tested against the mock peripheral
+- [x] Scan **filtered on the service UUID** (spec §4.1) — never present arbitrary peripherals
+      *(`src/features/ble/scanner.ts`; the UUID itself is unconfirmed against hardware — 🔴 OQ-13,
+      see `docs/hardware/hqd-device-architecture.md` §8 — but the filtering behaviour is built and
+      tested against the mock regardless of what that value turns out to be)*
+- [x] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1)
+      *(`parseAdvertisement()`; `stateHintRaw`/`flagsRaw` are parsed and carried, never interpreted
+      — §4.1 defines no encoding for either, see the spec gap noted in `scanner.ts` and
+      `PairDeviceScreen.tsx`)*
+- [x] Discovered-device list UI with signal strength indication *(`PairDeviceScreen.tsx`)*
+- [x] Scan timeout + explicit "no devices found" state with troubleshooting help
+      *(`ScanState.noDevicesFound`, `PairDeviceScreen.tsx`)*
+- [x] Bluetooth-off state detected and handled with a prompt to enable
+      *(`ScanBlockedReason.bluetoothOff`, `PairDeviceScreen.tsx`; recovers automatically when
+      Bluetooth is switched back on, no re-tap needed)*
+- [x] Duplicate-advertisement handling; stable list ordering *(`scanner.ts` — discovery order,
+      deliberately not RSSI order; see the mutation-verify note in that file)*
+- [x] Scan stopped on screen exit — no battery leak *(`useFocusEffect`/`useEffect` in
+      `PairDeviceScreen.tsx`, tested)*
+- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors *(needs physical hardware —
+      OQ-1, ~Day 26; out of scope for this pass)*
+- [x] Tested against the mock peripheral *(`scanner.test.ts` 29 tests, `PairDeviceScreen.test.tsx`
+      7 tests, all against `tools/mock-peripheral`)*
 
 **Assumption:** device advertises the agreed BLE service UUID.
 **Excludes:** support for non-Blue-Smoke BLE peripherals.
@@ -299,8 +314,12 @@ the app working** — account, profile and verification are all reachable withou
 > Manage the BLE connection across app states: automatic reconnect after drops and correct
 > behaviour when the app is backgrounded or relaunched.
 
-- [ ] Auto-reconnect with exponential backoff and a cap
-- [ ] **Re-handshake required on every reconnect** — a session never survives a disconnect (spec §4.5)
+- [x] Auto-reconnect with exponential backoff and a cap *(`src/features/ble/connection.ts`, tested
+      in `connection.test.ts`)*
+- [x] **Re-handshake required on every reconnect** — a session never survives a disconnect (spec §4.5)
+      *(`connection.ts` calls `createAuthHandshake()` fresh on every attempt, initial and reconnect;
+      proven by `connection.test.ts`'s "an abrupt disconnect triggers a full new handshake" test,
+      which asserts the credentials callback runs a second time, not once)*
 - [ ] iOS: state restoration via `CBCentralManagerOptionRestoreIdentifierKey`
 - [ ] iOS: background mode `bluetooth-central` configured and working
 - [ ] Android: foreground service (type `connectedDevice`) with a clear persistent notification
