@@ -136,7 +136,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // and a user_id at once). The reason is the actionable part, and it is not user data.
     console.error(
       `persona-webhook: REFUSING a passing inquiry — template not confirmed (${templateVerdict.reason}). ` +
-        'age_verified was NOT set. See spec §6.6 item 3.',
+        'age_verified was NOT set. See spec §6.6 item 3.' +
+        (templateVerdict.reason === 'mismatch'
+          ? ' A mismatch usually means PERSONA_TEMPLATE_ID was updated in ONE of its two homes:' +
+            ' the app inlines it at BUNDLE time from .env (babel.config.js), this function reads it' +
+            ' at RUNTIME from Edge Function secrets. Update both, then rebuild the app.'
+          : ''),
     );
     // 200, not 4xx: a template mismatch is a configuration fault, and no number of Persona
     // retries will fix it — a non-2xx would just buy an infinite redelivery loop on top of an
