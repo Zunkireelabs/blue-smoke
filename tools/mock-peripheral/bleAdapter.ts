@@ -41,6 +41,20 @@ export interface MockDeviceOptions {
   name: string;
   /** Scripted RSSI series consumed in call order by readRSSI(); last value repeats once exhausted. */
   rssiSeries?: number[];
+  /**
+   * P1-3.0 — RSSI carried on the *advertisement*, i.e. what a scan result
+   * reports before any connection exists. Deliberately separate from
+   * `rssiSeries`: seeding `rssi` from the series would consume its first entry
+   * before `readRSSI()` ever ran, and the §7.2 proximity tests depend on that
+   * series starting at index 0.
+   */
+  advertisedRssi?: number;
+  /**
+   * P1-3.0 — §4.1 manufacturer data, 4 bytes:
+   * `[protocolVersion | stateHint | battery | flags]`. Omit for a device that
+   * advertises none, which the app must still list.
+   */
+  manufacturerData?: Uint8Array;
 }
 
 /**
@@ -50,7 +64,11 @@ export interface MockDeviceOptions {
 export class MockDevice {
   readonly id: string;
   readonly name: string;
+  /** §4.1 — `react-native-ble-plx` exposes both; the app prefers `name`, falling back to this. */
+  readonly localName: string | null;
   rssi: number | null = null;
+  /** §4.1 manufacturer data as base64, exactly as ble-plx delivers it. `null` if none. */
+  readonly manufacturerData: string | null;
 
   private readonly core: DeviceCore;
   private rssiSeries: number[];
@@ -62,7 +80,12 @@ export class MockDevice {
     this.core = core;
     this.id = options.id;
     this.name = options.name;
+    this.localName = options.name;
     this.rssiSeries = options.rssiSeries ?? [];
+    this.rssi = options.advertisedRssi ?? null;
+    this.manufacturerData = options.manufacturerData
+      ? Buffer.from(options.manufacturerData).toString('base64')
+      : null;
   }
 
   async connect(): Promise<MockDevice> {
@@ -172,28 +195,96 @@ export class MockDevice {
 
 type ScanListener = (error: Error | null, device: MockDevice | null) => void;
 
-/** The fake `BleManager`. Backed by a single MockDevice — see MockDevice's doc comment. */
+type AdapterStateListener = (state: string) => void;
+
+/**
+ * The fake `BleManager`.
+ *
+ * Originally backed by exactly one MockDevice. P1-3.0 needs a *list* — dedupe,
+ * ordering and "no devices found" are untestable against a single peripheral —
+ * so it now holds several while keeping `device` pointing at the first, which
+ * is what every pre-existing caller uses. The GATT half is still single-device:
+ * only `devices[0]` has a `DeviceCore` behind it, and the extra peripherals
+ * exist to be *discovered*, not connected to.
+ */
 export class MockBleManager {
+  /** The primary peripheral — the one with a DeviceCore. Unchanged for existing callers. */
   private readonly device: MockDevice;
+  private readonly devices: MockDevice[];
+  private adapterState: string = 'PoweredOn';
+  private readonly adapterStateListeners = new Set<AdapterStateListener>();
+  private activeScan: { serviceUUIDs: string[] | null; listener: ScanListener } | null = null;
 
-  constructor(device: MockDevice) {
+  constructor(device: MockDevice, additionalDevices: MockDevice[] = []) {
     this.device = device;
+    this.devices = [device, ...additionalDevices];
   }
 
-  async state(): Promise<'PoweredOn'> {
-    return 'PoweredOn';
+  async state(): Promise<string> {
+    return this.adapterState;
   }
 
-  /** §4.1 — the app must filter scan results on the service UUID; this mock only ever advertises it. */
+  onStateChange(listener: AdapterStateListener, emitCurrentState = false): Subscription {
+    this.adapterStateListeners.add(listener);
+    if (emitCurrentState) {
+      listener(this.adapterState);
+    }
+    return { remove: () => this.adapterStateListeners.delete(listener) };
+  }
+
+  /**
+   * Mock-only test hook: drive the adapter through `PoweredOff` / `Unauthorized`
+   * / etc. Switching away from `PoweredOn` kills any in-flight scan, which is
+   * what the OS does when the user turns Bluetooth off mid-scan.
+   */
+  setAdapterState(state: string): void {
+    this.adapterState = state;
+    if (state !== 'PoweredOn') {
+      this.activeScan = null;
+    }
+    for (const listener of this.adapterStateListeners) {
+      listener(state);
+    }
+  }
+
+  /** §4.1 — the app must filter scan results on the service UUID; these mocks only ever advertise it. */
   startDeviceScan(serviceUUIDs: string[] | null, _options: unknown, listener: ScanListener): void {
-    if (serviceUUIDs && !serviceUUIDs.some((uuid) => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase())) {
+    if (this.adapterState !== 'PoweredOn') {
+      throw new Error(`MockBleManager: cannot scan while adapter is ${this.adapterState}`);
+    }
+    this.activeScan = { serviceUUIDs, listener };
+    if (!this.matchesFilter(serviceUUIDs)) {
       return;
     }
-    listener(null, this.device);
+    for (const device of this.devices) {
+      listener(null, device);
+    }
   }
 
   stopDeviceScan(): void {
-    // No background scan loop to cancel in this synchronous mock.
+    this.activeScan = null;
+  }
+
+  /**
+   * Mock-only test hook: re-deliver an advertisement for an already-scanned
+   * peripheral, which is what both platforms do continuously during a real
+   * scan. The app's dedupe path (P1-3.0) has nothing to exercise without it.
+   * No-op when no scan is running — matching the radio.
+   */
+  emitAdvertisement(device: MockDevice = this.device): void {
+    if (!this.activeScan || !this.matchesFilter(this.activeScan.serviceUUIDs)) {
+      return;
+    }
+    this.activeScan.listener(null, device);
+  }
+
+  /** Mock-only test hook: fail an in-flight scan the way the library reports errors. */
+  emitScanError(error: Error): void {
+    this.activeScan?.listener(error, null);
+  }
+
+  isScanning(): boolean {
+    return this.activeScan !== null;
   }
 
   async connectToDevice(deviceId: string): Promise<MockDevice> {
@@ -210,7 +301,15 @@ export class MockBleManager {
     return this.device.cancelConnection();
   }
 
+  private matchesFilter(serviceUUIDs: string[] | null): boolean {
+    return (
+      !serviceUUIDs ||
+      serviceUUIDs.some((uuid) => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase())
+    );
+  }
+
   private assertKnownDevice(deviceId: string): void {
+    // Only the primary peripheral is connectable — the rest have no DeviceCore.
     if (deviceId !== this.device.id) {
       throw new Error(`MockBleManager: unknown device ${deviceId}`);
     }
@@ -222,6 +321,16 @@ export interface CreateMockPeripheralOptions extends DeviceCoreConfig {
   /** Last 4 hex chars of the device UID, per §4.1's advertised local name. */
   deviceUidSuffixHex?: string;
   rssiSeries?: number[];
+  /** P1-3.0 — see `MockDeviceOptions.advertisedRssi`. */
+  advertisedRssi?: number;
+  /** P1-3.0 — §4.1 manufacturer data for the primary peripheral. */
+  manufacturerData?: Uint8Array;
+  /**
+   * P1-3.0 — extra peripherals that appear in scan results but have no
+   * `DeviceCore` and cannot be connected to. For exercising dedupe, ordering
+   * and multi-device list behaviour.
+   */
+  additionalAdvertisers?: MockDeviceOptions[];
 }
 
 export function createMockPeripheral(options: CreateMockPeripheralOptions): {
@@ -234,7 +343,15 @@ export function createMockPeripheral(options: CreateMockPeripheralOptions): {
     id: options.deviceId ?? 'mock-device-0001',
     name: `${ADVERTISING_LOCAL_NAME_PREFIX}${options.deviceUidSuffixHex ?? '0000'}`,
     rssiSeries: options.rssiSeries,
+    advertisedRssi: options.advertisedRssi,
+    manufacturerData: options.manufacturerData,
   });
-  const manager = new MockBleManager(device);
+  // These share the primary's DeviceCore so the type checks out, but nothing
+  // reads through it — `MockBleManager.assertKnownDevice` refuses to connect
+  // to them, which is the honest model of "discovered, not connectable".
+  const additional = (options.additionalAdvertisers ?? []).map(
+    (advertiserOptions) => new MockDevice(core, advertiserOptions),
+  );
+  const manager = new MockBleManager(device, additional);
   return { manager, device, core };
 }

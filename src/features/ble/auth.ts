@@ -8,6 +8,7 @@
  * `AuthResult`.
  */
 
+import { base64ToBytes, bytesToBase64 } from './base64';
 import type { BleDeviceLike, BleManagerLike } from './BleClientContext';
 import { aesCmac } from './crypto';
 import { readBytes, readUint8, writeBytes, writeUint24LE, writeUint8 } from './byteLayout';
@@ -94,48 +95,14 @@ async function withTimeout<T>(operation: Promise<T>, ms: number, stage: Handshak
   }
 }
 
-// Hand-rolled base64, not `btoa`/`atob`: React Native/Hermes doesn't polyfill
-// either (confirmed absent from RN's InitializeCore.js and from
-// node_modules/react-native/types), so depending on them here would be an
-// unverified assumption about the on-device runtime — exactly what the brief
-// says to check, not guess. `react-native-ble-plx` itself represents
-// characteristic values as base64 strings either way (§4.2), so this is
-// needed regardless.
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
-    const b1 = i + 1 < bytes.length ? bytes[i + 1] : undefined;
-    const b2 = i + 2 < bytes.length ? bytes[i + 2] : undefined;
-
-    out += BASE64_ALPHABET[b0 >> 2];
-    out += BASE64_ALPHABET[((b0 & 0x03) << 4) | (b1 === undefined ? 0 : b1 >> 4)];
-    out += b1 === undefined ? '=' : BASE64_ALPHABET[((b1 & 0x0f) << 2) | (b2 === undefined ? 0 : b2 >> 6)];
-    out += b2 === undefined ? '=' : BASE64_ALPHABET[b2 & 0x3f];
-  }
-  return out;
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const clean = base64.replace(/=+$/, '');
-  const out = new Uint8Array(Math.floor((clean.length * 6) / 8));
-  let outIndex = 0;
-  let buffer = 0;
-  let bitsInBuffer = 0;
-  for (let i = 0; i < clean.length; i += 1) {
-    const value = BASE64_ALPHABET.indexOf(clean[i]);
-    buffer = (buffer << 6) | value;
-    bitsInBuffer += 6;
-    if (bitsInBuffer >= 8) {
-      bitsInBuffer -= 8;
-      out[outIndex] = (buffer >> bitsInBuffer) & 0xff;
-      outIndex += 1;
-    }
-  }
-  return out;
-}
+// Base64 lives in `./base64` — hand-rolled, not `btoa`/`atob`, because
+// React Native/Hermes polyfills neither (confirmed absent from RN's
+// InitializeCore.js and from node_modules/react-native/types), and
+// `react-native-ble-plx` represents characteristic values as base64 either
+// way (§4.2). It moved out of this file when `scanner.ts` became the third
+// module to need it; the decoder now also rejects invalid characters rather
+// than decoding them to garbage, which surfaces here as a `transport`
+// outcome like any other malformed read.
 
 function buildFrame1(sessionId: Uint8Array, keyGeneration: number): Uint8Array {
   const frame = new Uint8Array(CHARACTERISTIC_LENGTH_BYTES.authResponse);

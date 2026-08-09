@@ -40,6 +40,50 @@ export interface BleManagerLike {
   cancelDeviceConnection(deviceId: string): Promise<BleDeviceLike>;
 }
 
+export interface BleSubscriptionLike {
+  remove(): void;
+}
+
+/**
+ * P1-3.0 — a peripheral as it appears in a **scan result**, before any
+ * connection exists. Distinct from `BleDeviceLike` on purpose: at scan time
+ * all we have is what the advertisement carried (§4.1), and none of
+ * `BleDeviceLike`'s GATT operations are callable yet. `react-native-ble-plx`
+ * happens to use one `Device` class for both phases; keeping them apart here
+ * stops scan-phase code from reaching for a characteristic read that would
+ * throw.
+ *
+ * `manufacturerData` is base64, as the library delivers it.
+ */
+export interface BleAdvertisementLike {
+  readonly id: string;
+  readonly name: string | null;
+  readonly localName?: string | null;
+  readonly rssi: number | null;
+  readonly manufacturerData: string | null;
+}
+
+/**
+ * P1-3.0 — the scan slice, kept **separate from `BleManagerLike`** rather
+ * than added to it. Both the real `BleManager` and `MockBleManager` satisfy
+ * both interfaces structurally, but widening `BleManagerLike` would break
+ * every existing narrow test double that implements only the four
+ * connection methods. Depend on the smallest interface that does the job.
+ */
+export interface BleScannerLike {
+  state(): Promise<string>;
+  onStateChange(
+    listener: (state: string) => void,
+    emitCurrentState?: boolean,
+  ): BleSubscriptionLike;
+  startDeviceScan(
+    serviceUUIDs: string[] | null,
+    options: unknown,
+    listener: (error: Error | null, device: BleAdvertisementLike | null) => void,
+  ): void;
+  stopDeviceScan(): void;
+}
+
 /**
  * The real `BleManager` is expensive and unsafe to construct at module load:
  * its constructor reaches straight into the native module
