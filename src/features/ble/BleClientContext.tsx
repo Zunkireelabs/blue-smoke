@@ -38,6 +38,13 @@ export interface BleManagerLike {
   connectToDevice(deviceId: string): Promise<BleDeviceLike>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
   cancelDeviceConnection(deviceId: string): Promise<BleDeviceLike>;
+  // Added for P1-7.0 — the only way to observe an involuntary disconnect
+  // (supervision timeout / radio loss), which connection.ts's reconnect
+  // logic needs and no existing member exposes.
+  onDeviceDisconnected(
+    deviceId: string,
+    listener: (error: Error | null, deviceId: string) => void,
+  ): { remove(): void };
 }
 
 /**
@@ -51,10 +58,27 @@ export interface BleManagerLike {
  * brief §2). So the default is constructed lazily, on first real use, not at
  * import time or provider-mount time.
  */
+// The real BleManager.onDeviceDisconnected(deviceId, listener) hands the
+// listener a full Device, not a deviceId (see node_modules/react-native-ble-plx
+// /src/Device.js's onDisconnected doc) — narrower than BleManagerLike's
+// deviceId-only listener, so a direct `new BleManager()` no longer satisfies
+// this interface once that member exists. Wrap rather than widen the
+// interface back to leaking a Device handle here.
+function wrapRealManager(real: BleManager): BleManagerLike {
+  return {
+    state: () => real.state(),
+    connectToDevice: (deviceId) => real.connectToDevice(deviceId),
+    isDeviceConnected: (deviceId) => real.isDeviceConnected(deviceId),
+    cancelDeviceConnection: (deviceId) => real.cancelDeviceConnection(deviceId),
+    onDeviceDisconnected: (deviceId, listener) =>
+      real.onDeviceDisconnected(deviceId, (error, device) => listener(error, device?.id ?? deviceId)),
+  };
+}
+
 let lazyDefaultManager: BleManagerLike | undefined;
 function getLazyDefaultManager(): BleManagerLike {
   if (!lazyDefaultManager) {
-    lazyDefaultManager = new BleManager();
+    lazyDefaultManager = wrapRealManager(new BleManager());
   }
   return lazyDefaultManager;
 }

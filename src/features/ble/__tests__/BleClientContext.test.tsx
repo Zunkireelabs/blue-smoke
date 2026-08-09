@@ -16,6 +16,7 @@ function makeFakeManager(): BleManagerLike {
     cancelDeviceConnection: async () => {
       throw new Error('not used by this test');
     },
+    onDeviceDisconnected: () => ({ remove: () => {} }),
   };
 }
 

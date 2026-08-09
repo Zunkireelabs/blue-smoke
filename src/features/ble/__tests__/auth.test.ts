@@ -143,6 +143,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       connectToDevice: async () => device,
       isDeviceConnected: (id) => manager.isDeviceConnected(id),
       cancelDeviceConnection: (id) => manager.cancelDeviceConnection(id),
+      onDeviceDisconnected: (id, listener) => manager.onDeviceDisconnected(id, listener),
     };
     const staleHandshake = createAuthHandshake(staleManager);
 
@@ -163,6 +164,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const realDevice = await realManager.connectToDevice(id);
           return {
@@ -210,6 +212,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         isDeviceConnected: async () => false,
         cancelDeviceConnection: async (id) => device.id === id ? device : device,
         connectToDevice: () => (stage === 'connect' ? neverSettles : Promise.resolve(device)),
+        onDeviceDisconnected: () => ({ remove: () => {} }),
       };
     }
 
@@ -273,6 +276,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         connectToDevice: async () => {
           throw new Error('connection failed');
         },
+        onDeviceDisconnected: () => ({ remove: () => {} }),
       };
       const handshake = createAuthHandshake(rejectingManager);
 
@@ -291,6 +295,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const device = await realManager.connectToDevice(id);
           return {
@@ -321,6 +326,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const device = await realManager.connectToDevice(id);
           return {
@@ -363,6 +369,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const realDevice = await realManager.connectToDevice(id);
           return {
@@ -411,6 +418,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const realDevice = await realManager.connectToDevice(id);
           return {
@@ -455,6 +463,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const realDevice = await realManager.connectToDevice(id);
           return {
@@ -500,6 +509,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         state: () => realManager.state(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
+        onDeviceDisconnected: (id, listener) => realManager.onDeviceDisconnected(id, listener),
         connectToDevice: async (id) => {
           const realDevice = await realManager.connectToDevice(id);
           return {
@@ -557,6 +567,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
         connectToDevice: async () => {
           throw new Error('connection failed');
         },
+        onDeviceDisconnected: () => ({ remove: () => {} }),
       };
       const handshake = createAuthHandshake(rejectingManager);
 
