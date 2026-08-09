@@ -93,20 +93,40 @@ the denial matrix item 9 asks you to walk. Two things it settles that are easy t
 permission is a button that silently does nothing), and denying Bluetooth must leave **the rest of
 the app working** — account, profile and verification are all reachable without it.
 
-- [ ] Onboarding carousel explaining the product and the privacy model
-- [ ] BLE permission priming screen, requested **at the moment of need**, not at launch
-- [ ] Camera permission priming, requested at the start of verification
+- [x] Onboarding carousel explaining the product and the privacy model *(P1-2.0, ON-1..3 —
+      walked live on the iOS simulator; `simctl uninstall` + reinstall confirmed the AsyncStorage
+      flag clears and the carousel returns, rather than the Keychain-survives-uninstall trap this
+      project hit on 2026-08-09)*
+- [x] BLE permission priming screen, requested **at the moment of need**, not at launch *(P1-2.0,
+      `BluetoothPrimingScreen`/ON-4 — real component, no launch-time mount anywhere; the actual
+      pairing-flow call site is P1-4.0/Phase D's job, tracked there, not invented here)*
+- [x] Camera permission priming, requested at the start of verification *(ON-5, shipped P2-6.0 —
+      correcting this box now since it was never ticked when built)*
 - [x] iOS: `NSBluetoothAlwaysUsageDescription`, `NSCameraUsageDescription` written to justify, not
       just declare *(both present in `Info.plist` and both genuinely justificatory — the camera one
       names Persona, the Bluetooth one explains the proximity behaviour)*
 - [ ] Android: runtime permissions — `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `CAMERA`, and location
-      where required by API level *(**declared, not requested.** All five are in
-      `AndroidManifest.xml`; no runtime request flow exists anywhere in `src/`, which is the part
-      this box is about)*
-- [ ] **Denial recovery path** — explanation + deep link to Settings
-- [ ] "Permanently denied" state handled distinctly from "denied once"
-- [ ] Permission state re-checked on app foreground
-- [ ] **No dead ends** — verified by walking every denial combination
+      where required by API level *(**partial.** `requestAndroidBluetoothPermission()` (P1-2.0,
+      `src/features/ble/bluetoothPermission.ts`) now does the real `PermissionsAndroid.requestMultiple`
+      call for `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` — but nothing calls it yet (Phase D), CAMERA
+      is Persona's own SDK's concern not ours, and Android has still never been compiled on this
+      project (no JDK) so none of this has actually been run. Leaving unticked rather than
+      claiming something unrun.)*
+- [x] **Denial recovery path** — explanation + deep link to Settings *(P1-2.0, ON-8/ON-9 —
+      `Linking.openSettings()`, real, tested; not a placeholder button)*
+- [x] "Permanently denied" state handled distinctly from "denied once" *(P1-2.0 — `BluetoothGateScreen`
+      resolves ON-7 vs ON-8 vs ON-9 from real `BleManager` state, proven by
+      `BluetoothGateScreen.test.tsx` against real iOS/Android state strings, not a shared
+      component behind a variant prop. iOS never reaches ON-7 — see that file's own note on why)*
+- [x] Permission state re-checked on app foreground *(P1-2.0 — `BluetoothGateScreen`'s `AppState`
+      listener, tested)*
+- [ ] **No dead ends** — verified by walking every denial combination *(NOT done — ON-4/6/7/8/9 have
+      no real trigger yet (Phase D wires it), and the live simulator walk of them via a signed-in
+      session was blocked by repeated phone-OTP failures this session, most likely Twilio trial
+      rate-limiting per this project's own documented constraint on `+14152127*`-style test
+      numbers. Covered instead by automated tests that press every CTA and assert its effect, plus
+      the state-routing regression test — but that is not the same as walking it live. Do this once
+      Phase D gives these screens a real trigger to walk.)*
 
 **Assumption:** standard OS permission dialogs are acceptable to client.
 **Excludes:** custom permission-priming screens beyond the agreed flow.
