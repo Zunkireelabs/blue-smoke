@@ -1,17 +1,11 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { z } from 'zod';
+import { Button, Screen, Text, TextField, tokens } from '@/shared/ui';
+import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { passwordSchema } from './schemas';
 
@@ -21,6 +15,11 @@ import { passwordSchema } from './schemas';
  * from the link's token (config only from this app's side — can't be
  * verified without a device, brief §2). Calls `authClient.confirmPasswordReset`,
  * the addition to the §3.5 interface documented in client.ts.
+ *
+ * `AU-11` (P0-7.0): the `done` state used to render with no button and no
+ * navigation import — a user who just reset their password was told
+ * "Password updated" and left there with no way forward but the native back
+ * arrow. Continue goes to Login (`AU-4`), the flow's stated fix.
  */
 
 const resetConfirmSchema = z
@@ -42,6 +41,7 @@ type Status = 'idle' | 'submitting' | 'done';
 
 export function ResetPasswordConfirmScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -87,139 +87,98 @@ export function ResetPasswordConfirmScreen() {
 
   if (status === 'done') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Password updated</Text>
-        <Text style={styles.body}>You can now log in with your new password.</Text>
-      </View>
+      <Screen>
+        <Text variant="title" style={styles.centerText}>
+          Password updated
+        </Text>
+        <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
+          You can now log in with your new password.
+        </Text>
+
+        <View style={styles.button}>
+          <Button label="Continue" onPress={() => navigation.navigate('Login')} />
+        </View>
+      </Screen>
     );
   }
 
   const isSubmitting = status === 'submitting';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Choose a new password</Text>
+    <Screen scroll centered={false}>
+      <Text variant="title" style={styles.title}>
+        Choose a new password
+      </Text>
 
-        <Text style={styles.label}>New password</Text>
-        <Controller
-          control={control}
-          name="password"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              secureTextEntry
-              autoComplete="new-password"
-              editable={!isSubmitting}
-              accessibilityLabel="New password"
-            />
-          )}
-        />
-        {errors.password && <Text style={styles.fieldError}>{errors.password.message}</Text>}
-
-        <Text style={styles.label}>Confirm new password</Text>
-        <Controller
-          control={control}
-          name="confirmPassword"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              secureTextEntry
-              autoComplete="new-password"
-              editable={!isSubmitting}
-              accessibilityLabel="Confirm new password"
-            />
-          )}
-        />
-        {errors.confirmPassword && (
-          <Text style={styles.fieldError}>{errors.confirmPassword.message}</Text>
+      <Controller
+        control={control}
+        name="password"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="New password"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            secureTextEntry
+            autoComplete="new-password"
+            editable={!isSubmitting}
+            error={errors.password?.message}
+            accessibilityLabel="New password"
+          />
         )}
+      />
 
-        {formError && <Text style={styles.formError}>{formError}</Text>}
+      <Controller
+        control={control}
+        name="confirmPassword"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Confirm new password"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            secureTextEntry
+            autoComplete="new-password"
+            editable={!isSubmitting}
+            error={errors.confirmPassword?.message}
+            accessibilityLabel="Confirm new password"
+          />
+        )}
+      />
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleSubmit(onSubmit)}
+      {formError && (
+        <Text variant="caption" tone="danger" style={styles.formError}>
+          {formError}
+        </Text>
+      )}
+
+      <View style={styles.button}>
+        <Button
+          label="Update password"
+          loading={isSubmitting}
           disabled={isSubmitting}
-          accessibilityRole="button"
-          accessibilityLabel="Update password"
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Update password</Text>
-          )}
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          onPress={handleSubmit(onSubmit)}
+        />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
+  centerText: {
+    textAlign: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: tokens.spacing.lg,
   },
-  body: {
-    fontSize: 16,
-    color: '#444',
-  },
-  label: {
-    fontSize: 14,
-    marginTop: 12,
-    marginBottom: 4,
-    color: '#333',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  fieldError: {
-    color: '#c0392b',
-    fontSize: 13,
-    marginTop: 4,
+  subtitle: {
+    marginTop: tokens.spacing.xs,
   },
   formError: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 16,
+    marginTop: tokens.spacing.lg,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: tokens.spacing.xl,
   },
 });

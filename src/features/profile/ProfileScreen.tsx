@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
+  Badge,
   Button,
   Card,
   ErrorState,
@@ -117,7 +118,10 @@ export function ProfileScreen() {
           Age verification
         </Text>
         {/* Verified/not and a date — never a score, a vendor status string, or a DOB. */}
-        <Text variant="body">{profile?.ageVerified ? 'Verified' : 'Not verified'}</Text>
+        <Badge
+          label={profile?.ageVerified ? 'Verified' : 'Not verified'}
+          tone={profile?.ageVerified ? 'success' : 'neutral'}
+        />
         {profile?.ageVerified && profile.verifiedAt !== null && (
           <Text variant="caption" tone="secondary">
             {`Verified on ${formatDate(profile.verifiedAt)}`}
@@ -139,6 +143,7 @@ export function ProfileScreen() {
       <View style={styles.signOut}>
         <Button
           label="Sign out"
+          variant="secondary"
           onPress={() => {
             // Fire-and-forget: the session store's onAuthStateChange listener drives the UI
             // back to the auth stack, so there is nothing to await here.

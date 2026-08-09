@@ -15,9 +15,16 @@ import { tokens, contrastPairs } from '../tokens';
  */
 
 const RESTYLED_SCREENS = [
+  'src/features/auth/AuthMethodChoiceScreen.tsx',
+  'src/features/auth/SignupScreen.tsx',
+  'src/features/auth/LoginScreen.tsx',
   'src/features/auth/PhoneInputScreen.tsx',
+  'src/features/auth/CountryPicker.tsx',
   'src/features/auth/OtpEntryScreen.tsx',
+  'src/features/auth/PasswordResetRequestScreen.tsx',
+  'src/features/auth/ResetPasswordConfirmScreen.tsx',
   'src/features/profile/ProfileScreen.tsx',
+  'src/features/devices/HomeScreen.tsx',
 ];
 
 function scannedFiles(): SourceFile[] {

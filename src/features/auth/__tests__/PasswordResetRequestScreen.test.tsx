@@ -5,18 +5,24 @@
  */
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
+import { NavigationContainer } from '@react-navigation/native';
 import { PasswordResetRequestScreen } from '../PasswordResetRequestScreen';
 import { AuthClientProvider } from '../AuthClientContext';
 import { createMockAuthClient } from '../mockAuthClient';
 import { findByLabel, findInput, renderedText } from '../testUtils';
 
+// NavigationContainer: AU-9 (P0-7.0) added a "Back to log in" button, so the
+// screen now calls useNavigation() unconditionally — it throws at render
+// time outside one, same as Signup/LoginScreen.
 function renderScreen(client = createMockAuthClient()) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <AuthClientProvider client={client}>
-        <PasswordResetRequestScreen />
-      </AuthClientProvider>,
+      <NavigationContainer>
+        <AuthClientProvider client={client}>
+          <PasswordResetRequestScreen />
+        </AuthClientProvider>
+      </NavigationContainer>,
     );
   });
   return renderer;

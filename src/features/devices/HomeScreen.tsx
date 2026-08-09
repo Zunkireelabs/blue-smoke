@@ -1,4 +1,5 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { GradientGround, Text, tokens } from '@/shared/ui';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { accountIdentifier } from '@/shared/lib/accountIdentifier';
 
@@ -7,7 +8,9 @@ import { accountIdentifier } from '@/shared/lib/accountIdentifier';
  *
  * Deliberately minimal. Device pairing is P1-4.0 and the lock UI is P3-*, neither of which
  * exists yet, so this shows the account state and an honest empty state rather than
- * pretending at a device list.
+ * pretending at a device list. The empty state is the dashed-border tile the execution brief
+ * calls out as "the natural treatment for Pair a device" (§3) — not yet pressable, since the
+ * scan/pairing flow (P1-3.0) it would open doesn't exist yet either.
  *
  * Sign-out moved to the Profile screen in P1-8.0, which is where the TODO puts it and which is
  * reachable from this screen's header. It is still the only way back out of the gated stack.
@@ -16,24 +19,31 @@ export function HomeScreen() {
   const user = useSessionStore((s) => s.user);
 
   return (
-    <View style={styles.container}>
+    <GradientGround>
       <View style={styles.header}>
-        <Text style={styles.title}>BlueSmoke</Text>
+        <Text variant="title" style={styles.centerText}>
+          BlueSmoke
+        </Text>
         {/*
           Was `{email ?? 'Signed in'}`, which rendered a blank line for every phone-only
           account: GoTrue returns `email` as an empty string rather than null, and `??` only
           falls back on null/undefined, so neither the identifier nor the fallback appeared.
         */}
-        <Text style={styles.subtitle}>{accountIdentifier(user?.email, user?.phone)}</Text>
+        <Text variant="body" tone="secondary" style={styles.centerText}>
+          {accountIdentifier(user?.email, user?.phone)}
+        </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>No devices paired</Text>
-        <Text style={styles.cardBody}>
+      <Text variant="label" tone="secondary" style={styles.sectionLabel}>
+        Devices
+      </Text>
+      <View style={styles.pairTile}>
+        <Text variant="label">No devices paired</Text>
+        <Text variant="caption" tone="secondary" style={styles.pairTileBody}>
           Pairing arrives with the device connection work. Your account is verified and ready.
         </Text>
       </View>
-    </View>
+    </GradientGround>
   );
 }
 
@@ -45,22 +55,45 @@ export function VerificationPendingScreen() {
   return (
     <View style={styles.centered}>
       <ActivityIndicator size="large" />
-      <Text style={styles.title}>Confirming your verification…</Text>
-      <Text style={styles.cardBody}>
-        We're waiting on the result. This can take a moment — you don't need to do anything
-        else right now.
+      <Text variant="title" style={styles.centerText}>
+        Confirming your verification…
+      </Text>
+      <Text variant="body" tone="secondary" style={styles.centerText}>
+        We're waiting on the result. This can take a moment — you don't need to do anything else
+        right now.
       </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, gap: 24 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  header: { gap: 4, marginTop: 24 },
-  title: { fontSize: 24, fontWeight: '700', textAlign: 'center' },
-  subtitle: { fontSize: 14, color: '#666' },
-  card: { backgroundColor: '#f4f4f5', borderRadius: 12, padding: 20, gap: 6 },
-  cardTitle: { fontSize: 16, fontWeight: '600' },
-  cardBody: { fontSize: 14, color: '#555', textAlign: 'center', lineHeight: 20 },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: tokens.spacing.xl,
+    gap: tokens.spacing.md,
+    backgroundColor: tokens.color.background,
+  },
+  centerText: {
+    textAlign: 'center',
+  },
+  header: {
+    gap: tokens.spacing.xs,
+    marginBottom: tokens.spacing.xl,
+  },
+  sectionLabel: {
+    marginBottom: tokens.spacing.sm,
+  },
+  pairTile: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: tokens.color.border,
+    borderRadius: tokens.radii.lg,
+    padding: tokens.spacing.lg,
+    gap: tokens.spacing.xs,
+  },
+  pairTileBody: {
+    lineHeight: 20,
+  },
 });

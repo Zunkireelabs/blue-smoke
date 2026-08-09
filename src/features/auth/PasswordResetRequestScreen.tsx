@@ -1,16 +1,10 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Button, Screen, Text, TextField, tokens } from '@/shared/ui';
+import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { passwordResetRequestSchema } from './schemas';
 
@@ -25,6 +19,9 @@ import { passwordResetRequestSchema } from './schemas';
  * for an unknown email (see supabaseAuthClient.ts / mockAuthClient.ts).
  * Branching the UI on "email not found" would reopen the enumeration hole
  * both clients close.
+ *
+ * `AU-9` (P0-7.0): the `checkEmail` state used to render with no button and
+ * no navigation import — the native back arrow was the only exit.
  */
 
 type FormValues = {
@@ -35,6 +32,7 @@ type Status = 'idle' | 'submitting' | 'checkEmail';
 
 export function PasswordResetRequestScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -80,125 +78,84 @@ export function PasswordResetRequestScreen() {
 
   if (status === 'checkEmail') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.body}>
+      <Screen>
+        <Text variant="title" style={styles.centerText}>
+          Check your email
+        </Text>
+        <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
           If an account exists for that address, we sent a link to reset your password.
         </Text>
-      </View>
+
+        <View style={styles.button}>
+          <Button label="Back to log in" onPress={() => navigation.navigate('Login')} />
+        </View>
+      </Screen>
     );
   }
 
   const isSubmitting = status === 'submitting';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Reset your password</Text>
-        <Text style={styles.body}>
-          Enter the email on your account and we'll send you a link to reset your password.
+    <Screen scroll centered={false}>
+      <Text variant="title" style={styles.title}>
+        Reset your password
+      </Text>
+      <Text variant="body" tone="secondary" style={styles.subtitle}>
+        Enter the email on your account and we'll send you a link to reset your password.
+      </Text>
+
+      <Controller
+        control={control}
+        name="email"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Email"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            editable={!isSubmitting}
+            error={errors.email?.message}
+            accessibilityLabel="Email"
+          />
+        )}
+      />
+
+      {formError && (
+        <Text variant="caption" tone="danger" style={styles.formError}>
+          {formError}
         </Text>
+      )}
 
-        <Text style={styles.label}>Email</Text>
-        <Controller
-          control={control}
-          name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              editable={!isSubmitting}
-              accessibilityLabel="Email"
-            />
-          )}
-        />
-        {errors.email && <Text style={styles.fieldError}>{errors.email.message}</Text>}
-
-        {formError && <Text style={styles.formError}>{formError}</Text>}
-
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleSubmit(onSubmit)}
+      <View style={styles.button}>
+        <Button
+          label="Send reset link"
+          loading={isSubmitting}
           disabled={isSubmitting}
-          accessibilityRole="button"
-          accessibilityLabel="Send reset link"
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Send reset link</Text>
-          )}
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          onPress={handleSubmit(onSubmit)}
+        />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
+  centerText: {
+    textAlign: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: tokens.spacing.xs,
   },
-  body: {
-    fontSize: 14,
-    color: '#444',
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    marginTop: 12,
-    marginBottom: 4,
-    color: '#333',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  fieldError: {
-    color: '#c0392b',
-    fontSize: 13,
-    marginTop: 4,
+  subtitle: {
+    marginBottom: tokens.spacing.lg,
   },
   formError: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 16,
+    marginTop: tokens.spacing.lg,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: tokens.spacing.xl,
   },
 });

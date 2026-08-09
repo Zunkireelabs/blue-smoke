@@ -1,18 +1,9 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Button, Screen, Text, TextField, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { signupSchema } from './schemas';
@@ -29,6 +20,13 @@ import { signupSchema } from './schemas';
  * Auth calls go through `useAuthClient()` (§3.5) — never `@supabase/supabase-js`
  * or `api.ts` directly, so this screen is testable against
  * `createMockAuthClient()` with no backend.
+ *
+ * `AU-3` (P0-7.0): the `checkEmail` state used to render with no button and
+ * no navigation import — the native back arrow was the only exit. Resend
+ * calls the new `resendSignupConfirmation` (client.ts); Change email address
+ * just drops back to `idle` — react-hook-form keeps the field values across
+ * that state change since the component itself never unmounts, so the user
+ * finds what they typed still there to edit, not a blank form.
  */
 
 type FormValues = {
@@ -38,12 +36,15 @@ type FormValues = {
 };
 
 type Status = 'idle' | 'submitting' | 'checkEmail' | 'signedIn';
+type ResendStatus = 'idle' | 'sending' | 'sent' | 'error';
 
 export function SignupScreen() {
   const authClient = useAuthClient();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
+  const [submittedEmail, setSubmittedEmail] = useState('');
+  const [resendStatus, setResendStatus] = useState<ResendStatus>('idle');
 
   const {
     control,
@@ -81,6 +82,8 @@ export function SignupScreen() {
       // when it isn't — this project hasn't decided/configured that yet
       // (P0-3.0's auth-config box is still open), so both outcomes are
       // handled rather than assuming one.
+      setSubmittedEmail(parsed.data.email);
+      setResendStatus('idle');
       setStatus(result.data.sessionEstablished ? 'signedIn' : 'checkEmail');
     } catch {
       // supabaseAuthClient's contract is that no method throws — this is
@@ -91,191 +94,183 @@ export function SignupScreen() {
     }
   }
 
+  async function handleResend() {
+    setResendStatus('sending');
+    try {
+      const result = await authClient.resendSignupConfirmation(submittedEmail);
+      setResendStatus(result.ok ? 'sent' : 'error');
+    } catch {
+      setResendStatus('error');
+    }
+  }
+
   if (status === 'checkEmail') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.body}>
+      <Screen>
+        <Text variant="title" style={styles.centerText}>
+          Check your email
+        </Text>
+        <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
           We sent a confirmation link to finish creating your account.
         </Text>
-      </View>
+
+        {resendStatus === 'sent' && (
+          <Text variant="caption" tone="secondary" style={[styles.centerText, styles.resendStatus]}>
+            Sent — check your inbox.
+          </Text>
+        )}
+        {resendStatus === 'error' && (
+          <Text variant="caption" tone="danger" style={[styles.centerText, styles.resendStatus]}>
+            Couldn't resend. Try again.
+          </Text>
+        )}
+
+        <View style={styles.checkEmailActions}>
+          <Button
+            label="Resend"
+            variant="secondary"
+            loading={resendStatus === 'sending'}
+            onPress={handleResend}
+          />
+          <Button
+            label="Change email address"
+            variant="secondary"
+            onPress={() => setStatus('idle')}
+          />
+          <Button
+            label="Use phone instead"
+            variant="secondary"
+            onPress={() => navigation.navigate('PhoneInput')}
+          />
+        </View>
+      </Screen>
     );
   }
 
   if (status === 'signedIn') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Account created</Text>
-        <Text style={styles.body}>You're signed in.</Text>
-      </View>
+      <Screen>
+        <Text variant="title" style={styles.centerText}>
+          Account created
+        </Text>
+        <Text variant="body" tone="secondary" style={styles.centerText}>
+          You're signed in.
+        </Text>
+      </Screen>
     );
   }
 
   const isSubmitting = status === 'submitting';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Create account</Text>
+    <Screen scroll centered={false}>
+      <Text variant="title" style={styles.title}>
+        Create account
+      </Text>
 
-        <Text style={styles.label}>Email</Text>
-        <Controller
-          control={control}
-          name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              editable={!isSubmitting}
-              accessibilityLabel="Email"
-            />
-          )}
-        />
-        {errors.email && <Text style={styles.fieldError}>{errors.email.message}</Text>}
-
-        <Text style={styles.label}>Password</Text>
-        <Controller
-          control={control}
-          name="password"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              secureTextEntry
-              autoComplete="new-password"
-              editable={!isSubmitting}
-              accessibilityLabel="Password"
-            />
-          )}
-        />
-        {errors.password && <Text style={styles.fieldError}>{errors.password.message}</Text>}
-
-        <Text style={styles.label}>Confirm password</Text>
-        <Controller
-          control={control}
-          name="confirmPassword"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              secureTextEntry
-              autoComplete="new-password"
-              editable={!isSubmitting}
-              accessibilityLabel="Confirm password"
-            />
-          )}
-        />
-        {errors.confirmPassword && (
-          <Text style={styles.fieldError}>{errors.confirmPassword.message}</Text>
+      <Controller
+        control={control}
+        name="email"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Email"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            editable={!isSubmitting}
+            error={errors.email?.message}
+            accessibilityLabel="Email"
+          />
         )}
+      />
 
-        {formError && <Text style={styles.formError}>{formError}</Text>}
+      <Controller
+        control={control}
+        name="password"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Password"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            secureTextEntry
+            autoComplete="new-password"
+            editable={!isSubmitting}
+            error={errors.password?.message}
+            accessibilityLabel="Password"
+          />
+        )}
+      />
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleSubmit(onSubmit)}
+      <Controller
+        control={control}
+        name="confirmPassword"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Confirm password"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            secureTextEntry
+            autoComplete="new-password"
+            editable={!isSubmitting}
+            error={errors.confirmPassword?.message}
+            accessibilityLabel="Confirm password"
+          />
+        )}
+      />
+
+      {formError && (
+        <Text variant="caption" tone="danger" style={styles.formError}>
+          {formError}
+        </Text>
+      )}
+
+      <View style={styles.button}>
+        <Button
+          label="Sign up"
+          loading={isSubmitting}
           disabled={isSubmitting}
-          accessibilityRole="button"
-          accessibilityLabel="Sign up"
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign up</Text>
-          )}
-        </Pressable>
+          onPress={handleSubmit(onSubmit)}
+        />
+      </View>
 
-        <Pressable
-          onPress={() => navigation.navigate('Login')}
-          accessibilityRole="button"
-          accessibilityLabel="Already have an account? Log in"
-          style={styles.linkButton}
-        >
-          <Text style={styles.link}>Already have an account? Log in</Text>
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <Button
+        label="Already have an account? Log in"
+        variant="secondary"
+        onPress={() => navigation.navigate('Login')}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
+  centerText: {
+    textAlign: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: tokens.spacing.lg,
   },
-  body: {
-    fontSize: 16,
-    color: '#444',
+  subtitle: {
+    marginTop: tokens.spacing.xs,
+    marginBottom: tokens.spacing.xl,
   },
-  label: {
-    fontSize: 14,
-    marginTop: 12,
-    marginBottom: 4,
-    color: '#333',
+  resendStatus: {
+    marginTop: tokens.spacing.md,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  fieldError: {
-    color: '#c0392b',
-    fontSize: 13,
-    marginTop: 4,
+  checkEmailActions: {
+    marginTop: tokens.spacing.xl,
+    gap: tokens.spacing.md,
   },
   formError: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 16,
+    marginTop: tokens.spacing.lg,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  linkButton: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  link: {
-    color: '#1a1a1a',
-    fontSize: 14,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
+    marginTop: tokens.spacing.xl,
+    marginBottom: tokens.spacing.md,
   },
 });
