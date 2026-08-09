@@ -6,41 +6,11 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
-import { hkdfSha256 } from '../../../../tools/mock-peripheral/crypto';
+import { K_DEV, validCredentials, wrongCredentials } from '../../../../tools/mock-peripheral/testCredentials';
 import { createConnectionManager, type ConnectionState } from '../connection';
 import type { AuthResponseInput } from '../auth';
-import { AUTH_HKDF_INFO } from '../protocol';
 
-const K_DEV = Uint8Array.from({ length: 16 }, (_, i) => 0x10 + i);
-const SESSION_ID = Uint8Array.from({ length: 16 }, (_, i) => 0x20 + i);
 const DEVICE_ID = 'mock-device-0001';
-const KEY_GENERATION = 7;
-const EXPIRES_AT_DELTA = 3600;
-
-function deriveKSess(kDev: Uint8Array, sessionId: Uint8Array, keyGeneration: number): Uint8Array {
-  return hkdfSha256(
-    kDev,
-    sessionId,
-    Buffer.concat([Buffer.from(AUTH_HKDF_INFO, 'utf8'), Buffer.from([keyGeneration])]),
-    16,
-  );
-}
-
-function validCredentials(): AuthResponseInput {
-  return {
-    sessionId: SESSION_ID,
-    kSess: deriveKSess(K_DEV, SESSION_ID, KEY_GENERATION),
-    keyGeneration: KEY_GENERATION,
-    expiresAtDelta: EXPIRES_AT_DELTA,
-  };
-}
-
-function wrongCredentials(): AuthResponseInput {
-  return {
-    ...validCredentials(),
-    kSess: Uint8Array.from({ length: 16 }, (_, i) => 0x90 + i),
-  };
-}
 
 function setup() {
   return createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), deviceId: DEVICE_ID });

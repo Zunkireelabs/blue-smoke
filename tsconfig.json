@@ -40,6 +40,8 @@
     // P1-3.0 — PairDeviceScreen.test.tsx also imports createMockPeripheral, same wall.
     "src/features/devices/__tests__/PairDeviceScreen.test.tsx",
     // P1-7.0 — connection.test.ts also imports createMockPeripheral, same wall.
-    "src/features/ble/__tests__/connection.test.ts"
+    "src/features/ble/__tests__/connection.test.ts",
+    // P1-3.0/P1-7.0 journey test — imports createMockPeripheral, same wall.
+    "src/features/ble/__tests__/journey.test.ts"
   ]
 }
