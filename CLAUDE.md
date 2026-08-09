@@ -240,10 +240,16 @@ From spec §12.1. All of it, not the happy path:
   a **two-chip design** (PY32C642F app MCU + a separate **YC1012 BLE module** on a UART), so the GATT
   profile belongs to the **BLE module vendor**, not the client — and **§4's six characteristics are
   probably not implementable as written.** The module's profile manual, which holds the real service
-  UUID, was not supplied. **`P1-3.0` and `P1-7.0` are blocked outright**; a guessed UUID fails
-  silently exactly like a guessed OQ-12 salt. Read
-  [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **before
-  writing any BLE scan or connect code** — sources in `docs/hardware/client-supplied-2026-08-09/`.
+  UUID, was not supplied. **What's actually blocked is one constant (`BLE_SERVICE_UUID`) plus the
+  wire-level half of the §4.5 handshake** — not the tasks; still don't guess the UUID, it fails
+  silently exactly like a guessed OQ-12 salt. Everything transport-independent in `P1-3.0`/`P1-7.0`
+  landed on Day 10 against the mock: scan, dedupe, ordering, timeout, adapter-state handling,
+  Android runtime permissions, the pairing screen, and reconnect with re-handshake. (An earlier,
+  looser version of this line said the two tasks were "blocked outright," and it stalled one
+  execution attempt that read it and stopped.) Read
+  [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§8
+  specifically before writing any BLE scan or connect code** — sources in
+  `docs/hardware/client-supplied-2026-08-09/`.
   **OQ-14**: the supplied SDK is Android-only and keyed on MAC address, so it cannot go to iOS.
 - **`P1-4.0` has nothing executable left.** Part 1 (§4.5 handshake + CMAC) and Part 2a (§4.3
   `deviceInfo`) are done and reviewed. Everything remaining is gated on OQ-12 (`salt → serial_hash →

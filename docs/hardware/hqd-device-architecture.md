@@ -4,8 +4,11 @@
 **Status:** first-hand reading of client-supplied documents. Conclusions marked **verified** are
 printed in those documents; conclusions marked **inferred** are mine and need client confirmation.
 
-> **Read this before writing any BLE scan, connect, or GATT code.** It is the reason `P1-3.0` and
-> `P1-7.0` have not started. Source documents are in
+> **Read this before writing any BLE scan, connect, or GATT code** — and read **§8 with it**, which
+> states precisely what is blocked (one constant, plus the wire-level half of the §4.5 handshake) and
+> what is not. Most of `P1-3.0`/`P1-7.0` is neither, and landed on Day 10 against the mock. An
+> earlier version of this line said the two tasks "have not started"; that was true for about six
+> hours and then stalled an execution attempt that read it and stopped. Source documents are in
 > [`client-supplied-2026-08-09/`](client-supplied-2026-08-09/MANIFEST.md).
 >
 > Companion record: [`client-supplied-hardware.md`](client-supplied-hardware.md) covers the PW200
