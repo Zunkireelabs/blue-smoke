@@ -146,7 +146,7 @@ a **physical** device"). This is a scope problem, not a porting inconvenience.
 
 | Fact | Page | Why it matters |
 |---|---|---|
-| **`QFN2*2_12L`** — 2 × 2 mm, 12 pins | 4, 7 | **A bare SoC, not a module.** This is the correction; everything below follows from it |
+| **`QFN2*2_12L`** — package code printed under the part number in the pinout diagram; the pin table numbers 1–12 and stops | 7, 8 | **A bare SoC, not a module.** This is the correction; everything below follows from it |
 | **8 KB OTP** with internal charge pump | 1 | Somewhere to put `K_dev` — **OQ-4** |
 | **AES-128 hardware encryption** | 1 | The primitive §4.5/§4.6 need, in silicon |
 | **Pin 7 = `RF ANT port`**, "integrated balun … direct connection to antenna" | 1, 8 | **No antenna inside the part.** The host PCB must carry a trace or chip antenna |
@@ -155,11 +155,23 @@ a **physical** device"). This is a scope problem, not a porting inconvenience.
 | Bluetooth 5.4, +8 dBm TX, −96.5 dBm RX @ 1 Mbps | 1 | Ample for a proximity-lock product |
 | 24 MHz 32-bit core, 8 KB RAM, serial-wire debug | 1 | Programmable by anyone with the toolchain |
 
-**Identifying it on a board.** At 2 × 2 mm it is smaller than many of the passives and is easy to
-miss entirely — it was not identifiable in the client's PW200 photos, and its absence there is not
-evidence of anything. Look instead for the **trio**: a ~2 mm 12-pin part, a small crystal beside it,
-and a thin track running from one corner to a clear area at the board edge. Recorded so the next
-person reads this table instead of the 13-page PDF.
+**On the millimetres.** What is *printed* is the package code `QFN2*2_12L`. The 2 × 2 mm reading is
+the industry convention for that code, not a dimension anyone here has measured — page 13's
+dimension drawing is an **image**, so text extraction returns only its caption and the actual
+figures were not read. The convention is reliable, but this document's whole reason for existing is
+that an inference got recorded as a fact once already. If an exact footprint ever matters, open
+page 13 in a viewer.
+
+**Identifying it on a board.** At that size it is smaller than many of the passives and easy to miss
+entirely — it was not identifiable in the client's PW200 photos, and **its absence from those photos
+is not evidence of anything.** Look instead for the **trio**: a ~2 mm 12-pin part, a small crystal
+beside it (pins 5/6), and a thin track running from one corner (pin 7) to a clear area at the board
+edge. Recorded so the next person reads this table instead of the 13-page PDF.
+
+**Document wart, noted so it isn't mistaken for a finding.** Page 7's pin table carries a stray
+column header reading `QFN40` above a table that lists twelve pins. It appears to be editing debris
+from another part's datasheet. The diagram label and the pin count agree on 12; the `QFN40` is
+ignored deliberately, not overlooked.
 
 The datasheet contains **no UUID information and no AT-command reference.** It is a silicon
 datasheet, not a protocol manual. **That protocol manual is the single document that would unblock
