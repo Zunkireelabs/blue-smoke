@@ -40,6 +40,27 @@ const red = {
   border: '#B3261E',
 } as const;
 
+/**
+ * Approved palette (Sadin, 2026-08-09 — execution brief §3). Exact values, not to be
+ * substituted; do not add a colour here that is not one of these seven without asking (OQ-7,
+ * brand assets, is still open — this is direction, not the final brand).
+ */
+const brandRaw = {
+  base: '#1657D0',
+  dark: '#0E3E9A',
+  tint: '#E8F0FE',
+} as const;
+
+const groundRaw = {
+  top: '#DCE9FB',
+  bottom: '#FFFFFF',
+} as const;
+
+const successRaw = {
+  text: '#1E8E5A',
+  background: '#E3F3EB',
+} as const;
+
 const semanticColor = {
   background: neutral[0],
   backgroundMuted: neutral[50],
@@ -52,16 +73,27 @@ const semanticColor = {
   textSecondary: neutral[500],
   textInverse: neutral[0],
 
-  interactivePrimaryBackground: neutral[900],
+  // Was neutral[900] (near-black) — P0-7.0 moves primary actions onto the approved brand blue.
+  interactivePrimaryBackground: brandRaw.base,
   interactivePrimaryText: neutral[0],
 
-  link: neutral[900],
+  // Was neutral[900] — links read as brand-blue now rather than plain text-colored.
+  link: brandRaw.base,
 
   dangerText: red.text,
   dangerBackground: red.background,
   dangerBorder: red.border,
 
   focusRing: '#2563EB',
+
+  // P0-7.0 additions — see the header comment on `brandRaw`/`groundRaw`/`successRaw` above.
+  brand: brandRaw.base,
+  brandDark: brandRaw.dark,
+  brandTint: brandRaw.tint,
+  groundTop: groundRaw.top,
+  groundBottom: groundRaw.bottom,
+  success: successRaw.text,
+  successBg: successRaw.background,
 } as const;
 
 const spacing = {
@@ -77,6 +109,9 @@ const radii = {
   sm: 4,
   md: 8,
   lg: 12,
+  // The large sheet/card motif (execution brief §3: "~20-24 corner radius") — distinct from
+  // `lg`, which stays the size for in-page `Card`s so existing screens don't shift.
+  xl: 24,
   full: 999,
 } as const;
 
@@ -85,12 +120,14 @@ const typography = {
     body: 16,
     label: 14,
     caption: 12,
-    title: 24,
+    // Was 24 — the reference screenshots run larger and heavier than our previous scale.
+    title: 28,
   },
   fontWeight: {
     regular: '400',
     medium: '500',
     semibold: '600',
+    bold: '700',
   },
 } as const;
 
@@ -228,6 +265,65 @@ export const contrastPairs: ReadonlyArray<{
     bgToken: 'interactivePrimaryBackground',
     fg: semanticColor.textInverse,
     bg: semanticColor.interactivePrimaryBackground,
+    size: 'body',
+  },
+  {
+    // `Sheet`'s backdrop: a solid token dimmed via the `opacity` *style* property rather than
+    // an rgba() color, deliberately — every other pair here assumes a solid hex, and the
+    // contrast math (`hexToRgb`) cannot parse an alpha-blended value. `textPrimary` had no
+    // bgToken entry before this; general-purpose, not backdrop-specific (e.g. a future dark
+    // toast/tooltip).
+    name: 'textInverse on textPrimary',
+    fgToken: 'textInverse',
+    bgToken: 'textPrimary',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.textPrimary,
+    size: 'body',
+  },
+  // P0-7.0 additions — one entry per new fg/bg token this round's primitives introduce.
+  {
+    name: 'textInverse on brand',
+    fgToken: 'textInverse',
+    bgToken: 'brand',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.brand,
+    size: 'body',
+  },
+  {
+    name: 'textInverse on brandDark',
+    fgToken: 'textInverse',
+    bgToken: 'brandDark',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.brandDark,
+    size: 'body',
+  },
+  {
+    name: 'link on brandTint',
+    fgToken: 'link',
+    bgToken: 'brandTint',
+    fg: semanticColor.link,
+    bg: semanticColor.brandTint,
+    size: 'body',
+  },
+  {
+    // `success` (#1E8E5A) tops out around 4.1:1 against any light surface in this palette —
+    // short of the 4.5 body threshold no matter which side of the pair it's on, a structural
+    // property of that exact hex, not something a different pairing fixes. It clears the 3:1
+    // large-text threshold comfortably, so `Badge` renders its success glyph at large size —
+    // this entry's `size: 'large'` is true of the actual UI, not a way around the guard.
+    name: 'success on successBg (large text/icon only)',
+    fgToken: 'success',
+    bgToken: 'successBg',
+    fg: semanticColor.success,
+    bg: semanticColor.successBg,
+    size: 'large',
+  },
+  {
+    name: 'textPrimary on successBg',
+    fgToken: 'textPrimary',
+    bgToken: 'successBg',
+    fg: semanticColor.textPrimary,
+    bg: semanticColor.successBg,
     size: 'body',
   },
 ];

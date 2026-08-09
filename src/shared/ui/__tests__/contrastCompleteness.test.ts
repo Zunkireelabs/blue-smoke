@@ -51,8 +51,10 @@ const BORDER_KEYS = new Set(['borderColor', 'shadowColor']);
 const EXEMPT_TOKENS: Readonly<Record<string, string>> = {
   border: 'Decorative outline only (TextField input, Card, OTP segment boxes) — never text or an icon.',
   borderStrong: 'Reserved stronger outline, same non-text role as `border`; not yet used by any component.',
-  dangerBorder: 'Reserved error-state outline, same non-text role as `border`; not yet used by any component.',
+  dangerBorder: "Button's destructive-variant outline — same non-text role as `border`.",
   focusRing: 'Focus-indicator outline, never a text or icon fill; not yet used by any component.',
+  brand: "Button's secondary-variant outline — same non-text role as `border`. Its fg/bg roles "
+    + 'elsewhere (link text, Toggle track) already have their own contrastPairs entries above.',
 };
 
 /** The destructured form (`const { color } = tokens; color.surface`) produces a different
