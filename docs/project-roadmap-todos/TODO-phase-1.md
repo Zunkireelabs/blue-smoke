@@ -346,7 +346,7 @@ the app working** — account, profile and verification are all reachable withou
 > Manage the BLE connection across app states: automatic reconnect after drops and correct
 > behaviour when the app is backgrounded or relaunched.
 
-- [ ] Auto-reconnect with exponential backoff and a cap
+- [x] Auto-reconnect with exponential backoff and a cap
 - [ ] **Re-handshake required on every reconnect** — a session never survives a disconnect (spec §4.5)
 - [ ] iOS: state restoration via `CBCentralManagerOptionRestoreIdentifierKey`
 - [ ] iOS: background mode `bluetooth-central` configured and working

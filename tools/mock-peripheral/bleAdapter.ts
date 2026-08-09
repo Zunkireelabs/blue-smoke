@@ -247,6 +247,16 @@ export class MockBleManager {
     return this.findKnownDevice(deviceId).cancelConnection();
   }
 
+  /** Additive for P1-7.0 — delegates to the existing MockDevice.onDisconnected. */
+  onDeviceDisconnected(
+    deviceId: string,
+    listener: (error: Error | null, deviceId: string) => void,
+  ): Subscription {
+    return this.findKnownDevice(deviceId).onDisconnected((error, device) =>
+      listener(error, device.id),
+    );
+  }
+
   private findKnownDevice(deviceId: string): MockDevice {
     const device = this.devices.find((candidate) => candidate.id === deviceId);
     if (!device) {

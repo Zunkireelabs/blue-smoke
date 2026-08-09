@@ -35,6 +35,8 @@
     "src/features/ble/__tests__/bleSeam.acceptance.test.tsx",
     // P1-3.0 — devicePairingFlow.test.tsx also imports tools/mock-peripheral/bleAdapter.ts and
     // clock.ts, same reason as the three above.
-    "src/features/devices/__tests__/devicePairingFlow.test.tsx"
+    "src/features/devices/__tests__/devicePairingFlow.test.tsx",
+    // P1-7.0 — connection.test.ts also imports tools/mock-peripheral/bleAdapter.ts, same reason.
+    "src/features/ble/__tests__/connection.test.ts"
   ]
 }
