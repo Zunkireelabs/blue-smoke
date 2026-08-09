@@ -7,6 +7,28 @@ Newest first. Conventions in [`README.md`](README.md).
 **Branches:** `feature/ble-connectivity` (claim pushed Day 10, cut from `stage` @ `27d5291`)
 **Landed:** nothing executable — `P1-3.0` and `P1-7.0` are blocked, see below.
 
+> ⚠️ **Corrected later the same day — read this before the entry below.** Two claims above and in
+> the next paragraph did not survive the day:
+>
+> **(1) "Landed: nothing executable" is wrong.** Most of both tasks landed against the mock: scan,
+> dedupe, discovery ordering, scan timeout, staleness, adapter-state handling, Android runtime
+> permissions, the pairing screen, and reconnect with re-handshake. What OQ-13 blocks is
+> `BLE_SERVICE_UUID` plus the wire-level half of the §4.5 handshake — see
+> [`../hardware/hqd-device-architecture.md`](../hardware/hqd-device-architecture.md) §8, which is
+> authoritative on where that line falls. The overstated version of this claim stalled an execution
+> attempt that read it and stopped without writing code; this was the fourth place it survived.
+>
+> **(2) "The GATT profile is the BLE module vendor's, not the client's" was an inference stated as
+> fact.** The YC1012 datasheet says `QFN2*2_12L` — a bare 2×2 mm SoC with 8 KB OTP and a debug port,
+> **not a pre-programmed module.** Its firmware was written by someone; whether that is the silicon
+> vendor or the client's own contractor is now question 1 of the client message rather than a
+> settled answer, and it decides whether the document blocking us is a third party's to release or
+> the client's to hand over. Recorded in `hqd-device-architecture.md` §4.1–4.2, spec v1.14.
+>
+> **Method note for next time:** I read the schematic carefully and the datasheet only for the
+> features I expected to find in it. The package line was on page 4 and would have taken a minute.
+> **When a conclusion turns on what a part *is*, read the part's own datasheet first.**
+
 **Decided, and why:** the client sent their PCBA archive so our app can talk to *their* device, which
 settles a question we'd been leaving open: **we build to their hardware, they do not implement our
 §4.** Reading the schematic is what mattered — two chips (PY32C642F app MCU + YC1012 BLE module) on a

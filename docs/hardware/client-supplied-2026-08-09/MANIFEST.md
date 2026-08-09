@@ -31,7 +31,7 @@ either binaries we must not run or client IP with no readable content.
 |---|---|---|
 | `API/HQD_BLE_Protocol_Commands_Android_EN.md` | ✅ | The protocol document. 3,772 B. |
 | `（PCB schematic）H040BLE-SCH-V1.02.pdf` | ✅ | The schematic. **The most informative file in the archive** — see the write-up. |
-| `Datasheet/（BT chip spec）3.YC1012_JD_Datasheet_V1.0(1).pdf` | ✅ | BLE module datasheet. |
+| `Datasheet/（BT chip spec）3.YC1012_JD_Datasheet_V1.0(1).pdf` | ✅ | Bluetooth SoC datasheet — a **silicon** datasheet, not a protocol manual. |
 | `Datasheet/（MCU spec）PY32F030 datasheet Rev.1.4_EN.pdf` | ✅ | MCU datasheet — **but for the wrong part**, see write-up §5. |
 | `Programming Software Guide/…/H158_Test_260708_01.pkg` + `.rar` | ❌ | Encrypted firmware image, 20,399 B. 0 printable strings, all 256 byte values present. Nothing to read; it is the client's IP and belongs in their burner flow, not our git history. |
 | PowerWriter installer (~81 MB) | ❌ 🔴 | **Do not run.** It is the firmware burner. Burning may consume a licence credit — see the safety section in [`client-supplied-hardware.md`](../client-supplied-hardware.md) *(currently on the unmerged `docs/hardware-record-client-supplied` branch)*. |

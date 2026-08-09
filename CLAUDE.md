@@ -237,10 +237,14 @@ From spec §12.1. All of it, not the happy path:
   conversation as OQ-4, so chase them together). All answered by the client; all take longer to
   answer than to implement. Chase daily.
 - 🔴 **NEW Day 10 — OQ-13, and it outranks the rest.** The client's PCBA archive shows the device is
-  a **two-chip design** (PY32C642F app MCU + a separate **YC1012 BLE module** on a UART), so the GATT
-  profile belongs to the **BLE module vendor**, not the client — and **§4's six characteristics are
-  probably not implementable as written.** The module's profile manual, which holds the real service
-  UUID, was not supplied. **What's actually blocked is one constant (`BLE_SERVICE_UUID`) plus the
+  a **two-chip design** (PY32C642F app MCU + a separate **YC1012 Bluetooth SoC** on a UART), so the
+  GATT profile belongs to **the firmware running on the YC1012**, not to the PY32 — and **§4's six
+  characteristics are probably not implementable as written.** That profile manual, which holds the
+  real service UUID, was not supplied. **Who wrote the YC1012's firmware is itself open:** its
+  datasheet says `QFN2*2_12L`, a bare 2×2 mm SoC, **not** a pre-programmed off-the-shelf module — so
+  it may be the silicon vendor's stock build or the client's own contractor's, and the two answers
+  point at different parties. Don't repeat the earlier "belongs to the module vendor" phrasing; it
+  was an inference stated as fact (spec v1.14, `hqd-device-architecture.md` §4.1). **What's actually blocked is one constant (`BLE_SERVICE_UUID`) plus the
   wire-level half of the §4.5 handshake** — not the tasks; still don't guess the UUID, it fails
   silently exactly like a guessed OQ-12 salt. Everything transport-independent in `P1-3.0`/`P1-7.0`
   landed on Day 10 against the mock: scan, dedupe, ordering, timeout, adapter-state handling,

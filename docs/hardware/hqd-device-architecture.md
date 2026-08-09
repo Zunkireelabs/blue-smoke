@@ -22,11 +22,19 @@ printed in those documents; conclusions marked **inferred** are mine and need cl
 The client sent us their device's BLE documentation so that our app can talk to their device. That
 direction matters: **we are building to their hardware, not waiting for them to implement
 [`TECHNICAL_SPEC.md` §4](../TECHNICAL_SPEC.md).** What they sent describes a device whose BLE stack
-is **not theirs to change** — the radio is a separate off-the-shelf module (YC1012) running a
-third-party vendor's firmware, joined to the application MCU by a 2-wire UART. Our §4 defines six
-custom GATT characteristics on a custom 128-bit service. On this hardware those characteristics live
-in a chip nobody on this project controls. **Our §4 GATT layout is probably not implementable as
-written**, and the fix is an architectural one, not a sprint task.
+lives on a **second chip** — a separate Bluetooth SoC (YC1012), joined to the application MCU by a
+2-wire UART, running its own firmware. Our §4 defines six custom GATT characteristics on a custom
+128-bit service. On this hardware those characteristics would have to be defined in that second
+chip's firmware, which we do not have and whose author we have not identified. **Our §4 GATT layout
+is probably not implementable as written**, and the fix is an architectural one, not a sprint task.
+
+**Corrected 2026-08-09, later the same day.** An earlier version of this paragraph called the
+YC1012 an "off-the-shelf module running a third-party vendor's firmware" and treated that as
+settled. Reading the datasheet properly (§4.1) shows it is a **bare 2×2 mm SoC**, not a
+pre-programmed module — so the firmware on it was written by *someone*, and who that someone is
+is an open question rather than an answered one. It may well be the client's own contractor. The
+distinction matters commercially: it decides whether the document blocking us is a third party's
+to release or the client's to hand over.
 
 ---
 
@@ -40,7 +48,7 @@ Two processors:
 | Part | Role |
 |---|---|
 | **PY32C642F-QFN20** | Application MCU. Heater control, button, RGB LEDs, MEMS microphone (puff detection), BM9073 charge management. |
-| **YC1012** | BLE module. Nothing else. |
+| **YC1012** | Bluetooth SoC. Nothing else. QFN 2×2 mm, 12 pins — see §4.1. |
 
 They are joined by:
 
@@ -53,11 +61,17 @@ an SWD header whose pinout matches the PW200 burner already in our possession.
 
 ### 2.1 What that implies (**inferred**, but hard to read another way)
 
-An AT-command line and a wake interrupt are the signature of a **module you configure, not a stack
+An AT-command line and a wake interrupt are the signature of a **radio you configure, not a stack
 you compile**. The GATT table — service UUID, characteristic UUIDs, properties, MTU behaviour —
-is defined by **the YC1012 module's own firmware**, supplied by its vendor. HQD's application
-firmware on the PY32 sends and receives **bytes over a serial-over-BLE pipe**; it does not define
-characteristics.
+is defined by **the firmware running on the YC1012**, and HQD's application firmware on the PY32
+sends and receives **bytes over a serial-over-BLE pipe**; it does not define characteristics.
+
+**Who wrote that YC1012 firmware is not established.** The AT-command line suggests stock
+configure-by-command firmware, which usually comes from the silicon vendor. But the part is a bare
+SoC with 8 KB of OTP and a serial-wire debug port (§4.1) — it is programmable by anyone with the
+toolchain, and the protocol document in the same archive was authored at `@itron.com.cn`, a third
+party who evidently writes software for this device. Both readings fit the evidence. §7 question 1
+asks directly rather than assuming.
 
 Which explains the protocol document exactly (§3): HQD's `0x01` and `0x02` are **application-layer
 command bytes inside that pipe**, not GATT characteristics. They were never the same kind of thing
@@ -126,15 +140,43 @@ a **physical** device"). This is a scope problem, not a porting inconvenience.
 
 **Verified from the datasheets supplied.**
 
-**YC1012_JD** (BLE module):
+### 4.1 YC1012_JD — read properly, 2026-08-09
 
-- **AES-128 hardware encryption** ✅ — the primitive §4.5/§4.6 need is present
-- **8 KB OTP** ✅ — somewhere to put `K_dev` (OQ-4)
-- 8 KB RAM, 24 MHz core, UART with HCI-H5
+`YC1012_JD_Datasheet_V1.0.pdf`, 13 pages, Yichip Microelectronics. Page numbers are the PDF's own.
+
+| Fact | Page | Why it matters |
+|---|---|---|
+| **`QFN2*2_12L`** — 2 × 2 mm, 12 pins | 4, 7 | **A bare SoC, not a module.** This is the correction; everything below follows from it |
+| **8 KB OTP** with internal charge pump | 1 | Somewhere to put `K_dev` — **OQ-4** |
+| **AES-128 hardware encryption** | 1 | The primitive §4.5/§4.6 need, in silicon |
+| **Pin 7 = `RF ANT port`**, "integrated balun … direct connection to antenna" | 1, 8 | **No antenna inside the part.** The host PCB must carry a trace or chip antenna |
+| **Pins 5/6 = `XTAL_OUT`/`XTAL_IN`** | 8 | A crystal must sit beside it — BLE timing tolerance rules out running on the internal RC alone |
+| **1 × UART (RTS/CTS) with HCI-H5**, up to 3.25 Mbps | 1 | See §4.2 — this is the one that could change the architecture |
+| Bluetooth 5.4, +8 dBm TX, −96.5 dBm RX @ 1 Mbps | 1 | Ample for a proximity-lock product |
+| 24 MHz 32-bit core, 8 KB RAM, serial-wire debug | 1 | Programmable by anyone with the toolchain |
+
+**Identifying it on a board.** At 2 × 2 mm it is smaller than many of the passives and is easy to
+miss entirely — it was not identifiable in the client's PW200 photos, and its absence there is not
+evidence of anything. Look instead for the **trio**: a ~2 mm 12-pin part, a small crystal beside it,
+and a thin track running from one corner to a clear area at the board edge. Recorded so the next
+person reads this table instead of the 13-page PDF.
 
 The datasheet contains **no UUID information and no AT-command reference.** It is a silicon
-datasheet, not a module protocol manual. **The AT-command manual is the single document that would
-unblock `P1-3.0`.**
+datasheet, not a protocol manual. **That protocol manual is the single document that would unblock
+`BLE_SERVICE_UUID`.**
+
+### 4.2 The HCI-H5 line, and why it is worth asking about
+
+The datasheet advertises a UART speaking **HCI-H5** — the standard Bluetooth host/controller
+interface. If the YC1012 is wired as an HCI *controller*, the GATT profile is defined by a host
+stack running on the **PY32**, not on the radio at all, and the profile question points at a
+completely different chip and a completely different team.
+
+That is not what the schematic's "AT Command Mode" net suggests, and a PY32C642F is a modest part to
+host a full BLE stack on — so the AT-command reading remains more likely. But the two architectures
+put the answer we need in two different places, and one question settles it. **§7 question 1h.**
+
+### 4.3 PY32
 
 **PY32F030** (see §5 — wrong part, but adjacent family):
 
@@ -157,6 +199,29 @@ carry across on trust — the §4.8 dead-man-timer claim in §4 above rests on t
 must be re-checked against the correct one.
 
 Also missing: the schematic's title block reads **"Sheet 1 of 2"** and only sheet 1 was sent.
+
+### 5.1 `H040` vs `H158` — three names, unresolved
+
+**Observed 2026-08-09, not resolved.** Three artefacts in the same archive carry three designators:
+
+| Artefact | Designator | Evidence |
+|---|---|---|
+| The schematic | **`H040`** | `H040-BT-SCH`, `HQD-H040BT-MAIN-V1.02-260702`. Verified by text extraction — `H158`, `H138` and `AC-` appear **nowhere** in it |
+| The firmware | **`H158`** | `H158_Test_260708_01.pkg` |
+| The board in the PW200 guide | **`AC-H158-V1.01`**, dated `20260702` | Read off the silkscreen in the guide's photographs |
+
+Two of the three agree, and **the outlier is the schematic — the document our §4 reasoning is
+derived from.**
+
+**Probably benign.** The board's `20260702` and the schematic's `260702` are the same day, and
+separate codes for the electrical design, the assembled board and the firmware build are ordinary
+manufacturing practice. **But it is not verified**, and the failure mode if it is wrong — reasoning
+about pin assignments and part choices from a drawing of a different board — is quiet and expensive.
+One sentence of confirmation closes it; **§7 question 5.**
+
+A caution on the evidence: an earlier pass read the silkscreen as `AC-H1388` from a low-resolution
+crop and built a different conclusion on it. The reading above comes from a sharper photograph and
+is corroborated by the firmware filename, but it is still text read off a photograph.
 
 ---
 
@@ -181,15 +246,18 @@ alongside their `0x01`/`0x02`. The nonce, the CMAC proof, the counter, the resul
 discipline — all of it is byte-layout work that is transport-agnostic and largely already written.
 What changes is the addressing layer.
 
-Why this is the cheap path: **it requires no change from the BLE module vendor.** Asking the YC1012's
-vendor for custom characteristics is a supply-chain negotiation with a third party who has no
-contract with us and no reason to prioritise a 30-day project. Asking HQD to add command bytes to
-their own PY32 firmware is a normal firmware request to a team we are already meant to be talking to
-(**OQ-6**).
+Why this is the cheap path: **it requires no change to whatever is running on the YC1012.** Getting
+custom characteristics added there means changing that chip's firmware — and until §7 question 1 is
+answered we do not know whose firmware that is. If it turns out to be the silicon vendor's stock
+build, it is a supply-chain negotiation with a third party who has no contract with us and no reason
+to prioritise a 30-day project. Adding command bytes to HQD's own PY32 firmware, by contrast, is a
+normal firmware request to a team we are already meant to be talking to (**OQ-6**) — and it stays a
+normal request under *either* answer, which is precisely what makes it the safe recommendation to
+carry into the conversation.
 
 What it still needs, and what it does not solve:
 
-- the YC1012's **AT-command / profile manual**, to know the pipe's UUIDs and MTU — **§7 question 1**;
+- the YC1012's **profile / AT-command manual**, to know the pipe's UUIDs and MTU — **§7 question 1**;
 - an **iOS story** — the pipe is reachable from CoreBluetooth once we know its UUIDs, so this is
   survivable *if* the profile is a standard serial-over-BLE service, but not if the app is expected
   to use `itronlib`;
@@ -221,11 +289,11 @@ Drafted as a message in [`client-questions-2026-08-09.md`](client-questions-2026
 
 | # | Ask | Why it matters |
 |---|---|---|
-| 1 | 🔴 **YC1012 module AT-command / BLE profile manual** | Contains the service UUID and the serial-over-BLE profile. **The single blocker on `P1-3.0`.** |
+| 1 | 🔴 **Who programmed the YC1012, and its BLE profile / AT-command manual** | Contains the service UUID and the serial-over-BLE profile. **The single blocker on `BLE_SERVICE_UUID`.** Includes **1h** — whether the YC1012 runs its own stack or is an HCI controller (§4.2), which decides *which chip's* firmware we need. |
 | 2 | The actual **`itronlib`** library files | Referenced throughout the protocol doc; absent from the archive. |
 | 3 | **iOS equivalent, or written confirmation none exists** | We are contracted for both platforms (§3.3). |
 | 4 | **Correct MCU datasheet** — PY32C642F, not PY32F030 | §5. |
-| 5 | **Sheet 2 of the schematic** (doc `H040-BT-SCH`) | §5. |
+| 5 | **Schematic identity and completeness** — sheet 2 of `H040-BT-SCH`, and `H040` vs `H158` | §5 and §5.1. |
 | 6 | **Which command locks/unlocks?** Is it `0x02`? | The overview promises it; nothing documents it (§3.2). |
 | 7 | **Confirm auto-lock behaviour and duration** | §6.3 — the 5 s vs 5–10 min conflict. |
 
@@ -242,7 +310,7 @@ here — this revision is authoritative over the paragraphs it replaces.
 
 - `BLE_SERVICE_UUID` in `protocol.ts` (OQ-13) — invented at spec-writing time (commit `0bb8e80`,
   2026-08-05), unconfirmed against this hardware, and per §2 above probably describes a GATT layout
-  the YC1012 module doesn't present at all. **Inventing a replacement value fails silently**: the
+  the YC1012 doesn't present at all. **Inventing a replacement value fails silently**: the
   scanner finds nothing, and "no devices found" is indistinguishable from "device is off", "out of
   range", or "not advertising" — the same failure mode as OQ-12's guessed salt, and the same reason
   the answer is to ask the client (§7), not to guess.
