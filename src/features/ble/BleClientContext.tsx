@@ -31,6 +31,22 @@ export interface BleDeviceLike {
     characteristicUUID: string,
     listener: (error: Error | null, characteristic: { value: string | null } | null) => void,
   ): { remove(): void };
+  /**
+   * P1-7.0 — fires on any disconnect, clean or abrupt, matching
+   * `react-native-ble-plx`'s `Device.onDisconnected` (index.d.ts:1559).
+   * `connection.ts` uses this to detect a drop without a second
+   * `connectToDevice()` call, which auth.ts's module doc already documents as
+   * forcing a disconnect+reconnect on Android when a connection is already open.
+   *
+   * Optional, not required: `auth.test.ts`/`deviceInfo.test.ts` already hand-roll
+   * several narrow `BleDeviceLike` doubles that predate P1-7.0 and don't (and
+   * don't need to) implement it — same reasoning as `BleScannerLike` being kept
+   * separate from `BleManagerLike`. `connection.ts` falls back to polling
+   * `BleManagerLike.isDeviceConnected()` when it's absent.
+   */
+  onDisconnected?(listener: (error: Error | null, device: BleDeviceLike) => void): { remove(): void };
+  /** P1-7.0 — a clean, application-initiated disconnect. Optional for the same reason as above. */
+  cancelConnection?(): Promise<BleDeviceLike>;
 }
 
 export interface BleManagerLike {

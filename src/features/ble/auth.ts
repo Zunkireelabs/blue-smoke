@@ -57,7 +57,11 @@ export interface AuthResponseInput {
 export type HandshakeStage = 'connect' | 'discover' | 'read' | 'write' | 'result';
 
 export type HandshakeOutcome =
-  | { ok: true; session: AuthSession }
+  // P1-7.0 — `device` is the same connected handle `authenticate()` already
+  // holds internally, handed back so a caller (connection.ts) can monitor
+  // BleDeviceLike.onDisconnected() without a second connectToDevice() call —
+  // see that method's doc comment for why a second call is unsafe on Android.
+  | { ok: true; session: AuthSession; device: BleDeviceLike }
   | { ok: false; resultCode: typeof ResultCode.AUTH_FAILED | typeof ResultCode.RATE_LIMITED }
   | { ok: false; reason: 'timeout'; stage: HandshakeStage }
   | { ok: false; reason: 'transport'; stage: HandshakeStage; detail: string }
@@ -221,6 +225,7 @@ export function createAuthHandshake(manager: BleManagerLike): AuthHandshake {
                   keyGeneration,
                   expiresAt: Date.now() + expiresAtDelta * 1000,
                 },
+                device,
               });
             } else if (resultCode === ResultCode.AUTH_FAILED || resultCode === ResultCode.RATE_LIMITED) {
               resolveOnce({ ok: false, resultCode });
