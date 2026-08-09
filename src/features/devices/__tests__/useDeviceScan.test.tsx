@@ -161,8 +161,52 @@ describe('useDeviceScan', () => {
       jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
     });
 
-    expect(getState().status).toBe('scanning');
+    // Results are kept and DV-5's failure state is NOT shown — that is the property this test
+    // exists to protect. It deliberately does NOT assert 'scanning': the earlier version did,
+    // which froze in the defect below.
+    expect(getState().status).not.toBe('noDevicesFound');
     expect(getState().devices).toHaveLength(1);
+  });
+
+  it('stops claiming to scan once the radio is off — the status ends at the timeout, with results', () => {
+    // Regression: the timeout stopped the radio but left status on 'scanning' whenever anything
+    // had been found, so DV-3 showed a spinner and "Looking for your device…" forever over a
+    // dead scan. A user waiting on a second device would have waited indefinitely.
+    const fake = createFakeManager();
+    const { getState } = renderHook(fake.manager);
+
+    act(() => {
+      fake.emit(fakeDevice('found-early'));
+    });
+    expect(getState().status).toBe('scanning');
+
+    act(() => {
+      jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
+    });
+
+    expect(getState().status).toBe('stopped');
+    expect(getState().devices).toHaveLength(1);
+    expect(fake.stopCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('restart() re-arms from stopped too, not just from noDevicesFound', () => {
+    const fake = createFakeManager();
+    const { getState } = renderHook(fake.manager);
+
+    act(() => {
+      fake.emit(fakeDevice('found-early'));
+    });
+    act(() => {
+      jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
+    });
+    expect(getState().status).toBe('stopped');
+
+    act(() => {
+      getState().restart();
+    });
+
+    expect(getState().status).toBe('scanning');
+    expect(getState().devices).toEqual([]);
   });
 
   it('restart() re-arms a fresh scan from noDevicesFound — DV-5\'s "Scan again"', () => {

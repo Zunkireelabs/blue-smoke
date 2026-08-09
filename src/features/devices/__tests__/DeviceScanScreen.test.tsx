@@ -138,6 +138,44 @@ describe('DeviceScanScreen', () => {
     expect(renderedText(renderer)).toContain('Looking for your device…');
   });
 
+  it('DV-4: once the scan ends with results, it stops claiming to still be looking', () => {
+    // Regression: the spinner and "Looking for your device…" used to persist forever whenever
+    // anything had been found, over a radio the timeout had already switched off.
+    const renderer = renderScreen(fakeManager([fakeDevice('a', -62)]));
+    expect(renderedText(renderer)).toContain('Looking for your device…');
+
+    act(() => {
+      jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
+    });
+
+    const text = renderedText(renderer);
+    expect(text).not.toContain('Looking for your device…');
+    expect(text).toContain('Finished looking');
+    // The results it did find are still there — this must not become DV-5.
+    expect(text).toContain('BlueSmoke-a');
+    expect(text).not.toContain("We couldn't find it");
+  });
+
+  it('DV-4: Scan again is offered after a finished scan, and pressing it really re-scans', () => {
+    const renderer = renderScreen(fakeManager([fakeDevice('a', -62)]));
+    act(() => {
+      jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
+    });
+    expect(renderedText(renderer)).toContain('Finished looking');
+
+    act(() => {
+      findByLabel(renderer, 'Scan again').props.onPress();
+    });
+
+    expect(renderedText(renderer)).toContain('Looking for your device…');
+  });
+
+  it('Scan again is NOT offered mid-scan — it would discard results still arriving', () => {
+    const renderer = renderScreen(fakeManager([fakeDevice('a', -62)]));
+    expect(renderedText(renderer)).toContain('Looking for your device…');
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Scan again' })).toHaveLength(0);
+  });
+
   it('Cancel actually leaves the screen — not a button that renders and goes nowhere', () => {
     const renderer = renderScreen(fakeManager([]));
     act(() => {

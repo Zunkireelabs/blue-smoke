@@ -58,15 +58,24 @@ export function DeviceScanScreen() {
     );
   }
 
+  const isScanning = status === 'scanning';
+
   return (
     <GradientGround>
+      {/*
+        The header states what is ACTUALLY happening. Once the scan has stopped, the spinner and
+        the "looking" copy both go — claiming to still be searching over a radio that is off is
+        the same class of lie as rendering "unlocked" before the device confirms it.
+      */}
       <View style={styles.header}>
-        <ActivityIndicator size="large" />
+        {isScanning && <ActivityIndicator size="large" />}
         <Text variant="title" style={styles.centerText}>
-          Looking for your device…
+          {isScanning ? 'Looking for your device…' : 'Finished looking'}
         </Text>
         <Text variant="body" tone="secondary" style={styles.centerText}>
-          Hold your BlueSmoke close and make sure it&apos;s switched on.
+          {isScanning
+            ? "Hold your BlueSmoke close and make sure it's switched on."
+            : "Don't see the one you want? Scan again with it closer to your phone."}
         </Text>
       </View>
 
@@ -91,6 +100,9 @@ export function DeviceScanScreen() {
       )}
 
       <View style={styles.actions}>
+        {/* Only once the scan has actually ended — offering it mid-scan would invite restarting
+            a scan that is still working, and throw away results already on screen. */}
+        {!isScanning && <Button label="Scan again" onPress={restart} />}
         <Button label="Cancel" variant="secondary" onPress={() => navigation.goBack()} />
       </View>
     </GradientGround>

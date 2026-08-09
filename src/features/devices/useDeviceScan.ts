@@ -21,7 +21,15 @@ export interface ScannedDevice {
   rssi: number | null;
 }
 
-export type DeviceScanStatus = 'scanning' | 'noDevicesFound';
+/**
+ * `stopped` exists because the radio stopping and the screen saying so are two different
+ * things. At the timeout with results already in hand there is nothing to report as a failure
+ * — but the scan HAS ended, and leaving the status on `scanning` made DV-3 show a spinner and
+ * "Looking for your device…" indefinitely over a radio that was already off. A user waiting on
+ * a second device (multi-device pairing is a product pillar) would wait forever on a promise
+ * nothing was keeping.
+ */
+export type DeviceScanStatus = 'scanning' | 'stopped' | 'noDevicesFound';
 
 export interface DeviceScanState {
   status: DeviceScanStatus;
@@ -80,9 +88,9 @@ export function useDeviceScan(): DeviceScanState {
 
     timeoutRef.current = setTimeout(() => {
       manager.stopDeviceScan();
-      if (devicesRef.current.length === 0) {
-        setStatus('noDevicesFound');
-      }
+      // Either way the scan is over and the status must say so. Zero results is DV-5's coaching
+      // state; anything else keeps its results and simply stops claiming to still be looking.
+      setStatus(devicesRef.current.length === 0 ? 'noDevicesFound' : 'stopped');
     }, SCAN_TIMEOUT_MS);
   }, [manager, stop]);
 
