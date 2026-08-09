@@ -236,6 +236,15 @@ From spec §12.1. All of it, not the happy path:
   device root key into OTP at manufacture), and 🔴 **OQ-12** (the `serial_hash` salt — same factory
   conversation as OQ-4, so chase them together). All answered by the client; all take longer to
   answer than to implement. Chase daily.
+- 🔴 **NEW Day 10 — OQ-13, and it outranks the rest.** The client's PCBA archive shows the device is
+  a **two-chip design** (PY32C642F app MCU + a separate **YC1012 BLE module** on a UART), so the GATT
+  profile belongs to the **BLE module vendor**, not the client — and **§4's six characteristics are
+  probably not implementable as written.** The module's profile manual, which holds the real service
+  UUID, was not supplied. **`P1-3.0` and `P1-7.0` are blocked outright**; a guessed UUID fails
+  silently exactly like a guessed OQ-12 salt. Read
+  [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **before
+  writing any BLE scan or connect code** — sources in `docs/hardware/client-supplied-2026-08-09/`.
+  **OQ-14**: the supplied SDK is Android-only and keyed on MAC address, so it cannot go to iOS.
 - **`P1-4.0` has nothing executable left.** Part 1 (§4.5 handshake + CMAC) and Part 2a (§4.3
   `deviceInfo`) are done and reviewed. Everything remaining is gated on OQ-12 (`salt → serial_hash →
   issue-device-session → K_sess`) or on hardware. Do not "unblock" it by inventing a salt — a guessed
