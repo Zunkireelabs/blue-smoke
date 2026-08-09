@@ -14,7 +14,11 @@ import { tokens, contrastPairs } from '../tokens';
  * `dynamicTypeGuard.test.ts` already use.
  */
 
-const RESTYLED_SCREENS = ['src/features/auth/PhoneInputScreen.tsx', 'src/features/auth/OtpEntryScreen.tsx'];
+const RESTYLED_SCREENS = [
+  'src/features/auth/PhoneInputScreen.tsx',
+  'src/features/auth/OtpEntryScreen.tsx',
+  'src/features/profile/ProfileScreen.tsx',
+];
 
 function scannedFiles(): SourceFile[] {
   const kitFiles = listSourceFiles('src/shared/ui').filter((f) => path.basename(f.relativePath) !== 'tokens.ts');

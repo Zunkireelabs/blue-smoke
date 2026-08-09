@@ -24,8 +24,8 @@
 | Calendar available | **30 days** |
 | Working days assumed | **26** (aggressive 6-day weeks) |
 | Minimum FTE to fit | **83.7 ÷ 26 = 3.22 FTE** — with *zero* slack |
-| **Recommended team** | **5.5 FTE-equivalent → ~128 person-days capacity** |
-| Resulting buffer | **1.53×** — the margin that absorbs integration, rework, and the unknowns |
+| **Recommended team** | **6.2 FTE-equivalent → ~146 person-days capacity** *(was 5.5 / ~128 before M4 joined on Day 10)* |
+| Resulting buffer | **1.75×** *(was 1.53×)* — the margin that absorbs integration, rework, and the unknowns |
 
 A 4-person team gives 1.16× buffer. That is not a plan, that is a hope. The fifth and half
 seats are what make 30 days real.
@@ -40,7 +40,24 @@ seats are what make 30 days real.
 | **B1** | Backend / DevOps — Supabase, Edge Functions, CI/CD, push | Full D1–15, 50% D16–30 | 19.5 d |
 | **D1** | Designer | Full D1–10, 25% D11–30 | 13 d |
 | **Q1** | QA + PM / firmware liaison | 50% D1–20, full D21–30 | 18 d |
-| | | **Total** | **128.5 d** |
+| **M4** | Mobile Dev — app screens, flows, design-system migration | Full, **D10–30** | 18 d |
+| | | **Total** | **146.5 d** |
+
+> **M4 was added on Day 10, 2026-08-09** — Manjila joined, on screens and flows. 18 d is the
+> 21 remaining calendar days at the same 26-in-30 working-day ratio the rest of this table uses,
+> not a full 26 d seat; a mid-project joiner cannot be counted as if they were here on Day 1.
+> The 128.5 d total above it is what the plan was budgeted against, so the extra 18 d is
+> **buffer, not licence to add scope** — scope is fixed by the client PRD either way.
+
+> **Seats are roles, not people.** This table is the *recommended* staffing model; the actual
+> team is four developers covering it between them. As of Day 10 the live mapping is roughly
+> **Anish → M1** (BLE, scan/bond, connection lifecycle), **Hardik → B1 + M3-auth** (Supabase,
+> Twilio/Resend, OTP delivery), **Manjila → M4** (screens, flows, design system), **Sadin → M3
+> + D1 + Q1** (app work, design direction, integration, and chasing the §13 open questions).
+> **M2 no longer exists as briefed** — its "native ML modules / face match" content was deleted
+> by the Persona pivot (spec v1.5); what remains of Phase 2 is Persona SDK glue and the two
+> Edge Functions. Nobody is holding it today. **This mapping is descriptive, not ownership** —
+> tasks are still claimed by pushing a branch, per `CLAUDE.md`.
 
 **Q1 is not optional.** Roughly half that seat is chasing the §13 open questions —
 particularly **OQ-1** (sample IDs, physical device) and **OQ-4** (OTP key provisioning).
@@ -68,6 +85,9 @@ M2 VERIF      ██████┼─────┼─────┼───
 
 M3 APP  ██████┼─────┼─────┼─────┼─────┼─────┼─────┤
         scaffold │ design sys │ auth/onboard │ device UI │ lock UI │ polish
+
+M4 SCRN             ██┼─────┼─────┼─────┼─────┤   (joined D10)
+                    dead-ends+nav │ design-sys migration │ onboarding │ polish
 
 B1 BE   ██████┼─────┼─────┼─────┤····┼·····┼·····┤
         supabase+RLS │ CI/CD │ edge fn │ sync │ push │ (50%) hardening

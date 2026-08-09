@@ -325,18 +325,26 @@ the app working** — account, profile and verification are all reachable withou
 > User profile and app settings: view account details, manage notification preferences, and
 > access support/legal links.
 
-- [ ] Profile screen — email, display name, member since
-- [ ] Verification status displayed (verified / not verified + date) — **never the DOB**
-- [ ] Notification preferences (lock status, low battery)
-- [ ] Support contact link — the route used by the manual fallback (spec §6.4)
-- [ ] Privacy policy + terms links
-- [ ] **A plain-language explanation of the on-device privacy model** — this is the product's core promise; say it where users will read it
-- [ ] App version + build number displayed for support purposes
-- [ ] Sign out
+- [x] Profile screen — email, display name, member since
+- [x] Verification status displayed (verified / not verified + date) — **never the DOB**
+- [ ] Notification preferences (lock status, low battery) — ⛔ **blocked:** `push_tokens` exists but §5.5 push has no client code; this is a build, not a checkbox
+- [ ] Support contact link — the route used by the manual fallback (spec §6.4) — ⛔ **blocked on OQ-2** (owner, channel, SLA all unanswered)
+- [ ] Privacy policy + terms links — ⛔ **blocked:** no URLs exist in the repo or the spec; inventing them is prohibited
+- [ ] **A plain-language explanation of the on-device privacy model** — this is the product's core promise; say it where users will read it — ⚠️ **copy is stale:** v1.5 moved capture into Persona's SDK, so there is no *on-device* model to describe. Rewrite against the vendor architecture before building
+- [ ] App version + build number displayed for support purposes — ⛔ **blocked:** needs a new dependency (`react-native-device-info` or equivalent); `package.json` is a contested shared file, announce first
+- [x] Sign out — moved here from `HomeScreen`, reachable via the Home header
 
 **Assumption:** profile fields limited to the agreed set.
 **Excludes:** in-app account deletion / data-export tooling.
 **Risk:** — *(none recorded in PRD)*
+
+**Partially delivered** on `feature/P1-8.0-profile-settings`: `src/features/profile/{ProfileScreen,useProfile}.tsx|ts`,
+reachable from a `Profile` header action on Home. Display name is editable (RLS `own_profile`
+already permits it, and nothing else ever writes the column, so read-only would leave it
+permanently blank). The four ⛔ items each need an input that does not exist yet — none is a
+coding problem. Also fixed here: `HomeScreen` rendered a blank identifier for every phone-only
+account (`email ?? …` never fires when GoTrue returns `''`), now covered by
+`src/shared/lib/__tests__/accountIdentifier.test.ts`.
 
 ---
 

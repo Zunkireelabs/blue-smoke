@@ -10,8 +10,16 @@ import { Platform } from 'react-native';
  * Structure: a raw `neutral` scale (never imported directly outside this file) feeds a
  * `lightTheme` of semantic tokens. A second theme (e.g. `darkTheme`) would be another object
  * built off the same or a parallel raw scale and swapped into `tokens` below — the semantic
- * names components consume do not change when that happens. That second theme is not built
- * this round.
+ * names components consume do not change when that happens.
+ *
+ * ── Light only. Decided, not pending (Sadin, 2026-08-09) ──────────────────────────────
+ *
+ * No dark theme this round. This is a product decision, not an unfinished task — do not "fix"
+ * it by adding one, and do not add `useColorScheme()` branches in screens. The structure above
+ * is what keeps the decision cheap to reverse later: because every component consumes semantic
+ * names and never a raw scale value or a hex literal (enforced by `__tests__/tokenOnlyGuard`),
+ * adding `darkTheme` stays an edit to this file rather than a rewrite of every screen. A screen
+ * that reads the OS colour scheme is precisely what would destroy that property.
  */
 
 const neutral = {

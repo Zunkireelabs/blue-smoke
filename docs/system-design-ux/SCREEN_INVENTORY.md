@@ -126,8 +126,18 @@ A ninth primitive is a **finding to raise**, per the roadmap. These are the gaps
 | **Toggle** | F9.4 notification prefs | medium | Could wrap RN `Switch` for token styling |
 | **Sheet / modal** | F7.5, F9.7 destructive confirms | medium | P0-7.0 noted "no sheet component yet — nothing has needed one". F9.7 needs one |
 | **Countdown** | F2.6a, F3.E4, F6.D3 | low | Three cooldowns, all with visible timers. May be a hook, not a component |
-| **Dark theme** | everything | **decide before migrating** | `tokens.ts` is light-only. Adding it after eight screens are migrated means touching all eight again. Worth deciding now even though the palette itself waits on OQ-7 |
+| **Dark theme** | — | ✅ **decided — light only** | Sadin, 2026-08-09. Not building a dark theme this round. `tokens.ts` stays light-only; screens are migrated against `lightTheme` and nothing branches on colour scheme |
 
-The last row is the one worth arguing about before PR #1: **the light/dark decision is structural,
-and the migration is the cheap moment to make it.** The colours can stay provisional; the shape of
-the token file cannot be retrofitted for free.
+**The light/dark question is closed: light only** (Sadin, 2026-08-09). It was the one structural
+decision worth making before PR #1, and it is made — the migration proceeds against `lightTheme`.
+
+Two consequences, so the decision stays cheap to revisit later rather than free-to-ignore now:
+
+1. **Keep consuming semantic token names**, never raw `neutral[…]` or hex, in every screen. That is
+   already enforced for `src/shared/ui/**` and the screens listed in `tokenOnlyGuard.test.ts` — the
+   guard is what keeps a future dark theme a token-file edit rather than an eight-screen rewrite.
+2. **Do not add `useColorScheme()` branches** anywhere. A screen that reads the OS colour scheme is
+   the thing that makes this expensive to undo.
+
+The palette itself is still provisional and still waits on **OQ-7**; deciding light-only does not
+resolve OQ-7, it only halves what OQ-7 has to answer.

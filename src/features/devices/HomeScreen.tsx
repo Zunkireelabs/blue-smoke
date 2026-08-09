@@ -1,24 +1,30 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useAuthClient } from '@/features/auth/AuthClientContext';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSessionStore } from '@/app/stores/useSessionStore';
+import { accountIdentifier } from '@/shared/lib/accountIdentifier';
 
 /**
  * The landing screen once a user is signed in AND past the age gate.
  *
  * Deliberately minimal. Device pairing is P1-4.0 and the lock UI is P3-*, neither of which
  * exists yet, so this shows the account state and an honest empty state rather than
- * pretending at a device list. The one thing it must get right today is sign-out, because
- * that is the only way back out of the gated stack while testing.
+ * pretending at a device list.
+ *
+ * Sign-out moved to the Profile screen in P1-8.0, which is where the TODO puts it and which is
+ * reachable from this screen's header. It is still the only way back out of the gated stack.
  */
 export function HomeScreen() {
-  const authClient = useAuthClient();
-  const email = useSessionStore((s) => s.user?.email ?? null);
+  const user = useSessionStore((s) => s.user);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>BlueSmoke</Text>
-        <Text style={styles.subtitle}>{email ?? 'Signed in'}</Text>
+        {/*
+          Was `{email ?? 'Signed in'}`, which rendered a blank line for every phone-only
+          account: GoTrue returns `email` as an empty string rather than null, and `??` only
+          falls back on null/undefined, so neither the identifier nor the fallback appeared.
+        */}
+        <Text style={styles.subtitle}>{accountIdentifier(user?.email, user?.phone)}</Text>
       </View>
 
       <View style={styles.card}>
@@ -27,18 +33,6 @@ export function HomeScreen() {
           Pairing arrives with the device connection work. Your account is verified and ready.
         </Text>
       </View>
-
-      <Pressable
-        style={styles.secondaryButton}
-        onPress={() => {
-          // Fire-and-forget: the session store's onAuthStateChange listener drives the UI
-          // back to the auth stack, so there is nothing to await here.
-          authClient.signOut().catch(() => {});
-        }}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Sign out</Text>
-      </Pressable>
     </View>
   );
 }
@@ -69,6 +63,4 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#f4f4f5', borderRadius: 12, padding: 20, gap: 6 },
   cardTitle: { fontSize: 16, fontWeight: '600' },
   cardBody: { fontSize: 14, color: '#555', textAlign: 'center', lineHeight: 20 },
-  secondaryButton: { paddingVertical: 12, alignItems: 'center' },
-  secondaryButtonText: { fontSize: 15, color: '#1a1a1a', fontWeight: '600' },
 });

@@ -12,7 +12,11 @@ import { listSourceFiles, readSourceFile } from '../sourceFiles';
  */
 const LITERAL_COLOR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(/;
 
-const RESTYLED_SCREENS = ['src/features/auth/PhoneInputScreen.tsx', 'src/features/auth/OtpEntryScreen.tsx'];
+const RESTYLED_SCREENS = [
+  'src/features/auth/PhoneInputScreen.tsx',
+  'src/features/auth/OtpEntryScreen.tsx',
+  'src/features/profile/ProfileScreen.tsx',
+];
 
 function filesUnderGuard() {
   const kitFiles = listSourceFiles('src/shared/ui').filter((f) => path.basename(f.relativePath) !== 'tokens.ts');

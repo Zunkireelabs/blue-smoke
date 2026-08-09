@@ -48,7 +48,8 @@ Check these on **every** change. A breach is an automatic block, not a review co
 
 ## Team & how work is claimed
 
-Three developers — **Sadin, Anish, Hardik** — working independently on feature branches.
+Four developers — **Sadin, Anish, Hardik, Manjila** — working independently on feature branches.
+*(Manjila joined Day 10, 2026-08-09, on app screens and flows.)*
 
 **There is no fixed ownership.** Anyone can pick up any task. Work is claimed dynamically:
 
@@ -70,7 +71,7 @@ Not assignments — a map, so you can tell whose in-flight branch your diff migh
 
 ### ⚠️ Shared files — announce before editing
 
-These cause 90% of merge pain. No owner, so the rule is **single-writer at a time**: tell the other two before you start, not when you open the PR.
+These cause 90% of merge pain. No owner, so the rule is **single-writer at a time**: tell the other three before you start, not when you open the PR.
 
 | File | Why it's contested | Rule |
 |---|---|---|
@@ -117,13 +118,13 @@ feature/P0-3.0-supabase-rls
 fix/P3-3.0-rssi-flapping
 ```
 
-**Rules that matter when three people work apart:**
+**Rules that matter when four people work apart:**
 
 1. **Check `git fetch && git branch -r` before starting a task.** Remote branches are the live claim list. If a `feature/P2-2.0-*` branch exists, that task is taken.
 2. **Push your branch on day one**, empty if need be. That is how you claim the task. An unpushed branch claims nothing.
 3. **Rebase on `stage` every morning.** `git pull --rebase origin stage`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `stage`, staying current matters more, not less. (Rebasing on `main` will silently give you a stale base.)
 4. **Small PRs.** One task, one PR. A 2000-line PR nobody has seen in progress is unreviewable and unmergeable.
-5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
+5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other three and invisible to the roadmap.
 6. **CI green before merge.** No exceptions.
 7. **Tick the TODO box in the same PR** that completes the work. The checkbox is the progress signal; if it lags, the roadmap lies.
 
