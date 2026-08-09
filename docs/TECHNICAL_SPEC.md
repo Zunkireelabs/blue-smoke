@@ -1045,6 +1045,34 @@ Per this spec's own rule: these are not filled in with plausible values.
    age requirement confirmed **in the Persona dashboard**, `age_verified = true` means only
    "Persona approved this inquiry". Blocks §12.1 **G2**-adjacent sign-off and belongs with
    **OQ-11**, since the account holding that template is currently developer-owned.
+
+   **Update 2026-08-09 — the checkable half is now checked.** The claim above that "no code in
+   this repo can verify it" conflated two different things:
+
+   - **Whether template X enforces 18+** — a vendor dashboard setting, genuinely invisible from
+     here. Still requires a human to confirm it, once, with evidence.
+   - **Which template answered a given inquiry** — carried in the webhook payload's
+     `relationships` (`inquiry-template` for Dynamic Flow / `itmpl_` ids, `template` for Legacy
+     2.0), and therefore entirely checkable.
+
+   `persona-webhook` now refuses to honour a passing status unless the inquiry's template equals
+   `PERSONA_TEMPLATE_ID` (`_shared/inquiryTemplate.ts`). All three failure modes fail **closed**
+   and are distinguished in the log: `not_configured` (our env is missing the value),
+   `absent_from_payload` (no linkage in the delivery), `mismatch` (a real inquiry from the wrong
+   template). The refusal returns `200 { applied: false, reason: 'template_not_confirmed' }` and
+   leaves the row `pending` — a configuration fault is not fixed by Persona redelivering, and a
+   pending row strands the user on VF-3/VF-4 rather than verifying or declining them wrongly.
+
+   **This does not close the open question, and must not be read as closing it.** The dashboard
+   confirmation is still required. What changed is that it is now required **once** instead of
+   continuously: the configuration can no longer drift away from the confirmed template without
+   the gate slamming shut and saying so.
+
+   **The defect this found, on the day it was written:** `PERSONA_TEMPLATE_ID` pointed at
+   `itmpl_AW8e9aVphL2…` — "Government ID (with autoclassification) and Selfie", an identity-only
+   template with no age requirement — while a separate "KYC + Age Verification: GovID + Selfie"
+   template sat unused in the same account. Exactly the scenario described two paragraphs above,
+   live in dev, and undetectable by any control that existed at the time.
 4. **Inquiry resumption.** `onCanceled` → resume semantics and session-token lifetime.
 5. **Data residency and retention at the vendor**, required for §8.6. See **OQ-11**.
 

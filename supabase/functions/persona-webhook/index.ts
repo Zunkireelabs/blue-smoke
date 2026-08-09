@@ -17,6 +17,9 @@
  *    before authenticating it is the bug the signature exists to prevent.
  * 2. Verify the signature. Anything short of a proven match returns 401 and stops.
  * 3. Only then parse, and only then touch the database.
+ * 4. A passing status is honoured ONLY if the inquiry came from the configured template
+ *    (`_shared/inquiryTemplate.ts`, spec §6.6 item 3). An `approved` from a template with no
+ *    age requirement is `approved` for a fourteen-year-old, so the status alone is not enough.
  *
  * ── 🔴 Logging rule (CLAUDE.md rule 1, spec §8.1) ──────────────────────────────────────
  * `inquiry_id` must never be logged beside anything that re-identifies the person. This
@@ -27,6 +30,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { verifyPersonaSignature } from '../_shared/personaSignature.ts';
+import { verifyInquiryTemplate } from '../_shared/inquiryTemplate.ts';
 
 /**
  * Persona's documented inquiry statuses (docs.withpersona.com/model-lifecycle).
@@ -112,8 +116,40 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error(`persona-webhook: no status on event "${eventName ?? 'unknown'}" — not a pass`);
   }
 
-  const isPass = status ? PASSING_STATUSES.has(status) : false;
-  const isTerminal = status ? isPass || TERMINAL_FAILURE_STATUSES.has(status) : false;
+  const statusIsPass = status ? PASSING_STATUSES.has(status) : false;
+  const isTerminal = status ? statusIsPass || TERMINAL_FAILURE_STATUSES.has(status) : false;
+
+  // ── 🔴 The age gate's second half — spec §6.6 item 3 ─────────────────────
+  // A passing status only means "passed the checks THIS TEMPLATE was configured with". It is
+  // therefore worth exactly as much as knowing which template answered, so a pass is not
+  // honoured until the inquiry is proven to come from the one a human confirmed enforces 18+.
+  //
+  // Only the PASS is gated. A decline from an unrecognised template is still a decline — it
+  // can only ever keep the gate shut, so refusing to record it would add risk, not remove it.
+  const templateVerdict = verifyInquiryTemplate({
+    inquiry,
+    expectedTemplateId: Deno.env.get('PERSONA_TEMPLATE_ID'),
+  });
+
+  if (statusIsPass && !templateVerdict.confirmed) {
+    // Loud, and deliberately without the inquiry_id (rule 1: this handler holds an inquiry_id
+    // and a user_id at once). The reason is the actionable part, and it is not user data.
+    console.error(
+      `persona-webhook: REFUSING a passing inquiry — template not confirmed (${templateVerdict.reason}). ` +
+        'age_verified was NOT set. See spec §6.6 item 3.',
+    );
+    // 200, not 4xx: a template mismatch is a configuration fault, and no number of Persona
+    // retries will fix it — a non-2xx would just buy an infinite redelivery loop on top of an
+    // outage. The row stays `pending`, so the user sits on VF-3/VF-4 ("still checking") rather
+    // than being wrongly verified OR wrongly declined, and the decision can be applied for real
+    // once the configuration is corrected.
+    return json(200, { ok: true, applied: false, reason: 'template_not_confirmed' });
+  }
+
+  // The second clause is redundant today — the guard above already returned for that case — and
+  // is kept deliberately. It means `isPass` cannot become true without a confirmed template even
+  // if someone later moves, refactors, or deletes that early return.
+  const isPass = statusIsPass && templateVerdict.confirmed;
 
   // Non-terminal events (inquiry.created, inquiry.started, needs_review, ...) are
   // acknowledged and ignored. Returning 200 stops Persona retrying something we deliberately

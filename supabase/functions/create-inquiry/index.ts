@@ -95,9 +95,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // returned a fabricated inquiry id would let the app appear to work while verifying nobody.
   //
   // 🔴 min_age is the sharp edge here. A Persona template that scans an ID and matches a
-  // selfie but carries NO age requirement returns `approved` for a 14-year-old. No code in
-  // this repo can detect that — it is template configuration, so it must be verified in the
-  // Persona dashboard, not asserted here.
+  // selfie but carries NO age requirement returns `approved` for a 14-year-old. The age
+  // requirement itself is a dashboard checkbox and still must be verified there, not asserted
+  // here — but WHICH template answered is now enforced: `persona-webhook` refuses to honour a
+  // pass from anything other than `PERSONA_TEMPLATE_ID` (`_shared/inquiryTemplate.ts`). So the
+  // dashboard confirmation is needed exactly once, and cannot drift silently afterwards.
   console.error('create-inquiry: server-side inquiry creation not implemented (spec §6.6)');
   return json(501, {
     error: 'NOT_IMPLEMENTED',
