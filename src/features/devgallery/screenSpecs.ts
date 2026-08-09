@@ -82,39 +82,15 @@ export const SCREEN_SPECS: ReadonlyArray<ScreenSpec> = [
   // pre-auth flow (first launch / after `simctl uninstall` clears the AsyncStorage flag) —
   // placeholder entries removed, matching how VF-1/ON-5/etc's were removed in Phase B.
   //
-  // ON-4/6/7/8/9 are also BUILT, real components — but Phase D (device pairing) hasn't landed
-  // yet to give them a real trigger, so their entries stay here and `ScreenPreviewScreen`
-  // renders the actual shipped component for each (`realPreviews.tsx`), not this placeholder
-  // data. Delete an entry once Phase D reaches it through a genuine flow.
-  {
-    id: 'ON-4', name: 'Bluetooth priming', section: 'ON', status: 'built', node: 'F7.2', layout: 'message',
-    title: 'We need Bluetooth to pair',
-    body: 'BlueSmoke talks to your device over Bluetooth. It only ever connects to devices you own.',
-    note: 'Real component (P1-2.0) — no real trigger yet, Phase D wires it.',
-  },
+  // ON-4/7/8/9 shipped their real trigger this phase (P1-3.0, device pairing: `Home` → "Pair a
+  // device" → `BluetoothPriming` → `BluetoothGate`) — placeholders removed the same way.
+  // ON-6 stays: notification priming is F7.9, past P1-3.0's pairing boundary, so
+  // `ScreenPreviewScreen` still renders the real component via `realPreviews.tsx`.
   {
     id: 'ON-6', name: 'Notification priming', section: 'ON', status: 'built', layout: 'message',
     title: 'Know when it locks',
     body: 'We can tell you when your device locks itself or runs low on battery.',
     note: 'Real component (P1-2.0). Enable is a stub interface — push has no backend yet.',
-  },
-  {
-    id: 'ON-7', name: 'Denied once', section: 'ON', status: 'built', node: 'F1.D1', layout: 'message',
-    title: 'We need permission to continue',
-    body: 'Without it we cannot connect to your device.',
-    note: 'Real component (P1-2.0). Android-reachable only — iOS has no OS-level re-prompt state.',
-  },
-  {
-    id: 'ON-8', name: 'Permanently denied', section: 'ON', status: 'built', node: 'F1.D2', layout: 'message',
-    title: 'Permission is turned off',
-    body: 'We cannot show that prompt again — this has to be turned back on in Settings.',
-    note: 'Real component (P1-2.0). Where every iOS denial ends up — see ON-7\'s note.',
-  },
-  {
-    id: 'ON-9', name: 'Bluetooth off', section: 'ON', status: 'built', node: 'F1.D5', layout: 'message',
-    title: 'Bluetooth is off',
-    body: 'Turn it on and we will keep looking — nothing else to fix here.',
-    note: 'Real component (P1-2.0). OFF is not DENIED — no "turn it on" button; we cannot do that from the app.',
   },
 
   // ── AU ────────────────────────────────────────────────────────────────────────────
@@ -243,38 +219,9 @@ export const SCREEN_SPECS: ReadonlyArray<ScreenSpec> = [
   },
 
   // ── DV ────────────────────────────────────────────────────────────────────────────
-  {
-    id: 'DV-1', name: 'Home / device list', section: 'DV', status: 'stub', node: 'F7.1', layout: 'list',
-    title: 'Your devices',
-    rows: ['BlueSmoke · Connected · 82%', 'Spare · Out of range · —'],
-    ctas: [{ label: 'Pair a device', kind: 'primary', to: 'ON-4' }],
-    note: 'Today this is a hardcoded "No devices paired" card, not a list.',
-  },
-  {
-    id: 'DV-2', name: 'No devices — empty state', section: 'DV', status: 'stub', node: 'F7.1', layout: 'message',
-    title: 'No devices paired',
-    body: 'Pair your BlueSmoke to lock and unlock it from your phone.',
-    ctas: [{ label: 'Pair a device', kind: 'primary', to: 'ON-4' }],
-  },
-  {
-    id: 'DV-3', name: 'Scanning', section: 'DV', status: 'absent', node: 'F7.3', layout: 'loading',
-    title: 'Looking for your device…',
-    body: 'Hold your BlueSmoke close and make sure it is switched on.',
-    ctas: [{ label: 'Cancel', kind: 'secondary' }],
-    note: 'Needs physical instructions — the user has to do something to the hardware.',
-  },
-  {
-    id: 'DV-4', name: 'Scan results', section: 'DV', status: 'absent', node: 'F7.4', layout: 'list',
-    title: 'Devices found',
-    rows: ['BlueSmoke · strong signal', 'BlueSmoke · weak signal'],
-    note: '🔴 Never present signal strength as a distance in metres. RSSI is not range.',
-  },
-  {
-    id: 'DV-5', name: 'No devices found', section: 'DV', status: 'absent', node: 'F7.E3', layout: 'message',
-    title: "We couldn't find it",
-    body: 'Make sure the device is switched on and within arm\'s reach.',
-    ctas: [{ label: 'Scan again', kind: 'primary' }],
-  },
+  // DV-1..5 shipped this phase (P1-3.0: Home's real empty state through scan/results/timeout)
+  // and are reachable via the real flow — placeholders removed, same convention as ON-4/7/8/9
+  // above. DV-6 onward stay: they're past P1-3.0's hard boundary at device selection (OQ-12).
   {
     id: 'DV-6', name: 'Connecting / bonding / handshake', section: 'DV', status: 'blocked', node: 'F7.6–F7.9', layout: 'loading',
     title: 'Pairing…',

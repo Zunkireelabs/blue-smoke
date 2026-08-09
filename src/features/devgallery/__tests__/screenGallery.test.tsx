@@ -75,9 +75,10 @@ describe('screen gallery specs', () => {
     const out = text(renderer);
     // P2-6.0 (UI-BUILD-B) shipped VF-1, ON-5, VF-2..VF-7, and VF-12 as real screens — their
     // gallery placeholders were removed, dropping the total from 62 to 53. P1-2.0 shipped
-    // ON-1..3 the same way (real, walkable via the pre-auth flow) — 53 to 50. ON-4/6/7/8/9 are
-    // also real now but keep their entries (see `realPreviews.tsx`), so they don't move the count.
-    expect(out).toContain('50 screens');
+    // ON-1..3 the same way (real, walkable via the pre-auth flow) — 53 to 50. P1-3.0 shipped
+    // ON-4/7/8/9 and DV-1..5 with real, reachable triggers (device pairing) — 50 to 41. ON-6
+    // alone still needs `realPreviews.tsx`'s shim (F7.9, past P1-3.0's pairing boundary).
+    expect(out).toContain('41 screens');
     expect(out).toContain('Boot splash');
     expect(out).toContain('Locked');
   });

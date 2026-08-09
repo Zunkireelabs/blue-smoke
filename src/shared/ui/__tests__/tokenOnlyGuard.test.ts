@@ -35,6 +35,8 @@ const RESTYLED_SCREENS = [
   'src/features/onboarding/BluetoothBlockedScreen.tsx',
   'src/features/onboarding/BluetoothOffScreen.tsx',
   'src/features/onboarding/BluetoothGateScreen.tsx',
+  'src/features/devices/DeviceScanScreen.tsx',
+  'src/features/devices/PairingBoundaryScreen.tsx',
 ];
 
 function filesUnderGuard() {

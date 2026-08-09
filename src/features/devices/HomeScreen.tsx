@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { GradientGround, Text, tokens } from '@/shared/ui';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Button, EmptyState, GradientGround, Text, tokens } from '@/shared/ui';
 import { SignOutButton } from '@/features/auth/SignOutButton';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { accountIdentifier } from '@/shared/lib/accountIdentifier';
+import type { RootStackParamList } from '@/app/navigation';
 
 // F6.P (USER_FLOWS.md) — after roughly this long pending, stop implying imminence and offer an
 // exit rather than a bare spinner with no timeout (DE-8).
@@ -12,17 +15,18 @@ const TAKING_LONGER_MS = 2 * 60 * 1000;
 /**
  * The landing screen once a user is signed in AND past the age gate.
  *
- * Deliberately minimal. Device pairing is P1-4.0 and the lock UI is P3-*, neither of which
- * exists yet, so this shows the account state and an honest empty state rather than
- * pretending at a device list. The empty state is the dashed-border tile the execution brief
- * calls out as "the natural treatment for Pair a device" (§3) — not yet pressable, since the
- * scan/pairing flow (P1-3.0) it would open doesn't exist yet either.
+ * DV-1/DV-2 (F7.1, `SCREEN_MAP.md`) — P1-3.0 replaces the old hardcoded "No devices paired"
+ * card with the real empty state. DV-1 (list) and DV-2 (zero state) collapse into one render
+ * here because no paired-device store exists yet — pairing dead-ends at `PairingBoundaryScreen`
+ * (OQ-12), so a paired device can never actually reach this screen in the current build. When a
+ * device store lands (P1-5.0), that's the point to branch this into an actual list.
  *
  * Sign-out moved to the Profile screen in P1-8.0, which is where the TODO puts it and which is
  * reachable from this screen's header. It is still the only way back out of the gated stack.
  */
 export function HomeScreen() {
   const user = useSessionStore((s) => s.user);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <GradientGround>
@@ -43,11 +47,15 @@ export function HomeScreen() {
       <Text variant="label" tone="secondary" style={styles.sectionLabel}>
         Devices
       </Text>
-      <View style={styles.pairTile}>
-        <Text variant="label">No devices paired</Text>
-        <Text variant="caption" tone="secondary" style={styles.pairTileBody}>
-          Pairing arrives with the device connection work. Your account is verified and ready.
-        </Text>
+      <EmptyState
+        title="No devices paired"
+        body="Pair your BlueSmoke to lock and unlock it from your phone."
+      />
+      <View style={styles.pairAction}>
+        <Button
+          label="Pair a device"
+          onPress={() => navigation.navigate('BluetoothPriming')}
+        />
       </View>
     </GradientGround>
   );
@@ -128,15 +136,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     marginBottom: tokens.spacing.sm,
   },
-  pairTile: {
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: tokens.color.border,
-    borderRadius: tokens.radii.lg,
-    padding: tokens.spacing.lg,
-    gap: tokens.spacing.xs,
-  },
-  pairTileBody: {
-    lineHeight: 20,
+  pairAction: {
+    marginTop: tokens.spacing.lg,
   },
 });

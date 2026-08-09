@@ -140,15 +140,20 @@ the app working** — account, profile and verification are all reachable withou
 > Scan for nearby Blue Smoke devices over BLE and present discoverable devices to the user for
 > selection, filtering to the project's GATT service.
 
-- [ ] Scan **filtered on the service UUID** (spec §4.1) — never present arbitrary peripherals
-- [ ] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1)
-- [ ] Discovered-device list UI with signal strength indication
-- [ ] Scan timeout + explicit "no devices found" state with troubleshooting help
-- [ ] Bluetooth-off state detected and handled with a prompt to enable
-- [ ] Duplicate-advertisement handling; stable list ordering
-- [ ] Scan stopped on screen exit — no battery leak
-- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors
-- [ ] Tested against the mock peripheral
+- [x] Scan **filtered on the service UUID** (spec §4.1) — never present arbitrary peripherals
+- [ ] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1) — deliberately
+      skipped this round: DV-4 only requires signal strength (decision recorded in
+      `DeviceScanScreen.tsx`), and `0xFF`-unknown battery handling has no UI to attach to without
+      it. Revisit alongside DV-9 (P1-5.0), which actually needs battery.
+- [x] Discovered-device list UI with signal strength indication
+- [x] Scan timeout + explicit "no devices found" state with troubleshooting help
+- [x] Bluetooth-off state detected and handled with a prompt to enable
+- [x] Duplicate-advertisement handling; stable list ordering
+- [x] Scan stopped on screen exit — no battery leak
+- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors — cannot be attempted;
+      Android has never been compiled on this project (no JDK/ANDROID_HOME), unchanged from
+      Phase 0/1's state. Not specific to this task.
+- [x] Tested against the mock peripheral
 
 **Assumption:** device advertises the agreed BLE service UUID.
 **Excludes:** support for non-Blue-Smoke BLE peripherals.

@@ -155,25 +155,35 @@ vendor status strings, no reasons that reveal matching internals.
 
 ---
 
-## DV · Devices & pairing — `STUB`, tasks **P1-3.0 / P1-4.0 / P1-5.0** — 🔴 critical path
+## DV · Devices & pairing — `PARTIAL`, tasks **P1-3.0 / P1-4.0 / P1-5.0** — 🔴 critical path
 
 | ID | Screen | Flow | Status | Task |
 |---|---|---|---|---|
-| **DV-1** | Home / device list | F7.1 | `STUB` | P1-4.0 |
-| **DV-2** | No devices — empty state | F7.1 | `STUB` | P1-4.0 |
-| **DV-3** | Scanning | F7.3 | `ABSENT` | P1-3.0 |
-| **DV-4** | Scan results | F7.4 | `ABSENT` | P1-3.0 |
-| **DV-5** | No devices found | F7.E3 | `ABSENT` | P1-3.0 |
-| **DV-6** | Connecting / bonding / handshake | F7.6–F7.9 | `ABSENT` | P1-4.0 |
-| **DV-7** | Paired — success | F7.10 | `ABSENT` | P1-4.0 |
+| **DV-1** | Home / device list | F7.1 | `BUILT` | P1-4.0 |
+| **DV-2** | No devices — empty state | F7.1 | `BUILT` | P1-4.0 |
+| **DV-3** | Scanning | F7.3 | `BUILT` | P1-3.0 |
+| **DV-4** | Scan results | F7.4 | `BUILT` | P1-3.0 |
+| **DV-5** | No devices found | F7.E3 | `BUILT` | P1-3.0 |
+| **DV-6** | Connecting / bonding / handshake | F7.6–F7.9 | `⛔` | P1-4.0 |
+| **DV-7** | Paired — success | F7.10 | `⛔` | P1-4.0 |
 | **DV-8** | Pairing failures ×11 | F7.E1–E11 | `ABSENT` | P1-4.0 |
 | **DV-9** | Device detail | F8 | `ABSENT` | P1-5.0 |
 | **DV-10** | Rename device | — | `ABSENT` | P1-5.0 |
 | **DV-11** | Unpair confirmation | — | `ABSENT` | P1-5.0 |
 
-**DV-1 is a placeholder** — a hardcoded "No devices paired" card. It is not a device list.
+**P1-3.0 shipped DV-1…DV-5** (device list's real empty state, scan, live results, and the 20s
+timeout), reachable from `Home`'s "Pair a device" through the real `BluetoothPriming` →
+`BluetoothGate` → `DeviceScan` flow. **DV-1 and DV-2 currently render identically** — no
+paired-device store exists yet (P1-5.0), so a "list" is always the zero state; that's intentional,
+not a shortcut, see `HomeScreen.tsx`'s header comment.
 
-**DV-4** shows signal strength. **DV-8** covers eleven distinct failures, and two are *routing*
+**Selecting a device in DV-4 hits a hard, honest boundary** (`PairingBoundaryScreen`, not in this
+table — it isn't a designed screen, it's the explicit "not built yet" stop) rather than DV-6/DV-7,
+both still `⛔` blocked on OQ-12 (the `serial_hash` salt) exactly as before.
+
+**DV-4** shows signal strength (raw dBm, never bucketed or shown as a distance) — battery/state-hint
+from the advert's manufacturer data was deliberately left unparsed this round (`TODO-phase-1.md`
+P1-3.0). **DV-8** covers eleven distinct failures, and two are *routing*
 decisions rather than errors: `AGE_NOT_VERIFIED` must route into **VF-1**, not show an error; and
 `DEVICE_OWNED_BY_ANOTHER_USER` needs its own honest copy. Incompatible firmware **fails closed**.
 
@@ -254,11 +264,11 @@ started even with a design, because a named input is missing.
 | ON Onboarding | 9 | — | — | — | 9 |
 | AU Auth | 11 | 8 | 3 | — | — |
 | VF Verification | 12 | 1 | 4 | 1 | 6 |
-| DV Devices | 11 | — | 2 | 2 | 7 |
+| DV Devices | 11 | 5 | — | 2 | 4 |
 | LK Lock | 8 | — | — | 4 | 4 |
 | PF Profile | 7 | — | 1 | 4 | 2 |
 | SY System | 3 | — | — | — | 3 |
-| **Total** | **62** | **10** | **10** | **11** | **31** |
+| **Total** | **62** | **15** | **8** | **11** | **28** |
 
 ---
 

@@ -23,6 +23,10 @@ import {
   type VerificationState,
 } from '@/features/verification/useVerificationStatus';
 import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
+import { DevicePairingPrimingScreen } from '@/features/devices/DevicePairingPrimingScreen';
+import { DevicePairingGateScreen } from '@/features/devices/DevicePairingGateScreen';
+import { DeviceScanScreen } from '@/features/devices/DeviceScanScreen';
+import { PairingBoundaryScreen } from '@/features/devices/PairingBoundaryScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
@@ -54,6 +58,11 @@ export type RootStackParamList = {
   // Authenticated and verified
   Home: undefined;
   Profile: undefined;
+  // P1-3.0 — device pairing, F7.2-F7.5. Stops at device selection; see PairingBoundaryScreen.
+  BluetoothPriming: undefined;
+  BluetoothGate: undefined;
+  DeviceScan: undefined;
+  DevicePairingBoundary: { deviceId: string; deviceName: string | null };
   // Dev-only screen gallery (see src/features/devgallery). Registered only when __DEV__.
   ScreenGallery: undefined;
   ScreenPreview: { id: string };
@@ -254,6 +263,27 @@ export function RootNavigator() {
             }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
+          {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection. */}
+          <Stack.Screen
+            name="BluetoothPriming"
+            component={DevicePairingPrimingScreen}
+            options={{ title: 'Pair a device' }}
+          />
+          <Stack.Screen
+            name="BluetoothGate"
+            component={DevicePairingGateScreen}
+            options={{ title: 'Pair a device' }}
+          />
+          <Stack.Screen
+            name="DeviceScan"
+            component={DeviceScanScreen}
+            options={{ title: 'Pair a device' }}
+          />
+          <Stack.Screen
+            name="DevicePairingBoundary"
+            component={PairingBoundaryScreen}
+            options={{ title: 'Pair a device' }}
+          />
           {/*
             Dev-only. `__DEV__` is statically false in a release build, so these routes are not
             merely hidden — they are absent from the navigator, which is the same guarantee the
