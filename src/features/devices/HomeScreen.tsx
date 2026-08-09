@@ -1,6 +1,9 @@
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuthClient } from '@/features/auth/AuthClientContext';
 import { useSessionStore } from '@/app/stores/useSessionStore';
+import type { RootStackParamList } from '@/app/navigation';
 
 /**
  * The landing screen once a user is signed in AND past the age gate.
@@ -13,6 +16,7 @@ import { useSessionStore } from '@/app/stores/useSessionStore';
 export function HomeScreen() {
   const authClient = useAuthClient();
   const email = useSessionStore((s) => s.user?.email ?? null);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <View style={styles.container}>
@@ -27,6 +31,19 @@ export function HomeScreen() {
           Pairing arrives with the device connection work. Your account is verified and ready.
         </Text>
       </View>
+
+      {/* Dev-only entry to the P1-7.0 connection harness. The route itself is only
+          registered under __DEV__ (navigation.tsx), so this must be gated too — otherwise
+          a production build would render a button that navigates nowhere. */}
+      {__DEV__ ? (
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => navigation.navigate('BleDemo')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>BLE connection demo (dev)</Text>
+        </Pressable>
+      ) : null}
 
       <Pressable
         style={styles.secondaryButton}

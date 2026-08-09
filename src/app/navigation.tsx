@@ -16,6 +16,7 @@ import {
   type VerificationState,
 } from '@/features/verification/useVerificationStatus';
 import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
+import { BleDemoScreen } from '@/features/ble/BleDemoScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 
 /**
@@ -36,6 +37,8 @@ export type RootStackParamList = {
   VerificationPending: undefined;
   // Authenticated and verified
   Home: undefined;
+  /** Dev-only P1-7.0 harness — registered under `__DEV__` only, see the home stack below. */
+  BleDemo: undefined;
 };
 
 /**
@@ -151,6 +154,16 @@ export function RootNavigator() {
       ) : stack === 'home' ? (
         <Stack.Navigator>
           <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'BlueSmoke' }} />
+          {/* Dev-only: a screen that isn't registered cannot be navigated to, so the
+              production build has no route to the P1-7.0 harness at all — same reasoning
+              as the separate-stacks gate above, applied to a developer tool. */}
+          {__DEV__ ? (
+            <Stack.Screen
+              name="BleDemo"
+              component={BleDemoScreen}
+              options={{ title: 'BLE connection (dev)' }}
+            />
+          ) : null}
         </Stack.Navigator>
       ) : stack === 'pending' ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
