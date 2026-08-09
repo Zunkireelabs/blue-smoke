@@ -1100,7 +1100,21 @@ Per this spec's own rule: these are not filled in with plausible values.
    template's name, not the presence of the check, not the check being required. A wrong
    threshold is worse than a missing check, because it looks configured.
 
-   Corrected to `Min 18` on 2026-08-09.
+   Corrected to `Min 18` on 2026-08-09, and the whole chain then re-read end to end rather than
+   assumed — because correcting the check publishes a NEW verification-template version, and the
+   inquiry template can keep running the old one. Every link was observed in the dashboard:
+
+   | # | Link | Value confirmed |
+   |---|---|---|
+   | 1 | Inquiry template | `itmpl_AW8e9aVuRLUbNAUrSemPxwgEU156jS`, republished 12:12 UTC |
+   | 2 | → `Run government ID verification` step's version | `vtmplv_AW8e9aVX15UJCJdLFSsMBJzthWgiVM` |
+   | 3 | → that version, `Published` | `Age comparison` **Required**, `Min 18` |
+   | 4 | → branching step Route 1 | `Run Government Id Verification - Status equals passed` |
+   | 5 | → `persona-webhook` | honours a pass only from `PERSONA_TEMPLATE_ID` |
+
+   `PERSONA_TEMPLATE_ID` was switched to that template in the same change. **Link 2 is the one to
+   re-check after any future dashboard edit** — a corrected check on a version the flow no longer
+   points at reads as fully configured and changes nothing.
 
    **Still outstanding, and this is now the only part left:** config confirmed is not behaviour
    confirmed. The close-out evidence is a **sandbox inquiry run with an under-18 test document,
