@@ -115,3 +115,15 @@ export function BleClientProvider({
 export function useBleManager(): BleManagerLike {
   return useContext(BleManagerContext) ?? getLazyDefaultManager();
 }
+
+/**
+ * P1-3.0 — the scan-phase accessor. The real `BleManager` and `MockBleManager`
+ * are each a single object that structurally satisfies both `BleManagerLike`
+ * and `BleScannerLike` — this reads the same provider value `useBleManager()`
+ * does and widens it, rather than adding scan methods to `BleManagerLike`
+ * itself (which would break every existing narrow test double, per the
+ * comment on `BleScannerLike` above).
+ */
+export function useBleScanner(): BleScannerLike {
+  return useBleManager() as unknown as BleScannerLike;
+}

@@ -1,18 +1,22 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthClient } from '@/features/auth/AuthClientContext';
 import { useSessionStore } from '@/app/stores/useSessionStore';
+import type { RootStackParamList } from '@/app/navigation';
 
 /**
  * The landing screen once a user is signed in AND past the age gate.
  *
- * Deliberately minimal. Device pairing is P1-4.0 and the lock UI is P3-*, neither of which
- * exists yet, so this shows the account state and an honest empty state rather than
- * pretending at a device list. The one thing it must get right today is sign-out, because
- * that is the only way back out of the gated stack while testing.
+ * Deliberately minimal. The lock UI is P3-*, which doesn't exist yet, so this shows the
+ * account state and an honest empty state rather than pretending at a device list — pairing
+ * (P1-3.0) is now one tap away via `PairDeviceScreen`. Sign-out still has to work here too,
+ * because it is the only way back out of the gated stack while testing.
  */
 export function HomeScreen() {
   const authClient = useAuthClient();
   const email = useSessionStore((s) => s.user?.email ?? null);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <View style={styles.container}>
@@ -23,10 +27,16 @@ export function HomeScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>No devices paired</Text>
-        <Text style={styles.cardBody}>
-          Pairing arrives with the device connection work. Your account is verified and ready.
-        </Text>
+        <Text style={styles.cardBody}>Your account is verified and ready. Pair your device to get started.</Text>
       </View>
+
+      <Pressable
+        style={styles.primaryButton}
+        onPress={() => navigation.navigate('PairDevice')}
+        accessibilityRole="button"
+      >
+        <Text style={styles.primaryButtonText}>Pair device</Text>
+      </Pressable>
 
       <Pressable
         style={styles.secondaryButton}
@@ -69,6 +79,14 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#f4f4f5', borderRadius: 12, padding: 20, gap: 6 },
   cardTitle: { fontSize: 16, fontWeight: '600' },
   cardBody: { fontSize: 14, color: '#555', textAlign: 'center', lineHeight: 20 },
+  primaryButton: {
+    minHeight: 48,
+    borderRadius: 8,
+    backgroundColor: '#18181b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: { fontSize: 15, color: '#fff', fontWeight: '600' },
   secondaryButton: { paddingVertical: 12, alignItems: 'center' },
   secondaryButtonText: { fontSize: 15, color: '#1a1a1a', fontWeight: '600' },
 });

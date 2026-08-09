@@ -36,6 +36,8 @@
     // P1-3.0 — base64.test.ts cross-checks against Buffer.from(...).toString('base64')
     // directly (no bleAdapter import needed to hit the same wall). Type-checked under
     // tsconfig.test.json instead.
-    "src/features/ble/__tests__/base64.test.ts"
+    "src/features/ble/__tests__/base64.test.ts",
+    // P1-3.0 — PairDeviceScreen.test.tsx also imports createMockPeripheral, same wall.
+    "src/features/devices/__tests__/PairDeviceScreen.test.tsx"
   ]
 }

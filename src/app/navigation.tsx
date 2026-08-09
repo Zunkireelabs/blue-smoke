@@ -16,6 +16,7 @@ import {
   type VerificationState,
 } from '@/features/verification/useVerificationStatus';
 import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
+import { PairDeviceScreen } from '@/features/devices/PairDeviceScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 
 /**
@@ -36,6 +37,7 @@ export type RootStackParamList = {
   VerificationPending: undefined;
   // Authenticated and verified
   Home: undefined;
+  PairDevice: undefined;
 };
 
 /**
@@ -151,6 +153,11 @@ export function RootNavigator() {
       ) : stack === 'home' ? (
         <Stack.Navigator>
           <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'BlueSmoke' }} />
+          <Stack.Screen
+            name="PairDevice"
+            component={PairDeviceScreen}
+            options={{ title: 'Pair device' }}
+          />
         </Stack.Navigator>
       ) : stack === 'pending' ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
