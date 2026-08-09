@@ -30,11 +30,31 @@ characteristics. But we can't write the connection code until we know what the m
 
 **What we need, in priority order:**
 
-1. **The YC1012 module's AT-command / Bluetooth profile manual.** This is the blocker. It has the
-   service UUID and the read/write characteristics of the serial link. The chip datasheet you sent
-   is a silicon datasheet and doesn't contain them. Without the service UUID our app cannot filter
-   for the device during scanning, and a wrong guess fails silently — the app simply finds nothing,
-   with no error to diagnose.
+1. **The YC1012 module's AT-command / Bluetooth profile manual — this is the blocker.** The chip
+   datasheet you sent is a silicon datasheet and doesn't contain any of this. Rather than ask for
+   "the manual" in general, here's specifically what we need out of it, and what each answer
+   unblocks on our side:
+
+   a. **The advertised service UUID.** Unblocks device scanning — without it our app can't filter
+      for your device, and a wrong guess fails silently (the app simply finds nothing, with no error
+      to diagnose).
+   b. **The write and notify characteristic UUIDs for the data channel.** Unblocks actually opening a
+      connection and exchanging bytes once the device is found.
+   c. **Maximum message size the link supports.** Our handshake is two 20-byte frames written back to
+      back — we need to know if that fits in one write or has to be chunked further.
+   d. **Pairing behaviour, and specifically whether the 6-digit PIN can be disabled.** Our design
+      authenticates with a challenge–response over a per-device key and has no PIN step at all — a
+      device that also insists on its own PIN pairing gives us two competing authentication schemes
+      on one link, which is a real conflict to resolve, not a detail to note in passing.
+   e. **Whether the service UUID and device name are configurable.** If they are, you may already
+      have set your own values, or could set ours — either changes what we build against.
+   f. **The AT command list.** This tells us what your own PY32 firmware can change versus what's
+      fixed by the module vendor, which matters directly for item 6 below (lock/unlock) and for the
+      auto-lock question in item 7.
+   g. **How the module reports disconnects and reconnects, and the timing involved.** Our proximity
+      lock is a UX layer on top of a firmware dead-man timer — the device, not the app, is what makes
+      it safe if the phone walks away — so how promptly and reliably a drop is reported shapes that
+      design directly.
 
 2. **The `itronlib` library files.** The protocol document is a usage guide for this SDK, but the
    library itself wasn't in the archive.
