@@ -40,6 +40,20 @@ export function AuthMethodChoiceScreen() {
       >
         <Text style={styles.buttonText}>Continue with Phone</Text>
       </Pressable>
+
+      {/* Dev-only entry to the P1-7.0 BLE connection harness. Gated to match the route,
+          which is only registered under __DEV__ (navigation.tsx) — an ungated button here
+          would navigate nowhere in a production build. */}
+      {__DEV__ ? (
+        <Pressable
+          style={styles.devButton}
+          onPress={() => navigation.navigate('BleDemo')}
+          accessibilityRole="button"
+          accessibilityLabel="BLE connection demo, developer tool"
+        >
+          <Text style={styles.devButtonText}>BLE connection demo (dev)</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -66,6 +80,15 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  devButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  devButtonText: {
+    color: '#52525B',
+    fontSize: 14,
     fontWeight: '600',
   },
 });
