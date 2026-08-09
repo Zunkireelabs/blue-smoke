@@ -57,6 +57,19 @@ export function HomeScreen() {
           onPress={() => navigation.navigate('BluetoothPriming')}
         />
       </View>
+
+      {/* Dev-only entry to the P1-7.0 connection harness. The route itself is only registered
+          under __DEV__ (navigation.tsx), so this must be gated too — otherwise a production
+          build would render a button that navigates nowhere. */}
+      {__DEV__ ? (
+        <View style={styles.devAction}>
+          <Button
+            label="BLE connection demo (dev)"
+            variant="secondary"
+            onPress={() => navigation.navigate('BleDemo')}
+          />
+        </View>
+      ) : null}
     </GradientGround>
   );
 }
@@ -138,5 +151,8 @@ const styles = StyleSheet.create({
   },
   pairAction: {
     marginTop: tokens.spacing.lg,
+  },
+  devAction: {
+    marginTop: tokens.spacing.md,
   },
 });

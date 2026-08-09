@@ -29,6 +29,7 @@ import { PairingBoundaryScreen } from '@/features/devices/PairingBoundaryScreen'
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
+import { BleDemoScreen } from '@/features/ble/BleDemoScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { useOnboardingStore, type OnboardingStatus } from '@/app/stores/useOnboardingStore';
 import { Text, tokens } from '@/shared/ui';
@@ -65,6 +66,8 @@ export type RootStackParamList = {
   // Dev-only screen gallery (see src/features/devgallery). Registered only when __DEV__.
   ScreenGallery: undefined;
   ScreenPreview: { id: string };
+  /** Dev-only P1-7.0 harness — registered under `__DEV__` only, see the home stack below. */
+  BleDemo: undefined;
 };
 
 /**
@@ -289,6 +292,11 @@ export function RootNavigator() {
                 name="ScreenPreview"
                 component={ScreenPreviewScreen}
                 options={({ route }) => ({ title: route.params.id })}
+              />
+              <Stack.Screen
+                name="BleDemo"
+                component={BleDemoScreen}
+                options={{ title: 'BLE connection (dev)' }}
               />
             </Stack.Group>
           )}
