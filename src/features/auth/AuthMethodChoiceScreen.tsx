@@ -46,7 +46,12 @@ export function AuthMethodChoiceScreen() {
       {__DEV__ ? (
         <View style={styles.devActions}>
           <Button
-            label="BLE connection demo (dev)"
+            label="BLE discovery → connect (dev)"
+            variant="secondary"
+            onPress={() => navigation.navigate('BleDiscovery')}
+          />
+          <Button
+            label="BLE connection lifecycle (dev)"
             variant="secondary"
             onPress={() => navigation.navigate('BleDemo')}
           />
@@ -69,5 +74,6 @@ const styles = StyleSheet.create({
   },
   devActions: {
     marginTop: tokens.spacing.xxl,
+    gap: tokens.spacing.md,
   },
 });

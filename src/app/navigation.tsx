@@ -30,6 +30,7 @@ import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
 import { BleDemoScreen } from '@/features/ble/BleDemoScreen';
+import { BleDiscoveryScreen } from '@/features/ble/BleDiscoveryScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { useOnboardingStore, type OnboardingStatus } from '@/app/stores/useOnboardingStore';
 import { Text, tokens } from '@/shared/ui';
@@ -68,6 +69,8 @@ export type RootStackParamList = {
   ScreenPreview: { id: string };
   /** Dev-only P1-7.0 harness — registered under `__DEV__` only, see the home stack below. */
   BleDemo: undefined;
+  /** Dev-only §4.1 discovery → connection flow. Same `__DEV__` gating as BleDemo. */
+  BleDiscovery: undefined;
 };
 
 /**
@@ -247,11 +250,18 @@ export function RootNavigator() {
               UX, not security (the authority is `issue-device-session` server-side), and
               there is no `linking` config, so it stays undeep-linkable. */}
           {__DEV__ ? (
-            <Stack.Screen
-              name="BleDemo"
-              component={BleDemoScreen}
-              options={{ title: 'BLE connection (dev)' }}
-            />
+            <>
+              <Stack.Screen
+                name="BleDemo"
+                component={BleDemoScreen}
+                options={{ title: 'BLE connection (dev)' }}
+              />
+              <Stack.Screen
+                name="BleDiscovery"
+                component={BleDiscoveryScreen}
+                options={{ title: 'BLE discovery (dev)' }}
+              />
+            </>
           ) : null}
         </Stack.Navigator>
       ) : stack === 'home' ? (
@@ -310,6 +320,11 @@ export function RootNavigator() {
                 name="BleDemo"
                 component={BleDemoScreen}
                 options={{ title: 'BLE connection (dev)' }}
+              />
+              <Stack.Screen
+                name="BleDiscovery"
+                component={BleDiscoveryScreen}
+                options={{ title: 'BLE discovery (dev)' }}
               />
             </Stack.Group>
           )}
