@@ -39,7 +39,13 @@
       spec value; flagged in schemas.ts to confirm against the Supabase project's own Auth
       password policy once P0-3.0 exists)*
 - [x] Login screen with error handling that does not leak account existence
-- [x] Password reset request + email flow
+- [x] Password reset request + email flow *(**this box was ticked before any email had ever been
+      delivered** — the screen existed, the send did not. Now genuinely proven, 2026-08-09: custom
+      SMTP via Resend on dev, mail Delivered and opened, and the verify link preserved
+      `redirect_to=bluesmoke://reset-password`. The allow-list is proven **honoured**, not merely
+      configured, by a two-send control — the same request without `redirect_to` fell back to
+      `http://localhost:3000`. 🔴 **Still not proven: that the deep link opens the app** — that
+      needs a physical device, and the box below stays unticked for it. See `supabase/README.md`)*
 - [x] Deep-link handling for the reset link on both platforms *(config only — bluesmoke:// scheme
       registered in Info.plist/AndroidManifest.xml + RN linking config; unrunnable on this
       machine, brief §2 — unverified on a device, not untested-in-principle)*
