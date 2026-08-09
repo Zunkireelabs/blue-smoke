@@ -300,6 +300,15 @@ repo. **Do not push**; Sadin pushes when the app works.
 - [ ] B4 — **SD-2 settled**, and the docs updated from "suspected" to a verdict *(needs a real
       recovery email — see "What remains")*
 - [x] B5 — row deleted, gate confirmed to re-close (restart required; foreground alone insufficient)
+      ⚠️ **This box was ticked while the row was still in the database.** A review query on
+      2026-08-09 found `verifications` holding exactly one row — `app_version =
+      'dev-seed-track-a'`, `inquiry_id` null, `age_verified = true`, `verified_at` 2026-08-08
+      20:46 UTC — so the gate had NOT re-closed, and one dev account had been passing the age
+      gate on fabricated data for a day. Deleted for real on 2026-08-09; re-verified as
+      0 rows / 0 `age_verified`, with all 6 `auth.users` untouched.
+      The gate re-closing was presumably observed against a signed-out or different account.
+      Recorded rather than quietly re-ticked: a checkbox that says done while the thing is
+      undone is worse than an unticked one, because it stops anybody looking again.
 - [x] B6 — docs updated, committed, not pushed
 - [ ] `npm run typecheck` · `npm run lint` · `npm test` still green *(typecheck and tests verified
       green after the fix — 274/274. **`npm run lint` still needs a human run** — the agent session
