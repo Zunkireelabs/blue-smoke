@@ -228,15 +228,75 @@ Drafted as a message in [`client-questions-2026-08-09.md`](client-questions-2026
 
 ---
 
-## 8. Why `P1-3.0` and `P1-7.0` have not started
+## 8. What is actually blocked in `P1-3.0`/`P1-7.0` — and what is not
 
-`P1-3.0` (Device Scan & Discovery) filters advertisements on the service UUID; §4.1 makes that
-filter mandatory. We do not have the real service UUID, and the one in `protocol.ts` describes a
-GATT layout this hardware probably does not present.
+**Revised 2026-08-09 (Day 10, later the same day).** The earlier version of this section said these
+two tasks "have not started" and left it there. That overstated the block and, left unclarified,
+stalled a subsequent execution attempt that read it and stopped without writing any code. Corrected
+here — this revision is authoritative over the paragraphs it replaces.
 
-**Inventing a UUID fails silently.** The scanner finds nothing, and "no devices found" is
-indistinguishable from "device is off", "out of range", or "not advertising". There is no error to
-debug. That is the same failure mode as OQ-12's guessed salt, and it is why the answer is to ask,
-not to guess.
+**What is blocked:** exactly one constant and the transport half of the connection handshake.
 
-`P1-7.0` (Connection Lifecycle) sits on top of `P1-3.0` and inherits the block.
+- `BLE_SERVICE_UUID` in `protocol.ts` (OQ-13) — invented at spec-writing time (commit `0bb8e80`,
+  2026-08-05), unconfirmed against this hardware, and per §2 above probably describes a GATT layout
+  the YC1012 module doesn't present at all. **Inventing a replacement value fails silently**: the
+  scanner finds nothing, and "no devices found" is indistinguishable from "device is off", "out of
+  range", or "not advertising" — the same failure mode as OQ-12's guessed salt, and the same reason
+  the answer is to ask the client (§7), not to guess.
+- The **wire-level half** of §4.5's auth handshake — actually writing/reading characteristics C1–C6
+  against real hardware — inherits the same block, since it depends on the same UUID and on a GATT
+  profile this document's §6.2 middle path says may not exist in that shape at all.
+
+**What is not blocked**, and was built against `tools/mock-peripheral` in this pass, because none of
+it depends on the value of that one constant or on which transport eventually carries §4.5's bytes:
+
+- `P1-3.0` — permission handling (`permissions.ts`), the device list and its `ScanState`/
+  `ScanBlockedReason` handling (`scanner.ts`, `PairDeviceScreen.tsx`), dedupe, discovery ordering,
+  scan timeout, staleness, and adapter-state (Bluetooth off/unauthorized/unsupported/resetting)
+  handling. The scan filters *on* `BLE_SERVICE_UUID` — that one line is the block — but every other
+  behaviour here is orthogonal to what that UUID turns out to be.
+- `P1-7.0` — `connection.ts`'s reconnect-with-backoff, the re-handshake-on-every-reconnect rule, and
+  clean-vs-abrupt disconnect handling. This layer calls `createAuthHandshake()` as a typed function;
+  it does not care whether that function's bytes eventually travel over GATT characteristics or over
+  HQD's serial pipe (§6.2) — that decision is still open, tracked separately, and does not gate
+  anything built this pass.
+
+So: the constant and the wire-transport work stay blocked on the client's answer to §7 question 1.
+Everything else in `P1-3.0`/`P1-7.0` does not, and is why this document no longer says "not started."
+
+---
+
+## 9. The PW200 `.pkg` finding — recorded here so it isn't re-investigated
+
+**Added 2026-08-09.** This is a firmware artefact, not documentation, but it lives here rather than
+nowhere: without a record, whoever next opens the client archive re-derives all of this from
+scratch, including the risk in §9.2.
+
+**What it is.** `Instructions for using the PW200 update program.pptx` (9 slides) in the client
+archive walks through flashing the device's firmware with the **PW200** programmer: open
+**PowerWriter**, unlock it with password `88888888`, load the `.pkg` file, connect the vape over
+USB-C, and press the device's button to start the flash.
+
+**The `.pkg` file itself:** 20,399 bytes. Entropy 7.906 bits/byte — effectively indistinguishable
+from random, i.e. encrypted or compressed, not a plain firmware image. All 256 byte values appear at
+least once. The longest run of anything resembling readable text is 13 characters. A `.rar` archive
+sitting alongside it contains only that same `.pkg` — no accompanying manifest, key, or metadata.
+None of this is a criticism of the client; it is simply what "opaque vendor-signed firmware blob"
+looks like on inspection, and it means nobody on this project can read or modify what is inside it.
+
+### 9.1 What this does and does not affect
+
+This project does not touch firmware — CLAUDE.md already lists "no us writing firmware" among the
+rejected/out-of-scope decisions, and nothing here changes that. The `.pkg` is relevant only as
+context for OQ-4 (who burns the device root key into OTP at manufacture) and OQ-6 (the firmware team
+has still never been contacted) — it confirms firmware updates are a real, external, vendor-mediated
+process, not something this team can inspect or simulate.
+
+### 9.2 🔴 The burn-button warning
+
+Slide 9 of the deck describes pressing a button on the PW200 as part of the flashing sequence, and
+notes — in the vendor's own language — that doing so **may consume a licence credit** on the
+programmer. That is two clicks away from "let's just plug it in and see what the tool does," which
+is exactly the instinct to head off: **do not connect the PW200 to a device or press that button out
+of curiosity.** If firmware flashing is ever actually needed for this project, treat it as a
+deliberate, client-coordinated action, not an exploratory one.
