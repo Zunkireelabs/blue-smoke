@@ -1,8 +1,8 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.10
+**Version:** 1.11
 **Status:** Authoritative build contract
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
 
 > This document is the **single source of technical truth** for Blue Smoke. If this document
@@ -988,6 +988,62 @@ operational policy behind it — **OQ-2**, unaffected by the vendor change.
 Failure messaging stays coaching, never diagnostic. Persona's own decline reasons must not be
 surfaced verbatim if they reveal matching internals.
 
+**Retry and escalation are offered together, not in sequence** *(decided v1.11)*. After the 30-minute
+lock the user sees **both** "try again with a different document" **and** the manual-fallback route on
+the same screen. Retrying is genuinely the cheaper fix — many wrongly-rejected people succeed with a
+second form of ID — but it is not a fix for the case the fallback exists to serve. Someone who has
+failed six times is precisely the person for whom another attempt will not work, so a mandatory
+waiting period before they may reach a human just adds days to a lockout they did not earn. Offer
+both; let the user choose.
+
+**A wrongly-rejected account is never deleted, automatically or on a timer** *(decided v1.11)*. An
+unverified row is inert — `age_verified` is false and every RLS policy behind it holds — so there is
+no benefit to reaping it, and four costs: it makes the false-reject harm permanent, it destroys the
+case the reviewer needs to look at, it is not a lockout (auth is phone OTP, so the same number simply
+signs up again for a fresh `user_id` and a fresh attempt counter), and it cannot be done honestly
+while **OQ-11(d)** is open, because our rows would go and the vendor's inquiry would remain.
+
+### 6.4.1 How a manual override reaches `age_verified` — proposed, pending OQ-2
+
+> ⚠️ **Proposed, not agreed.** The mechanism below is settled on our side; the operational half —
+> the named reviewer, the support address, the SLA number — is still **OQ-2** and still unanswered.
+> Nothing here is a licence to tick the OQ-2 box.
+
+A human decision must reach `age_verified` without any path that inviolable rule 3 forbids. Persona's
+own console supports this directly: per its API reference for `POST /inquiries/:inquiry-id/approve`,
+*"this action will trigger any associated workflows and webhooks."* A reviewer approving in the
+dashboard therefore arrives at `persona-webhook` as an ordinary signed event with status `approved`,
+which is already in `PASSING_STATUSES` and is still subject to the §6.6 item 3 template check. **No
+new writer, no admin endpoint, no client boolean** — the webhook remains the only thing that writes
+`provider_status`, and the reviewer's identity is recorded on Persona's side.
+
+Two ways to use that, and they are not equivalent:
+
+| | Mechanism | Cost |
+|---|---|---|
+| **(a2) — recommended** | The user starts a **fresh** inquiry; `create-inquiry` writes a new `pending` row; the reviewer approves it in the console; the row transitions `pending → approved` down the existing path. | No code change and **no security control relaxed**. Depends on `create-inquiry` (`P2-8.0`), which returns 501 today — so **P2-8.0 is load-bearing for OQ-2**, not only for the happy path. |
+| **(a1) — rejected for now** | The reviewer approves the **existing declined** inquiry. | Requires `persona-webhook` to permit a `declined → approved` transition, which is a deliberate loosening of a replay defence. Needs its own task, argument and tests — not a quiet edit. |
+
+🔴 **Why (a1) is not simply the easier option.** As implemented, it would fail *silently*.
+`persona-webhook/index.ts:199` returns `already_decided` for any row whose `provider_status` is not
+`pending`, and the write at `:214` is a compare-and-set on the same condition. A false-rejected row is
+already `declined`, so the approval would be acknowledged with `200`, the reviewer would see success
+in Persona, the user would stay locked out, and **nothing would log an error**. That code is not
+wrong — it is correct replay protection that never contemplated a *legitimate* second decision. It is
+recorded here so the next person does not discover it by shipping it.
+
+**Vendor outage is explicitly not covered by this route.** §8.3 degrades an outage to this fallback,
+but during an outage the console and the API are the thing that is down, so neither (a2) nor (a1)
+functions. The accepted answer is that verification pauses and affected users are told so — **not** a
+break-glass admin override, which would mean building a tool whose only purpose is bypassing the age
+check in order to work around a few hours of vendor downtime.
+
+⚠️ **The audit trail is currently too thin to audit an override.** `persona-webhook` writes
+`audit_log` with `{ source, passed }` and deliberately no `user_id` and no `inquiry_id` (§5.2.8,
+rule 1). That is right for an automated decision and insufficient for a human one: it cannot say
+*which* verification a reviewer overrode. Carrying `verifications.id` — our own row id, not the
+`inquiry_id` — would close this without breaching rule 1. Not yet implemented.
+
 ### 6.5 What the vendor switch deleted from our scope
 
 Recorded so the effort is not silently re-absorbed, and so nobody rebuilds it:
@@ -1477,7 +1533,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | ID | Question | Blocks | Owner | Severity |
 |---|---|---|---|---|
 | **OQ-1** | When are **physical sample IDs** and a **physical device** available? The PRD assumes ~week 6 of 8 — under a 30-day plan that is after delivery. **Reduced in scope by v1.5:** sample IDs were needed for *our* OCR/face-match tuning, which no longer exists (§6.5). Some sandbox test documents are still required. **The physical device half is untouched and still critical.** | All §4.10 firmware acceptance tests | Client | 🔴 **Critical** |
-| **OQ-2** | What is the **manual-review fallback policy** for legitimate false rejects? Who handles it, through what channel, with what SLA? | §6.4 | Client | 🔴 Critical |
+| **OQ-2** | What is the **manual-review fallback policy** for legitimate false rejects? Who handles it, through what channel, with what SLA? **Still open — but no longer an open-ended question (v1.11).** The engineering half is settled and written up in **§6.4.1**: a reviewer approves in Persona's console, which fires our webhook, so a human decision reaches `age_verified` with no new writer and no client boolean. What remains is purely operational, and is **three strings the client has to supply**: **(a)** a **named person and a named backup** — this cannot sit with us, because approving someone past an age gate is a decision about who the client is willing to admit to their product; **(b)** the **support email address** (email, not an in-app form — a form needs a ticket store and retention policy that no PRD line funds); **(c)** the **SLA**, proposed as *target 1 business day, tell the user 2*, plus the timezone whose business days count. Two riders: **P2-8.0 is now load-bearing for OQ-2**, since the recommended mechanism runs through `create-inquiry`; and a **vendor outage is deliberately not covered** by this route, because the console is down precisely when it would be needed. | §6.4; §6.4.1; §8.3 | Client | 🔴 Critical |
 | **OQ-3** | **Target markets / countries** at launch? Determines accepted ID types, Persona template coverage, whether the vendor is licensed to operate there, and the privacy regime. | §6.6 template config; §8.6 | Client | 🟠 High |
 | **OQ-4** | Who **provisions `K_dev` into OTP** at manufacture, and how is the key manifest securely delivered to us for `device_keys`? | §5.2.5; the whole §4.5 trust chain | Client + factory | 🔴 **Critical** |
 | **OQ-5** | Is there a **re-verification cadence**, or is `age_verified` permanent once set? (Currently out of scope.) | §5.2.2 | Client | 🟠 High |
@@ -1528,6 +1584,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.11 | 2026-08-09 | **§6.4 extended and §6.4.1 added — the OQ-2 mechanism, decided; the OQ-2 policy, still open.** `protocolVersion` unchanged at `0x01`, §4 untouched, no endpoint behaviour changed. **OQ-2 stays 🔴 open** — this records how a human decision will reach `age_verified`, not who makes it. **The mechanism, verified rather than assumed:** Persona's API reference for `POST /inquiries/:inquiry-id/approve` states that approving *"will trigger any associated workflows and webhooks"*, and `persona-webhook` is status-driven (`PASSING_STATUSES` already contains `approved`, `index.ts:44`), so a console approval reaches us as an ordinary signed event still subject to the §6.6 item 3 template check — **no admin endpoint, no second writer, rule 3 intact by construction**. **Recommended (a2):** approve a *fresh* inquiry, so the row transitions `pending → approved` down the existing path with **no security control relaxed**; this makes **`P2-8.0` load-bearing for OQ-2**, since `create-inquiry` returns 501 today. **(a1) — approving the existing declined inquiry — is recorded as rejected for now and, more importantly, as a silent failure if attempted unchanged:** `index.ts:199` returns `already_decided` for any non-`pending` row and `:214` is a compare-and-set on the same condition, so the reviewer would see success in Persona while the user stayed locked out and nothing logged an error. Correct replay protection that never contemplated a legitimate second decision; needs its own task, not a quiet edit. **Two product decisions taken with it:** retry and escalation are offered **together** after the 30-minute lock rather than in sequence, because the person who has failed six times is exactly the person another attempt will not help; and a wrongly-rejected account is **never auto-deleted**, since the row is inert, deletion destroys the reviewer's case, it is not a lockout (phone OTP — the same number re-registers), and it cannot be done honestly while OQ-11(d) is open. Also records that **§8.3's outage degradation is not actually covered** by this route (the console is down when it is needed) and that the `audit_log` metadata is too thin to audit a human override — carrying `verifications.id` rather than the `inquiry_id` would close that without breaching rule 1. |
 | 1.10 | 2026-08-08 | **Register-only change — no normative content altered, `protocolVersion` unchanged at `0x01`, §4 untouched.** Widens **OQ-6** from "is the firmware team available?" to the agenda that conversation now has to carry, for the same reason 1.9 added OQ-12: both items had been flagged only in execution briefs and `TODO-phase-1.md`, and a blocker that lives only in a brief is a blocker nobody chases. The two items are **(a)** the §4.5 **proof-byte order**, which `auth.ts` and the mock implement identically and which is therefore unfalsifiable in this repo — it can only fail against real firmware; and **(b)** §4.3's missing **client behaviour on a `protocolVersion` mismatch**, found while reviewing `P1-4.0` Part 2a (`a328da6`), where `readDeviceInfo()` deliberately reports `compatible: false` as a fact and invents no policy. **(b) is explicitly recorded as not blocking:** the app-side default is fail closed, so the answer shapes the user-facing message rather than gating the build — a correction to an earlier internal note that had OQ-6 blocking the pairing screen. The binding constraint on the rest of `P1-4.0` is OQ-12, and separately hardware (OQ-1). Also restates that Days 3–5 passed unused and the firmware team has still never been contacted as of Day 9. |
 | 1.9 | 2026-08-08 | **Register-only change — no normative content altered, `protocolVersion` unchanged at `0x01`, §4 untouched.** Adds **OQ-12**, the `serial_hash` salt. The gap itself is not new: §5.2.3 and `core_schema.sql` have always defined `serial_hash = SHA-256(deviceUid ‖ server_salt)` without ever giving the salt a value, and §2.3 Flow B has always had the *app* compute it while the column comment calls the salt server-side. What was new on Day 9 is the realisation that this had been flagged **only inside an execution brief** (`P1-4.0-bonding-seam-and-handshake.md` §7) and never entered here — so it blocked four `P1-4.0` checkboxes plus `P1-6.0` for nine days while appearing on no list anybody chases. Recorded with a note above the table making the general rule explicit: a blocker that lives only in a brief is a blocker with no owner. The same audit found **OQ-10 referenced in the session log but missing from the register entirely**; flagged, not invented. |
 | 1.8 | 2026-08-08 | **§4.5 (v1.4) implemented, and F12's two halves separated — a repeated frame 1 now REPLACES, it does not reset.** `protocolVersion` **unchanged at `0x01`**: §4 still has not been handed to the firmware team (OQ-6), so nothing implements `0x01` yet. **Why this was needed:** v1.4 contradicted itself. The F12 row said any unexpected `frameIndex` — *explicitly including a repeated frame 1* — discards pending state and awaits a fresh frame 1, while the FW-19(b) acceptance line said a duplicate frame 1 "discards the first and leaves the device awaiting frame 2". Two different device states for one scenario, both normative. Surfaced by the `P0-2.5` executor, which implemented the F12 reading and flagged the conflict rather than resolving it silently. **Resolved in favour of FW-19(b), and F12 rewritten to match:** a duplicated GATT write is the ordinary BLE retransmit case, and it was verified against the mock that the reset reading dead-ends it — `frame 1 → frame 1 → frame 2` writes no `commandResult` at all and strands the app until `N` expires. Replacing costs nothing in security terms, since `frameIndex` is outside the proof CMAC and the proof still binds `N` and `session_id`. F12 now states (a) repeated frame 1 replaces, (b) every other unexpected index resets; neither touches the F6 counter or invalidates `N`. **FW-19 gains a fourth case (d)** and an explicit warning that a `shortThresholdFailures - 1` loop bound makes the F6 assertion vacuous — the first implementation shipped exactly that bound, and it survived a mutation that made a framing reset burn an F6 attempt. `protocol.ts` and the mock now speak v1.4 on the wire (`frameIndex`, uint24 LE `expiresAtDelta`); before this they were both still pre-v1.4 while the spec had moved. |

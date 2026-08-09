@@ -4,6 +4,61 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-09 — OQ-2 mechanism decided; a silent-failure path found in `persona-webhook`
+
+**Branch:** `feature/P1-3.0-device-scan-and-results`, **not pushed**.
+**Landed on `stage`:** nothing. Docs only — spec → v1.11, `USER_FLOWS.md` F6.F.
+
+OQ-2 was a discussion, not a build. It is **still open**, deliberately: the client has named nobody,
+given no address and agreed no SLA, so the `TODO-phase-2.md` box stays unticked. What changed is that
+it is no longer an open-ended question — the engineering half is settled (spec §6.4.1) and the client
+is now being asked to confirm three strings rather than design a policy. Concrete recommendations get
+answered faster than open questions, and every OQ on this project has proved that.
+
+**The thing worth stealing from this session.** I nearly recommended "a reviewer approves in Persona's
+dashboard, the webhook fires, done" on the strength of the vendor documentation alone — which does say
+exactly that, verbatim: `POST /inquiries/:inquiry-id/approve` *"will trigger any associated workflows
+and webhooks."* Reading our own handler afterwards is what caught it. `persona-webhook/index.ts:199`
+returns `already_decided` for any row whose `provider_status` is not `pending`, and the write at `:214`
+is a compare-and-set on the same condition. A false-rejected row is already `declined`. So the
+reviewer approves, Persona fires, we answer `200`, **the user stays locked out, and nothing logs an
+error** — the reviewer's own console shows success. Same silent-failure signature as the OQ-12 salt,
+and the same lesson as `min_age`: the vendor's documentation was accurate and still not the answer,
+because the answer depended on our side of the join. **Read both ends before recommending a mechanism
+that crosses a boundary.**
+
+That code is not a bug. It is correct replay protection that never contemplated a *legitimate* second
+decision, which is exactly what a manual review is. Hence the recommendation went to **(a2)** — approve
+a *fresh* inquiry so the row moves `pending → approved` down the path that already works, relaxing
+nothing. Cost: **`P2-8.0` is now load-bearing for OQ-2**, because `create-inquiry` returns 501 today.
+
+**Sadin's calls, recorded because both were product decisions rather than technical ones:** retry and
+escalation are offered **together** after the 30-minute lock rather than in sequence — the person who
+has failed six times is exactly the person another attempt will not help, so making them wait before
+they may reach a human adds days to a lockout they did not earn. And a wrongly-rejected account is
+**never auto-deleted**: an unverified row is inert, deletion destroys the case the reviewer needs, it
+is not a lockout (phone OTP — the same number re-registers for a fresh `user_id` and a fresh counter),
+and it cannot be done honestly while OQ-11(d) leaves the vendor-side erasure path unowned.
+
+**Parked, each needs its own task — do not fold these into anything:**
+
+- 🔴 **`already_decided` blocks a legitimate re-decision** (`persona-webhook/index.ts:199`, `:214`).
+  Does not block (a2). Live silent-failure path; if anyone ever tries (a1) without touching this, it
+  fails invisibly. Any fix is a deliberate loosening of a replay defence and needs its own argument
+  and tests — never a quiet edit to make something pass.
+- **`audit_log` cannot audit a human override.** The webhook writes `{ source, passed }` and no
+  identifiers (§5.2.8, rule 1). Right for an automated decision, insufficient for a reviewer's one —
+  it cannot say *which* verification was overridden. Carrying `verifications.id` (our row id, **not**
+  the `inquiry_id`) would close it without breaching rule 1.
+- **§8.3's outage degradation does not actually work.** It degrades an outage to the §6.4 fallback,
+  but the console is down precisely when that route is needed. Recorded as accepted-and-uncovered
+  rather than quietly implied to be handled. The alternative is an admin bypass tool, which is not
+  worth building to cover a few hours of vendor downtime.
+- **VF-11 must not hang off F6.D3 alone.** That entry point needs the server-side attempt counter
+  VF-8/9/10 do not have, so the screen would ship unreachable. Noted in `USER_FLOWS.md` F6.F.
+
+---
+
 ## 2026-08-09 (late night) — sign-in blocker solved; the app walks end to end for the first time
 
 **Branch:** `chore/integrate-auth-db-persona`, **not pushed**.
