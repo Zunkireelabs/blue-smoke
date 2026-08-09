@@ -13,6 +13,7 @@ import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
 import { PasswordResetRequestScreen } from '@/features/auth/PasswordResetRequestScreen';
 import { ResetPasswordConfirmScreen } from '@/features/auth/ResetPasswordConfirmScreen';
 import { RESET_PASSWORD_URL_HOST, RESET_PASSWORD_URL_SCHEME } from '@/features/auth/deepLink';
+import { OnboardingCarouselScreen } from '@/features/onboarding/OnboardingCarouselScreen';
 import { VerifyIntroScreen } from '@/features/verification/VerifyIntroScreen';
 import { CameraPrimingScreen } from '@/features/verification/CameraPrimingScreen';
 import { PersonaVerificationScreen } from '@/features/verification/PersonaVerificationScreen';
@@ -26,6 +27,7 @@ import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
+import { useOnboardingStore, type OnboardingStatus } from '@/app/stores/useOnboardingStore';
 import { Text, tokens } from '@/shared/ui';
 
 /**
@@ -33,6 +35,8 @@ import { Text, tokens } from '@/shared/ui';
  * feature adds its own route here. Add your route and screen, touch nothing else.
  */
 export type RootStackParamList = {
+  // Pre-auth, first launch only (P1-2.0)
+  Onboarding: undefined;
   // Unauthenticated
   AuthChoice: undefined;
   Signup: undefined;
@@ -76,33 +80,51 @@ const linking: LinkingOptions<RootStackParamList> = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 /** Which of the mutually exclusive stacks should be mounted. */
-export type GatedStack = 'boot' | 'auth' | 'pending' | 'transportError' | 'verify' | 'home';
+export type GatedStack =
+  | 'boot'
+  | 'onboarding'
+  | 'auth'
+  | 'pending'
+  | 'transportError'
+  | 'verify'
+  | 'home';
 
 /**
  * The gate itself, extracted from the component so it can be tested as what it is: a pure
- * decision over two inputs. Rendering assertions were the wrong tool — React Navigation
+ * decision over three inputs. Rendering assertions were the wrong tool — React Navigation
  * mounts only the focused screen, so "is Home reachable" is not observable from the tree,
  * and a test that appears to check it can quietly assert nothing.
  *
  * The ordering is deliberate and load-bearing:
- *   1. hydrating wins over everything — we do not yet know if anyone is signed in
+ *   1. hydrating wins over everything — this now means EITHER "we don't yet know if anyone is
+ *      signed in" OR "we haven't read the onboarding flag from AsyncStorage yet" (P1-2.0).
+ *      Both are "we don't know", and showing anything else first risks a flash: the auth stack
+ *      flashing at an already-signed-in user, or the carousel flashing at a returning one.
  *   2. signed out wins over verification — verification state is meaningless without a user
- *   3. ONLY an explicit 'verified' reaches home; every other value, including 'loading',
+ *   3. onboarding wins over auth for a signed-out user who hasn't seen it — F1: the carousel
+ *      runs BEFORE signup/login on a genuine first launch. Once `onboardingSeen === 'seen'`,
+ *      this branch never fires again for that install (P1-2.0's AsyncStorage flag, chosen over
+ *      Keychain specifically so a reinstall sees onboarding again rather than never).
+ *   4. ONLY an explicit 'verified' reaches home; every other value, including 'loading',
  *      does not. Unknown is never treated as verified.
- *   4. 'error' (F6.X / VF-7) is checked ahead of 'verify' so a transport failure never renders
+ *   5. 'error' (F6.X / VF-7) is checked ahead of 'verify' so a transport failure never renders
  *      as a decline — though `useVerificationStatus` only ever reports 'error' when there is no
  *      cached data at all, so in practice it can never preempt an already-known verified,
  *      pending, or declined state; this ordering is for clarity, not correctness.
+ *
+ * Onboarding only ever gates the pre-auth path — it cannot create a route into any gated stack,
+ * so this still upholds CLAUDE.md rule 3's "no dev bypass, no skip-verification flag."
  */
 export function selectStack(
   sessionStatus: 'hydrating' | 'signedOut' | 'signedIn',
   verification: VerificationState,
+  onboardingStatus: OnboardingStatus,
 ): GatedStack {
-  if (sessionStatus === 'hydrating') {
+  if (sessionStatus === 'hydrating' || onboardingStatus === 'hydrating') {
     return 'boot';
   }
   if (sessionStatus !== 'signedIn') {
-    return 'auth';
+    return onboardingStatus === 'seen' ? 'auth' : 'onboarding';
   }
   if (verification === 'verified') {
     return 'home';
@@ -185,8 +207,9 @@ function HomeHeaderRight() {
  */
 export function RootNavigator() {
   const sessionStatus = useSessionStore((s) => s.status);
+  const onboardingStatus = useOnboardingStore((s) => s.status);
   const { state: verification, refetch } = useVerificationStatus();
-  const stack = selectStack(sessionStatus, verification);
+  const stack = selectStack(sessionStatus, verification, onboardingStatus);
 
   return (
     <NavigationContainer linking={linking}>
@@ -195,6 +218,14 @@ export function RootNavigator() {
         // stack here would flash a login screen at an already-signed-in user on every launch.
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="VerificationPending" component={BootSplash} />
+        </Stack.Navigator>
+      ) : stack === 'onboarding' ? (
+        // F1 — first launch, no session yet, onboarding flag unset. Its own single-screen
+        // stack, exactly like 'pending'/'transportError' above: an unregistered route cannot
+        // be reached by a stale navigate() call, and onboarding has no gated content behind it
+        // for that property to protect, but the pattern stays consistent regardless.
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Onboarding" component={OnboardingCarouselScreen} />
         </Stack.Navigator>
       ) : stack === 'auth' ? (
         <Stack.Navigator initialRouteName="AuthChoice">

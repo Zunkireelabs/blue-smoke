@@ -18,6 +18,7 @@ import ReactTestRenderer from 'react-test-renderer';
 
 import { selectStack, RootNavigator, type GatedStack } from '../navigation';
 import { useSessionStore } from '../stores/useSessionStore';
+import { useOnboardingStore } from '../stores/useOnboardingStore';
 import type { VerificationState } from '@/features/verification/useVerificationStatus';
 
 jest.mock('@/features/verification/useVerificationStatus');
@@ -32,29 +33,57 @@ const ALL_VERIFICATION_STATES: VerificationState[] = [
   'error',
 ];
 
+// Most cases below don't care about onboarding at all — 'seen' is the state that lets every
+// pre-existing assertion (written before P1-2.0) keep meaning exactly what it said.
+const SEEN = 'seen';
+
 describe('selectStack — session gating', () => {
   it.each(ALL_VERIFICATION_STATES)(
     'shows the boot splash while hydrating, whatever the verification state (%s)',
     (verification) => {
       // Hydrating outranks everything: we do not yet know whether anyone is signed in, and
       // showing the auth stack would flash a login screen at a signed-in user every launch.
-      expect(selectStack('hydrating', verification)).toBe<GatedStack>('boot');
+      expect(selectStack('hydrating', verification, SEEN)).toBe<GatedStack>('boot');
     },
   );
 
   it.each(ALL_VERIFICATION_STATES)(
-    'sends a signed-out user to auth, whatever the verification state (%s)',
+    'sends a signed-out user who has already seen onboarding to auth (%s)',
     (verification) => {
       // Verification state is meaningless without a user — a stale 'verified' left in the
       // query cache after sign-out must not leak the signed-out user into the app.
-      expect(selectStack('signedOut', verification)).toBe<GatedStack>('auth');
+      expect(selectStack('signedOut', verification, SEEN)).toBe<GatedStack>('auth');
     },
   );
 });
 
+describe('selectStack — onboarding gating (P1-2.0)', () => {
+  it('shows the boot splash while the onboarding flag is still hydrating, even for an otherwise-resolved signed-in session', () => {
+    expect(selectStack('signedIn', 'verified', 'hydrating')).toBe<GatedStack>('boot');
+    expect(selectStack('signedOut', 'none', 'hydrating')).toBe<GatedStack>('boot');
+  });
+
+  it('sends a signed-out, first-launch user to onboarding before auth', () => {
+    expect(selectStack('signedOut', 'none', 'unseen')).toBe<GatedStack>('onboarding');
+  });
+
+  it('never sends a signed-out user to onboarding twice — seen wins once written', () => {
+    expect(selectStack('signedOut', 'none', 'seen')).toBe<GatedStack>('auth');
+  });
+
+  it('a signed-IN user is never routed to onboarding, even if the flag reads unseen', () => {
+    // Onboarding only ever gates the PRE-auth path (CLAUDE.md rule 3: no path into a gated
+    // stack). A signed-in user with a stale/missing local flag — e.g. a second device — must
+    // still reach their normal gate, not get routed backwards into the carousel.
+    for (const verification of ALL_VERIFICATION_STATES) {
+      expect(selectStack('signedIn', verification, 'unseen')).not.toBe<GatedStack>('onboarding');
+    }
+  });
+});
+
 describe('selectStack — the age gate', () => {
   it('reaches home only on an explicit verified', () => {
-    expect(selectStack('signedIn', 'verified')).toBe<GatedStack>('home');
+    expect(selectStack('signedIn', 'verified', SEEN)).toBe<GatedStack>('home');
   });
 
   it('NEVER reaches home for any non-verified state', () => {
@@ -62,16 +91,16 @@ describe('selectStack — the age gate', () => {
     // newly added VerificationState is covered the moment it is added to the union.
     const nonVerified = ALL_VERIFICATION_STATES.filter((s) => s !== 'verified');
     for (const state of nonVerified) {
-      expect(selectStack('signedIn', state)).not.toBe<GatedStack>('home');
+      expect(selectStack('signedIn', state, SEEN)).not.toBe<GatedStack>('home');
     }
   });
 
   it('treats an unresolved query as pending, not as verified', () => {
-    expect(selectStack('signedIn', 'loading')).toBe<GatedStack>('pending');
+    expect(selectStack('signedIn', 'loading', SEEN)).toBe<GatedStack>('pending');
   });
 
   it('waits while the vendor decision is outstanding', () => {
-    expect(selectStack('signedIn', 'pending')).toBe<GatedStack>('pending');
+    expect(selectStack('signedIn', 'pending', SEEN)).toBe<GatedStack>('pending');
   });
 
   it.each<VerificationState>(['none', 'declined'])(
@@ -79,14 +108,14 @@ describe('selectStack — the age gate', () => {
     (state) => {
       // Both share a branch on purpose: a declined user may retry, and splitting them in the
       // UI would mean telling someone why they failed.
-      expect(selectStack('signedIn', state)).toBe<GatedStack>('verify');
+      expect(selectStack('signedIn', state, SEEN)).toBe<GatedStack>('verify');
     },
   );
 
   it('sends a transport-read failure to its own stack, never the Persona flow', () => {
     // F6.X / VF-7 — must never land on 'verify', which would render VF-2's ID-scan UI over an
     // outcome that isn't a decline at all, just an unanswered question.
-    expect(selectStack('signedIn', 'error')).toBe<GatedStack>('transportError');
+    expect(selectStack('signedIn', 'error', SEEN)).toBe<GatedStack>('transportError');
   });
 });
 
@@ -105,6 +134,10 @@ describe('RootNavigator', () => {
         session: null,
         user: { id: 'user-1', email: 'a@b.test' } as never,
       });
+      // Every case above is signed-in, so onboarding is irrelevant to which stack mounts
+      // (selectStack never routes a signed-in user to 'onboarding') — 'seen' just keeps this
+      // loop from accidentally depending on the store's untouched initial 'hydrating' value.
+      useOnboardingStore.setState({ status: 'seen' });
 
       let renderer!: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(() => {
@@ -113,5 +146,17 @@ describe('RootNavigator', () => {
       expect(renderer.toJSON()).toBeTruthy();
       await ReactTestRenderer.act(() => renderer.unmount());
     }
+  });
+
+  it('renders the onboarding carousel without crashing for a signed-out, first-launch user', async () => {
+    useSessionStore.setState({ status: 'signedOut', session: null, user: null });
+    useOnboardingStore.setState({ status: 'unseen' });
+
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<RootNavigator />);
+    });
+    expect(renderer.toJSON()).toBeTruthy();
+    await ReactTestRenderer.act(() => renderer.unmount());
   });
 });

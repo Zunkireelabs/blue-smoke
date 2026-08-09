@@ -78,61 +78,43 @@ export const SCREEN_SPECS: ReadonlyArray<ScreenSpec> = [
   },
 
   // ── ON ────────────────────────────────────────────────────────────────────────────
+  // ON-1..3 are BUILT (P1-2.0, `OnboardingCarouselScreen`) and walkable via the real
+  // pre-auth flow (first launch / after `simctl uninstall` clears the AsyncStorage flag) —
+  // placeholder entries removed, matching how VF-1/ON-5/etc's were removed in Phase B.
+  //
+  // ON-4/6/7/8/9 are also BUILT, real components — but Phase D (device pairing) hasn't landed
+  // yet to give them a real trigger, so their entries stay here and `ScreenPreviewScreen`
+  // renders the actual shipped component for each (`realPreviews.tsx`), not this placeholder
+  // data. Delete an entry once Phase D reaches it through a genuine flow.
   {
-    id: 'ON-1', name: 'Welcome', section: 'ON', status: 'absent', node: 'F1.1', layout: 'carousel',
-    title: 'Welcome to BlueSmoke',
-    body: 'Your device, locked unless you are nearby.',
-    ctas: [{ label: 'Continue', kind: 'primary' }],
-    note: 'Card 1 of 3.',
-  },
-  {
-    id: 'ON-2', name: 'How it keeps you safe', section: 'ON', status: 'absent', node: 'F1.2', layout: 'carousel',
-    title: 'It locks itself',
-    body: 'When your phone moves out of range, the device locks on its own — even if the app is closed.',
-    ctas: [{ label: 'Continue', kind: 'primary' }, { label: 'Skip', kind: 'secondary' }],
-    note: 'Card 2 of 3. Must not imply the app does the locking — the firmware timer does.',
-  },
-  {
-    id: 'ON-3', name: "What we do and don't hold", section: 'ON', status: 'absent', node: 'F1.3', layout: 'carousel',
-    title: 'What we hold',
-    body: 'We never see or store your ID or your selfie. Our verification partner checks them and tells us one thing: whether you are old enough.',
-    ctas: [{ label: 'Get started', kind: 'primary', to: 'AU-1' }],
-    note: 'Card 3 of 3. The product\'s core privacy promise — most copy-sensitive surface in the app.',
-  },
-  {
-    id: 'ON-4', name: 'Bluetooth priming', section: 'ON', status: 'absent', node: 'F7.2', layout: 'message',
-    title: 'Turn on Bluetooth to pair',
+    id: 'ON-4', name: 'Bluetooth priming', section: 'ON', status: 'built', node: 'F7.2', layout: 'message',
+    title: 'We need Bluetooth to pair',
     body: 'BlueSmoke talks to your device over Bluetooth. It only ever connects to devices you own.',
-    ctas: [{ label: 'Turn on Bluetooth', kind: 'primary' }, { label: 'Not now', kind: 'secondary' }],
-    note: 'Shown at first pair, never at launch.',
+    note: 'Real component (P1-2.0) — no real trigger yet, Phase D wires it.',
   },
   {
-    id: 'ON-6', name: 'Notification priming', section: 'ON', status: 'absent', layout: 'message',
+    id: 'ON-6', name: 'Notification priming', section: 'ON', status: 'built', layout: 'message',
     title: 'Know when it locks',
     body: 'We can tell you when your device locks itself or runs low on battery.',
-    ctas: [{ label: 'Enable notifications', kind: 'primary' }, { label: 'Not now', kind: 'secondary' }],
-    note: 'Shown after the first successful pair.',
+    note: 'Real component (P1-2.0). Enable is a stub interface — push has no backend yet.',
   },
   {
-    id: 'ON-7', name: 'Denied once', section: 'ON', status: 'absent', node: 'F1.D1', layout: 'message',
+    id: 'ON-7', name: 'Denied once', section: 'ON', status: 'built', node: 'F1.D1', layout: 'message',
     title: 'We need permission to continue',
     body: 'Without it we cannot connect to your device.',
-    ctas: [{ label: 'Try again', kind: 'primary' }],
-    note: 'Can re-prompt. Distinct from ON-8 — do not merge them.',
+    note: 'Real component (P1-2.0). Android-reachable only — iOS has no OS-level re-prompt state.',
   },
   {
-    id: 'ON-8', name: 'Permanently denied', section: 'ON', status: 'absent', node: 'F1.D2', layout: 'message',
+    id: 'ON-8', name: 'Permanently denied', section: 'ON', status: 'built', node: 'F1.D2', layout: 'message',
     title: 'Permission is turned off',
-    body: 'iOS will not ask again, so this has to be changed in Settings.',
-    ctas: [{ label: 'Open Settings', kind: 'primary' }],
-    note: 'Cannot re-prompt — must deep-link to OS settings. Rendering ON-7 here is a dead end.',
+    body: 'We cannot show that prompt again — this has to be turned back on in Settings.',
+    note: 'Real component (P1-2.0). Where every iOS denial ends up — see ON-7\'s note.',
   },
   {
-    id: 'ON-9', name: 'Bluetooth off', section: 'ON', status: 'absent', node: 'F1.D5', layout: 'message',
+    id: 'ON-9', name: 'Bluetooth off', section: 'ON', status: 'built', node: 'F1.D5', layout: 'message',
     title: 'Bluetooth is off',
-    body: 'Turn it on and we will keep looking.',
-    ctas: [{ label: 'Turn on Bluetooth', kind: 'primary' }],
-    note: 'OFF is not DENIED. Offering "Open Settings" to someone who needs a toggle is wrong.',
+    body: 'Turn it on and we will keep looking — nothing else to fix here.',
+    note: 'Real component (P1-2.0). OFF is not DENIED — no "turn it on" button; we cannot do that from the app.',
   },
 
   // ── AU ────────────────────────────────────────────────────────────────────────────

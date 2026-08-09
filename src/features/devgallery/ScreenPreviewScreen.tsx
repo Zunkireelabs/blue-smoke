@@ -5,9 +5,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, Card, Text, TextField, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { specById, type Cta, type ScreenSpec } from './screenSpecs';
+import { REAL_PREVIEWS } from './realPreviews';
 
 /**
- * Dev-only. Renders one `ScreenSpec` as a rough placeholder screen.
+ * Dev-only. Renders one `ScreenSpec` as a rough placeholder screen — or, for the handful of ids
+ * in `REAL_PREVIEWS`, the actual shipped component (see that file's header comment for why some
+ * built screens still need a gallery entry).
  *
  * ONE renderer for all 62 screens rather than 62 hand-written components. That is a deliberate
  * trade: hand-writing them would take a day and produce throwaway code that still is not a
@@ -18,6 +21,11 @@ import { specById, type Cta, type ScreenSpec } from './screenSpecs';
  */
 export function ScreenPreviewScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'ScreenPreview'>>();
+  const RealPreview = REAL_PREVIEWS[route.params.id];
+  if (RealPreview) {
+    return <RealPreview />;
+  }
+
   const spec = specById(route.params.id);
 
   if (!spec) {

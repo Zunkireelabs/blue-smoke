@@ -28,6 +28,13 @@ const RESTYLED_SCREENS = [
   'src/features/verification/CameraPrimingScreen.tsx',
   'src/features/verification/PersonaVerificationScreen.tsx',
   'src/features/verification/TransportErrorScreen.tsx',
+  'src/features/onboarding/OnboardingCarouselScreen.tsx',
+  'src/features/onboarding/BluetoothPrimingScreen.tsx',
+  'src/features/onboarding/NotificationPrimingScreen.tsx',
+  'src/features/onboarding/BluetoothDeniedScreen.tsx',
+  'src/features/onboarding/BluetoothBlockedScreen.tsx',
+  'src/features/onboarding/BluetoothOffScreen.tsx',
+  'src/features/onboarding/BluetoothGateScreen.tsx',
 ];
 
 function filesUnderGuard() {
