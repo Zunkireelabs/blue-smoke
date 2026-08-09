@@ -36,7 +36,10 @@ export function BluetoothGateScreen({ onResolved }: BluetoothGateScreenProps) {
   const [state, setState] = useState<BluetoothGateState | null>(null);
 
   const check = useCallback(() => {
-    readBluetoothGateState(manager).then(setState);
+    // A rejected `state()` read resolves to 'unknown' rather than propagating: an unhandled
+    // rejection here would leave `state` null forever, which renders the same spinner but with
+    // no record of why. 'unknown' is the honest answer — we asked and did not learn anything.
+    readBluetoothGateState(manager).then(setState, () => setState('unknown'));
   }, [manager]);
 
   useEffect(() => {
@@ -62,7 +65,10 @@ export function BluetoothGateScreen({ onResolved }: BluetoothGateScreenProps) {
     return (
       <BluetoothDeniedScreen
         onTryAgain={() => {
-          requestAndroidBluetoothPermission().then(check);
+          // Re-check on BOTH settlements. If the OS request itself rejects, a bare `.then(check)`
+          // would make "Try again" a silently dead button; re-reading the real state is the
+          // right response either way, since that read is what decides ON-7 vs ON-8 vs resolved.
+          requestAndroidBluetoothPermission().then(check, check);
         }}
       />
     );

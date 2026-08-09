@@ -101,6 +101,42 @@ describe('BluetoothGateScreen — real-state selector', () => {
     requestSpy.mockRestore();
   });
 
+  it('a rejected state() read does not crash or leave an unhandled rejection', async () => {
+    const failing: BleManagerLike = {
+      ...fakeManager('PoweredOn'),
+      state: async () => {
+        throw new Error('BLE manager unavailable');
+      },
+    };
+    const { renderer, onResolved } = await renderGate(failing);
+
+    // Nothing decisive is claimed: not resolved, and none of the three gate screens are shown.
+    expect(onResolved).not.toHaveBeenCalled();
+    const text = renderedText(renderer);
+    expect(text).not.toContain('Bluetooth is off');
+    expect(text).not.toContain('Permission is turned off');
+    expect(text).not.toContain('We need permission to continue');
+  });
+
+  it("ON-7's Try again re-checks state even when the OS request itself rejects", async () => {
+    Platform.OS = 'android';
+    // Regression: `requestAndroidBluetoothPermission().then(check)` with no rejection handler
+    // made this a silently dead button whenever the request threw.
+    const requestSpy = jest
+      .spyOn(PermissionsAndroid, 'requestMultiple')
+      .mockRejectedValue(new Error('activity is not available'));
+    const { renderer, onResolved } = await renderGate(fakeManager('Unauthorized', 'PoweredOn'));
+    expect(renderedText(renderer)).toContain('We need permission to continue');
+
+    await act(async () => {
+      findByLabel(renderer, 'Try again').props.onPress();
+    });
+
+    // The re-read still happened, so a state that changed underneath us is still picked up.
+    expect(onResolved).toHaveBeenCalledTimes(1);
+    requestSpy.mockRestore();
+  });
+
   it('re-checks on AppState foreground — a fixed permission is picked up without a manual retry', async () => {
     Platform.OS = 'ios';
     const { renderer, onResolved } = await renderGate(fakeManager('PoweredOff', 'PoweredOn'));

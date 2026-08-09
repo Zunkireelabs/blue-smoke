@@ -38,9 +38,21 @@ export function initOnboardingListener(): void {
     });
 }
 
-/** The carousel's completion action — marks the flag and flips the gate to `auth`. */
+/**
+ * The carousel's completion action — marks the flag and flips the gate to `auth`.
+ *
+ * The write failing must NOT hold back the state flip. The carousel is a whole mounted stack
+ * with exactly one exit, and that exit is this function: if a rejected `setItem` skipped the
+ * `setState`, "Get started" would silently do nothing and strand the user there permanently —
+ * across relaunches too, since the flag never lands. Fails open in the same direction the read
+ * path above already does; the worst case is the carousel returns next launch.
+ */
 export async function completeOnboarding(): Promise<void> {
-  await markOnboardingSeen();
+  try {
+    await markOnboardingSeen();
+  } catch (err) {
+    console.warn('[onboarding] AsyncStorage write failed, advancing anyway:', err);
+  }
   useOnboardingStore.setState({ status: 'seen' });
 }
 
