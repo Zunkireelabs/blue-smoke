@@ -6,9 +6,16 @@
 Two notes before sending:
 
 - Item 1 is the one that actually stops work. If the reply only answers one thing, it should be
-  that. The message is ordered accordingly.
+  that — and if it only answers one *sub*-item, **1h** is the one that reroutes everything else.
+  The message is ordered accordingly.
 - Item 3 (iOS) is a **contract-scope** question, not a technical one. Consider whether it goes in
   this message or in a separate conversation with whoever owns the commercial relationship.
+- **Every factual claim about the YC1012 here is traceable to the datasheet the client sent us**
+  (`YC1012_JD_Datasheet_V1.0.pdf` — 2×2 mm package p.4/7, OTP and AES-128 p.1, HCI-H5 p.1). Keep it
+  that way if the message is edited further: an earlier draft described the part as a
+  pre-programmed off-the-shelf module, which the datasheet contradicts, and being wrong about a
+  client's own hardware is expensive on the one question that matters most. See
+  [`hqd-device-architecture.md`](hqd-device-architecture.md) §4.1.
 
 ---
 
@@ -20,20 +27,24 @@ Thanks for the PCBA archive — we've been through all of it. The schematic in p
 lot, and it also surfaced something we should flag early rather than at integration.
 
 **What we understand now.** The board is a two-chip design: the PY32 application MCU handles the
-device, and BLE is a separate YC1012 module joined to it by a UART with an AT-command line. That
-means the Bluetooth service and characteristics are defined by the YC1012 module's own firmware, and
-the `0x01` / `0x02` commands in your protocol document are application bytes carried over that link.
+device, and Bluetooth is a separate YC1012 joined to it by a UART with an AT-command line. From the
+datasheet you sent, the YC1012 is a bare 2×2 mm chip rather than a pre-programmed module — so the
+Bluetooth service and characteristics come from whatever firmware was written for it, and the
+`0x01` / `0x02` commands in your protocol document are application bytes carried over the link
+between the two chips.
 
 That is workable for us and probably the cheaper path — we would keep our security design and carry
 it as payload bytes over the link you already have, rather than asking for new Bluetooth
-characteristics. But we can't write the connection code until we know what the module advertises.
+characteristics. But we can't write the connection code until we know what the chip advertises.
 
 **What we need, in priority order:**
 
-1. **The YC1012 module's AT-command / Bluetooth profile manual — this is the blocker.** The chip
-   datasheet you sent is a silicon datasheet and doesn't contain any of this. Rather than ask for
-   "the manual" in general, here's specifically what we need out of it, and what each answer
-   unblocks on our side:
+1. **The YC1012's Bluetooth profile — this is the blocker.** The datasheet you sent is a silicon
+   datasheet: it covers pins, power and radio performance, but not what the chip advertises over the
+   air. Since the YC1012 is a bare chip rather than a pre-programmed module, that behaviour comes
+   from firmware someone wrote for it. **Who programmed it, and can we get the profile definition or
+   AT-command manual from them?** Rather than ask for "the manual" in general, here's specifically
+   what we need out of it, and what each answer unblocks on our side:
 
    a. **The advertised service UUID.** Unblocks device scanning — without it our app can't filter
       for your device, and a wrong guess fails silently (the app simply finds nothing, with no error
@@ -49,26 +60,36 @@ characteristics. But we can't write the connection code until we know what the m
    e. **Whether the service UUID and device name are configurable.** If they are, you may already
       have set your own values, or could set ours — either changes what we build against.
    f. **The AT command list.** This tells us what your own PY32 firmware can change versus what's
-      fixed by the module vendor, which matters directly for item 6 below (lock/unlock) and for the
-      auto-lock question in item 7.
-   g. **How the module reports disconnects and reconnects, and the timing involved.** Our proximity
+      fixed in the YC1012's firmware, which matters directly for item 6 below (lock/unlock) and for
+      the auto-lock question in item 7.
+   g. **How the chip reports disconnects and reconnects, and the timing involved.** Our proximity
       lock is a UX layer on top of a firmware dead-man timer — the device, not the app, is what makes
       it safe if the phone walks away — so how promptly and reliably a drop is reported shapes that
       design directly.
+   h. **Whether the YC1012 runs its own Bluetooth stack, or acts as a controller with the stack on
+      the PY32.** The datasheet mentions an HCI-H5 UART, which would imply the second arrangement,
+      while the schematic's "AT Command Mode" line implies the first. This decides which chip owns
+      the Bluetooth profile — and therefore whose firmware the rest of this question is about. If
+      you can only answer one sub-item, this is the one that tells us most.
 
 2. **The `itronlib` library files.** The protocol document is a usage guide for this SDK, but the
    library itself wasn't in the archive.
 
 3. **iOS.** The SDK is Android-only and connects by MAC address, which iOS does not make available
    to apps — so it can't be ported as-is. Is there an iOS SDK, or is one planned? If not, we can
-   likely talk to the module directly from iOS **once we have item 1**, but we'd want to agree that
+   likely talk to the chip directly from iOS **once we have item 1**, but we'd want to agree that
    approach explicitly since we're building for both platforms.
 
 4. **The correct MCU datasheet.** The schematic specifies **PY32C642F-QFN20**; the datasheet
    supplied is for the **PY32F030**. We'd rather not assume the peripherals carry across.
 
-5. **Sheet 2 of the schematic** (document `H040-BT-SCH`). The title block says "Sheet 1 of 2" and
-   only sheet 1 was in the archive.
+5. **Schematic identity and completeness.** Two things. The title block of `H040-BT-SCH` says
+   "Sheet 1 of 2", and only sheet 1 was in the archive. And the schematic is labelled `H040`
+   throughout, while the board photographed in the PW200 guide is silkscreened `AC-H158-V1.01` and
+   the firmware file is `H158_Test_260708_01.pkg`. The dates match to the day (`20260702` on the
+   board, `260702` in the title block), so we're assuming these are one product under different
+   internal codes — but since the schematic is what we're designing against, we'd rather have that
+   confirmed than assume it.
 
 6. **Which command locks and unlocks the device?** The protocol document's overview says the SDK
    supports locking and unlocking, but the only commands listed are `0x01` (read device info) and
@@ -86,8 +107,10 @@ characteristics. But we can't write the connection code until we know what the m
 
 **One thing we can confirm back to you:** the age-gated unlock you asked about is understood as
 required. That does put some work on your firmware side — the device needs a per-device key written
-at manufacture and a check in the PY32 firmware before it will unlock — so the sooner we can get
-our two firmware teams talking directly, the better. Who's the right person for that?
+at manufacture, and a check before it will unlock. One note that may help: the YC1012 datasheet
+lists 8 KB of OTP memory and hardware AES-128, so the key could live on the Bluetooth chip itself
+rather than needing new storage elsewhere on the board. The sooner we can get our two firmware teams
+talking directly, the better — who's the right person for that?
 
 ---
 
@@ -98,4 +121,10 @@ our two firmware teams talking directly, the better. Who's the right person for 
       **OQ-9** with the auto-lock answer
 - [ ] Item 7's answer, if it is 5–10 minutes, needs the written acceptance attached to OQ-9 — a
       verbal confirmation does not close it
-- [ ] Item 1's answer unblocks `P1-3.0`; re-plan `P1-3.0` / `P1-7.0` the day it arrives
+- [ ] Item 1's answer unblocks `BLE_SERVICE_UUID`; re-plan the wire-level half of `P1-3.0` /
+      `P1-7.0` the day it arrives (the transport-independent parts already landed — see
+      [`hqd-device-architecture.md`](hqd-device-architecture.md) §8)
+- [ ] Item 1h's answer decides whether §6.2's middle path targets the YC1012's firmware or the
+      PY32's — record it against **OQ-13** either way
+- [ ] Item 5's answer closes `hqd-device-architecture.md` §5.1; if the boards differ, **re-check
+      every §4-adjacent claim derived from the schematic** before writing more BLE code
