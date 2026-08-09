@@ -1073,6 +1073,41 @@ Per this spec's own rule: these are not filled in with plausible values.
    template with no age requirement — while a separate "KYC + Age Verification: GovID + Selfie"
    template sat unused in the same account. Exactly the scenario described two paragraphs above,
    live in dev, and undetectable by any control that existed at the time.
+
+   **The second defect, found the same day while confirming the replacement — read this one.**
+   The intended replacement, `itmpl_AW8e9aVuRLUbNAUrSemPxwgEU156jS` ("KYC + Age Verification:
+   GovID + Selfie"), *did* carry an age check. Its government-ID verification template
+   (`vtmpl_AW8e9aVY8XWiGtU6fdDYnfZBbwSo5W`) had `Age comparison` present **and marked Required**,
+   so it genuinely ran and genuinely had to pass.
+
+   Its **`Default age range` was `Min 13`** — Persona's own default for that check, i.e. a value
+   nobody had ever set. The template would have returned `approved` for a thirteen-year-old.
+
+   The reason this is recorded in the spec rather than a commit message is the sequence of
+   signals, every one of which pointed the right way:
+
+   | Signal | Said | Worth |
+   |---|---|---|
+   | Template name — "KYC + **Age Verification**" | age is checked | nothing |
+   | Vendor solution blurb — "automatically decline users under 18" | 18 is the threshold | nothing |
+   | Flow branching step — `Status equals passed` | verification gates the pass | true, but silent on age |
+   | `Age comparison` present in the check list | age is checked | true |
+   | `Age comparison` marked **Required** | it must pass | true |
+   | `Age comparison` **value** | **13** | the only one that mattered |
+
+   Six signals, five reassuring, one decisive — and the decisive one was behind a collapsed row.
+   **Confirming `min_age` means reading the number.** Nothing short of the number counts: not the
+   template's name, not the presence of the check, not the check being required. A wrong
+   threshold is worse than a missing check, because it looks configured.
+
+   Corrected to `Min 18` on 2026-08-09.
+
+   **Still outstanding, and this is now the only part left:** config confirmed is not behaviour
+   confirmed. The close-out evidence is a **sandbox inquiry run with an under-18 test document,
+   observed to decline** — which tests the gate rather than our reading of its settings. That is
+   blocked until an inquiry can complete end to end (`create-inquiry` returns 501, §6.2 / P2-8.0),
+   and must be repeated against the **production** template, which is a separate object with its
+   own separately-defaulted checks.
 4. **Inquiry resumption.** `onCanceled` → resume semantics and session-token lifetime.
 5. **Data residency and retention at the vendor**, required for §8.6. See **OQ-11**.
 
