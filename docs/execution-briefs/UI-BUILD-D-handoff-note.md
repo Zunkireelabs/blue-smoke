@@ -75,15 +75,20 @@ during Phase C review and left in place deliberately, because you are the first 
 choose the call pattern. Add a test that mounts it and asserts onResolved fires exactly once for a
 poweredOn state across multiple renders.
 
-SCAN DURATION — answered, do not re-raise: 10 SECONDS
+SCAN DURATION — answered, do not re-raise: 20 SECONDS
 USER_FLOWS.md F7.4 says "the empty-after-N-seconds state" and never gives N; it is not in the spec
 or in protocol.ts either. It is a UX decision rather than a protocol constant, and Sadin has made
-it: 10 seconds, matching the order of the existing BLE timeouts in src/features/ble/auth.ts
-(CONNECT_TIMEOUT_MS is 10_000). Long enough for a device waking from advertising-idle, short enough
-that DV-5's coaching arrives while the user is still holding the device.
+it: 20 seconds.
+The reason it is not 10: DV-3's actual job, per F7.3, is telling the user what to do PHYSICALLY to
+make the device discoverable. A first-time user has to hear that, pick the device up, and do it.
+Ten seconds can expire before they have finished acting on the instruction, which produces a
+"no devices found" that is really "you read too slowly" — the worst kind of false negative,
+because the coaching on DV-5 then sends them to check things that were never wrong.
 Make it a NAMED constant with a comment recording that it is a UX decision (Sadin, 2026-08-09) and
 not a §4 value — never a magic number inline, and do not put it in protocol.ts, which is for spec
-constants only.
+constants only. Keep DV-3 responsive throughout: results appear as they arrive, so a device found
+at second 2 is selectable at second 2. The 20s is only when DV-5 replaces DV-3, never a wait
+imposed on a successful scan.
 
 BLE RULES THAT BITE HERE:
   - Scan MUST filter on BLE_SERVICE_UUID from protocol.ts (§4.2), passed as startDeviceScan's
