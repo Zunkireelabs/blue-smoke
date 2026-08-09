@@ -9,6 +9,7 @@ import { FakeClock } from '../../../../tools/mock-peripheral/clock';
 import { K_DEV, validCredentials, wrongCredentials } from '../../../../tools/mock-peripheral/testCredentials';
 import { createConnectionManager, type ConnectionState } from '../connection';
 import type { AuthResponseInput } from '../auth';
+import { ResultCode } from '../protocol';
 
 const DEVICE_ID = 'mock-device-0001';
 
@@ -55,7 +56,7 @@ describe('createConnectionManager — initial connect', () => {
     expect(connectionManager.getState(DEVICE_ID)).toBe('reconnecting');
     expect(connectionManager.getLastFailure(DEVICE_ID)).toEqual({
       stage: 'handshake',
-      outcome: { ok: false, resultCode: 0x02 /* AUTH_FAILED */ },
+      outcome: { ok: false, resultCode: ResultCode.AUTH_FAILED },
     });
   });
 });

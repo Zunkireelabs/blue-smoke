@@ -32,7 +32,7 @@ import { FakeClock } from '../../../../tools/mock-peripheral/clock';
 import { K_DEV, validCredentials, wrongCredentials } from '../../../../tools/mock-peripheral/testCredentials';
 import { createConnectionManager, type ConnectionManager } from '../connection';
 import { createDeviceScanner, type DeviceScanner } from '../scanner';
-import { ADVERTISING_MANUFACTURER_DATA_OFFSETS, PROTOCOL_VERSION } from '../protocol';
+import { ADVERTISING_MANUFACTURER_DATA_OFFSETS, PROTOCOL_VERSION, ResultCode } from '../protocol';
 
 const PRIMARY_ID = 'mock-device-0001';
 const SECONDARY_ID = 'mock-device-0002';
@@ -177,7 +177,7 @@ describe('the full scan-to-reconnect journey, walked once in order', () => {
 
     expect(rejectingManager.getLastFailure(PRIMARY_ID)).toEqual({
       stage: 'handshake',
-      outcome: { ok: false, resultCode: 0x02 /* AUTH_FAILED */ },
+      outcome: { ok: false, resultCode: ResultCode.AUTH_FAILED },
     });
     say('A device offering the wrong key is rejected: AUTH_FAILED');
   });
