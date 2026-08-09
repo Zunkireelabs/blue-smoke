@@ -29,6 +29,7 @@ const ALL_VERIFICATION_STATES: VerificationState[] = [
   'pending',
   'verified',
   'declined',
+  'error',
 ];
 
 describe('selectStack — session gating', () => {
@@ -81,6 +82,12 @@ describe('selectStack — the age gate', () => {
       expect(selectStack('signedIn', state)).toBe<GatedStack>('verify');
     },
   );
+
+  it('sends a transport-read failure to its own stack, never the Persona flow', () => {
+    // F6.X / VF-7 — must never land on 'verify', which would render VF-2's ID-scan UI over an
+    // outcome that isn't a decline at all, just an unanswered question.
+    expect(selectStack('signedIn', 'error')).toBe<GatedStack>('transportError');
+  });
 });
 
 describe('RootNavigator', () => {

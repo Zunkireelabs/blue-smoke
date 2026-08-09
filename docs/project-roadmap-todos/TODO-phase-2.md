@@ -153,12 +153,21 @@ plan; it no longer exists as in-app work. See `P2-1.0`.
 - [x] Pending/result screen surfaces `provider_status` from the webhook-confirmed row
       *(`useVerificationStatus.ts` — reads server state, polls only while non-terminal, and
       documents in its own header that it is a UX hint and never an authority)*
-- [ ] Manual fallback route implemented — carries only user ID, never images
+- [ ] Manual fallback route implemented — carries only user ID, never images *(**not built** —
+      VF-11 is blocked on OQ-2: no owner, channel, or SLA yet. See P2-6.0 execution brief §4.)*
 - [ ] Manual fallback operational policy agreed with client *(OQ-2 🔴, unrelated to the vendor
       change — still open)*
-- [ ] Interrupted-flow recovery — confirm `onCanceled`/`sessionToken` resume behaviour is handled
-- [ ] Declined result handled with dignity and a clear, final explanation
-- [ ] Every path through the flow walked and verified to have an exit
+- [x] Interrupted-flow recovery — confirm `onCanceled`/`sessionToken` resume behaviour is handled
+      *(fixed: `started` ref only ever gated the one auto-launch on mount; Resume/Try again now
+      call `launch()` directly and genuinely relaunch the SDK — see
+      `PersonaVerificationScreen.test.tsx`)*
+- [ ] Declined result handled with dignity and a clear, final explanation *(the decline ladder,
+      VF-8/9/10, is explicitly out of scope this phase — needs a server-side attempt counter,
+      which is backend work with its own migration; see the P2-6.0 brief §3)*
+- [x] Every path through the flow walked and verified to have an exit *(VF-1, ON-5, VF-2, VF-3,
+      VF-4, VF-5, VF-6, VF-7, VF-12 all carry a working exit now — sign-out at minimum. VF-1/ON-5/
+      VF-2(starting)/VF-5 walked live on the iOS simulator; VF-3/VF-6/VF-7/VF-12 verified by
+      dead-end-style tests that press every CTA and assert the destination, not just render)*
 
 **Assumption:** manual fallback policy agreed with client. *(OQ-2 🔴)*
 **Excludes:** automated human review queue / back-office tooling.

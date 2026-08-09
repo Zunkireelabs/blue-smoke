@@ -1,7 +1,13 @@
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GradientGround, Text, tokens } from '@/shared/ui';
+import { SignOutButton } from '@/features/auth/SignOutButton';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { accountIdentifier } from '@/shared/lib/accountIdentifier';
+
+// F6.P (USER_FLOWS.md) — after roughly this long pending, stop implying imminence and offer an
+// exit rather than a bare spinner with no timeout (DE-8).
+const TAKING_LONGER_MS = 2 * 60 * 1000;
 
 /**
  * The landing screen once a user is signed in AND past the age gate.
@@ -48,20 +54,53 @@ export function HomeScreen() {
 }
 
 /**
- * Shown while the age-gate query is in flight, and while an inquiry is awaiting the vendor's
- * decision. Kept in this file so the gated stack has no partial-state gaps.
+ * VF-3 / VF-4 (F6.5, F6.P — `SCREEN_MAP.md`'s navigation-structure table assigns VF-3 to this
+ * exact `pending` stack). Shown while the age-gate query is in flight, and while an inquiry is
+ * awaiting the vendor's decision. Kept in this file so the gated stack has no partial-state
+ * gaps.
+ *
+ * F6.Z — this was a second instance of the same stranding trap `PersonaVerificationScreen` had:
+ * zero controls, on a stack `sessionStatus === 'signedIn'` keeps mounted indefinitely. Now
+ * carries a persistent sign-out. After `TAKING_LONGER_MS`, the copy stops implying the check is
+ * seconds away (VF-4) — "We'll notify you" is reassurance copy, not a button: there is no push
+ * wiring to opt into (SY-2/3 are blocked on a backend that doesn't exist), and a button with no
+ * destination is exactly the dead-CTA bug this project's tests exist to catch.
  */
 export function VerificationPendingScreen() {
+  const [takingLonger, setTakingLonger] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setTakingLonger(true), TAKING_LONGER_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <View style={styles.centered}>
       <ActivityIndicator size="large" />
-      <Text variant="title" style={styles.centerText}>
-        Confirming your verification…
-      </Text>
-      <Text variant="body" tone="secondary" style={styles.centerText}>
-        We're waiting on the result. This can take a moment — you don't need to do anything else
-        right now.
-      </Text>
+      {takingLonger ? (
+        <>
+          <Text variant="title" style={styles.centerText}>
+            This is taking longer than usual
+          </Text>
+          <Text variant="body" tone="secondary" style={styles.centerText}>
+            Nothing's wrong, and you don't need to do anything. We'll let you know as soon as
+            it's done.
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text variant="title" style={styles.centerText}>
+            Confirming your verification…
+          </Text>
+          <Text variant="body" tone="secondary" style={styles.centerText}>
+            We're waiting on the result. This can take a moment — you don't need to do anything
+            else right now.
+          </Text>
+        </>
+      )}
+      <View style={styles.signOut}>
+        <SignOutButton />
+      </View>
     </View>
   );
 }
@@ -77,6 +116,10 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  signOut: {
+    marginTop: tokens.spacing.xl,
+    alignSelf: 'stretch',
   },
   header: {
     gap: tokens.spacing.xs,

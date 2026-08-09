@@ -35,6 +35,13 @@ export interface BleDeviceLike {
 
 export interface BleManagerLike {
   state(): Promise<string>;
+  /** §4.1 — the app must filter scan results on the service UUID; `serviceUUIDs` carries that filter. */
+  startDeviceScan(
+    serviceUUIDs: string[] | null,
+    options: unknown,
+    listener: (error: Error | null, device: BleDeviceLike | null) => void,
+  ): void;
+  stopDeviceScan(): void;
   connectToDevice(deviceId: string): Promise<BleDeviceLike>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
   cancelDeviceConnection(deviceId: string): Promise<BleDeviceLike>;

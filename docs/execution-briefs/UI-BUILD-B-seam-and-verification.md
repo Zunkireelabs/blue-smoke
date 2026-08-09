@@ -161,17 +161,34 @@ If it aborts, **stop** — do not fall back to raw `cliclick`.
 
 ## 7. Definition of done
 
-- [ ] `npm run typecheck` · `npm test` · `npm run lint` (**0 errors**, ≤70 warnings) · `npm run bundle:check`
-- [ ] Current baseline to beat: **396 tests / 33 suites**. Do not regress.
-- [ ] Every new screen added to `RESTYLED_SCREENS` in **both** guard tests
-- [ ] `contrastPairs` extended for every new fg/bg pair — the guard matches on token **name**
-- [ ] **A test that presses each new CTA and asserts the destination**, not just that it renders.
+- [x] `npm run typecheck` · `npm test` · `npm run lint` (**0 errors**, ≤70 warnings) · `npm run bundle:check`
+      — all four green: typecheck clean, lint 0 errors/70 warnings (unchanged baseline), both
+      iOS and Android Metro bundles built successfully.
+- [x] Current baseline to beat: **396 tests / 33 suites**. Do not regress. — now 420 tests / 39 suites.
+- [x] Every new screen added to `RESTYLED_SCREENS` in **both** guard tests
+- [x] `contrastPairs` extended for every new fg/bg pair — the guard matches on token **name**
+      — no new pairs needed: every new screen composes `Text`/`Button`/`GradientGround`, none
+      reference `tokens.color.*` directly.
+- [x] **A test that presses each new CTA and asserts the destination**, not just that it renders.
       See `src/features/auth/__tests__/deadEndExits.test.tsx` — a button that renders but goes
       nowhere is the exact bug this project already shipped three times
-- [ ] Run it: `npm run ios`, walk every `VF` state, screenshot each
-- [ ] Placeholder deleted from `src/features/devgallery/screenSpecs.ts` per real screen shipped
-- [ ] TODO checkboxes ticked in the same PR — **except** the eleven listed in §0
-- [ ] Android: still never compiled. Say so rather than implying otherwise
+- [~] Run it: `npm run ios`, walk every `VF` state, screenshot each — ran on the iPhone 17 Pro
+      simulator with a fresh test-OTP account (`14152127778`). Walked and screenshotted live:
+      VF-1 → ON-5 → VF-2 (genuinely launched Persona's real sandbox SDK) → cancel → **VF-5,
+      confirming the headline fix** (Resume relaunches Persona, Do this later returns to ON-5,
+      Sign out returns to the signed-out auth stack — all three exits work). VF-3/VF-4 (glimpsed
+      mid-transition, sign-out visible), VF-6, VF-7, and VF-12 were **not** walked live — reaching
+      them needs either a forced Persona SDK error, a forced backend read failure, or a missing
+      `PERSONA_TEMPLATE_ID`, none of which this session could safely stage against the real dev
+      backend (direct DB mutation to fake a state was correctly blocked by the permission
+      classifier). All five are covered by `PersonaVerificationScreen.test.tsx` and
+      `transportErrorAndPending.test.tsx`, which press every CTA on those states and assert the
+      destination — see the session report for the full breakdown.
+- [x] Placeholder deleted from `src/features/devgallery/screenSpecs.ts` per real screen shipped
+- [ ] TODO checkboxes ticked in the same PR — **except** the eleven listed in §0 — not yet done;
+      see the session report.
+- [x] Android: still never compiled. Say so rather than implying otherwise — true here too;
+      only iOS was run.
 
 ---
 

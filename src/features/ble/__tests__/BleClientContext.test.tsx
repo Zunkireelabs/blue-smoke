@@ -9,6 +9,10 @@ import {
 function makeFakeManager(): BleManagerLike {
   return {
     state: async () => 'PoweredOn',
+    startDeviceScan: () => {
+      throw new Error('not used by this test');
+    },
+    stopDeviceScan: () => {},
     connectToDevice: async () => {
       throw new Error('not used by this test');
     },

@@ -107,13 +107,6 @@ export const SCREEN_SPECS: ReadonlyArray<ScreenSpec> = [
     note: 'Shown at first pair, never at launch.',
   },
   {
-    id: 'ON-5', name: 'Camera priming', section: 'ON', status: 'absent', node: 'F6.2', layout: 'message',
-    title: 'Next, a quick ID check',
-    body: 'Our verification partner will ask for your ID and a selfie. They are sent straight to them — BlueSmoke never receives them.',
-    ctas: [{ label: 'Continue', kind: 'primary' }, { label: 'Why do you need this?', kind: 'secondary' }],
-    note: 'Shown at verification start, never at launch.',
-  },
-  {
     id: 'ON-6', name: 'Notification priming', section: 'ON', status: 'absent', layout: 'message',
     title: 'Know when it locks',
     body: 'We can tell you when your device locks itself or runs low on battery.',
@@ -230,60 +223,11 @@ export const SCREEN_SPECS: ReadonlyArray<ScreenSpec> = [
   },
 
   // ── VF ────────────────────────────────────────────────────────────────────────────
-  {
-    id: 'VF-1', name: 'Why we need this', section: 'VF', status: 'absent', node: 'F6.1', layout: 'message',
-    title: 'We have to check your age',
-    body: 'It takes about a minute. A verification partner checks your ID — we only ever learn whether you are old enough.',
-    ctas: [{ label: 'Continue', kind: 'primary', to: 'ON-5' }, { label: 'Sign out', kind: 'secondary' }],
-  },
-  {
-    id: 'VF-2', name: 'Persona SDK host', section: 'VF', status: 'partial', node: 'F6.4', layout: 'loading',
-    title: 'Starting verification…',
-    ctas: [{ label: 'Sign out', kind: 'secondary' }],
-    note: '🔴 THE STRANDING TRAP. Ships with zero controls in all five states. Persona owns the capture UI that appears over this — do not design that part.',
-  },
-  {
-    id: 'VF-3', name: 'Confirming your verification', section: 'VF', status: 'partial', node: 'F6.5', layout: 'loading',
-    title: 'Confirming your verification…',
-    body: "We're checking your submission. This can take a moment — you don't need to do anything else right now.",
-    ctas: [{ label: 'Sign out', kind: 'secondary' }],
-    note: 'Needs a persistent sign-out. Today it has none.',
-  },
-  {
-    id: 'VF-4', name: 'Taking longer than usual', section: 'VF', status: 'absent', node: 'F6.P', layout: 'message',
-    title: 'This is taking longer than usual',
-    body: "You don't need to wait here. We'll let you know as soon as it's done.",
-    ctas: [{ label: "We'll notify you", kind: 'primary' }, { label: 'Sign out', kind: 'secondary' }],
-    note: 'Shown after roughly 2 minutes pending.',
-  },
-  {
-    id: 'VF-5', name: 'Verification paused', section: 'VF', status: 'partial', node: 'F6.C', layout: 'message',
-    title: 'Verification not completed',
-    body: "You can pick up where you left off whenever you're ready.",
-    ctas: [
-      { label: 'Resume', kind: 'primary' },
-      { label: 'Do this later', kind: 'secondary' },
-      { label: 'Sign out', kind: 'secondary' },
-    ],
-    note: '🔴 This is the screen that trapped a real user on 2026-08-09. Ships with no controls.',
-  },
-  {
-    id: 'VF-6', name: 'Something went wrong', section: 'VF', status: 'partial', node: 'F6.E', layout: 'message',
-    title: 'Something went wrong',
-    body: "We couldn't start verification. Please try again in a moment.",
-    ctas: [
-      { label: 'Try again', kind: 'primary' },
-      { label: 'Get help', kind: 'secondary' },
-      { label: 'Sign out', kind: 'secondary' },
-    ],
-  },
-  {
-    id: 'VF-7', name: "Couldn't check verification", section: 'VF', status: 'absent', node: 'F6.X', layout: 'message',
-    title: "We couldn't check your verification",
-    body: 'This looks like a connection problem on our side, not a problem with your ID.',
-    ctas: [{ label: 'Retry', kind: 'primary' }, { label: 'Sign out', kind: 'secondary' }],
-    note: '🔴 MUST look different from VF-8. Transport failure ≠ declined. Conflating them tells a legitimate adult they failed an age check.',
-  },
+  // VF-1, ON-5, VF-2, VF-3, VF-4, VF-5, VF-6, VF-7, VF-12 shipped as real screens this
+  // phase (P2-6.0 / UI-BUILD-B) — their placeholders are removed per this repo's convention
+  // that the gallery only carries screens that don't exist yet. VF-8/9/10 (the decline
+  // ladder) and VF-11 (manual review) remain: both explicitly out of scope this phase — see
+  // docs/execution-briefs/UI-BUILD-B-seam-and-verification.md §3 and §4.
   {
     id: 'VF-8', name: 'Declined — attempts 1–3', section: 'VF', status: 'absent', node: 'F6.D1', layout: 'message',
     title: "We couldn't confirm your ID",
@@ -314,12 +258,6 @@ export const SCREEN_SPECS: ReadonlyArray<ScreenSpec> = [
     body: 'BLOCKED — OQ-2 has not answered who handles this, through what channel, or with what SLA.',
     ctas: [{ label: 'Contact support', kind: 'primary' }, { label: 'Sign out', kind: 'secondary' }],
     note: '⛔ Do not design until OQ-2 is answered. The route does not exist.',
-  },
-  {
-    id: 'VF-12', name: 'Not configured (dev only)', section: 'VF', status: 'built', node: 'F6.N', layout: 'message',
-    title: "Verification isn't configured yet",
-    body: 'Dev builds only. Never reachable in production.',
-    ctas: [{ label: 'Sign out', kind: 'secondary' }],
   },
 
   // ── DV ────────────────────────────────────────────────────────────────────────────

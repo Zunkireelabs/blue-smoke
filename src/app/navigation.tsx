@@ -13,7 +13,10 @@ import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
 import { PasswordResetRequestScreen } from '@/features/auth/PasswordResetRequestScreen';
 import { ResetPasswordConfirmScreen } from '@/features/auth/ResetPasswordConfirmScreen';
 import { RESET_PASSWORD_URL_HOST, RESET_PASSWORD_URL_SCHEME } from '@/features/auth/deepLink';
+import { VerifyIntroScreen } from '@/features/verification/VerifyIntroScreen';
+import { CameraPrimingScreen } from '@/features/verification/CameraPrimingScreen';
 import { PersonaVerificationScreen } from '@/features/verification/PersonaVerificationScreen';
+import { TransportErrorScreen } from '@/features/verification/TransportErrorScreen';
 import {
   useVerificationStatus,
   type VerificationState,
@@ -39,7 +42,10 @@ export type RootStackParamList = {
   PasswordReset: undefined;
   ResetPasswordConfirm: undefined;
   // Authenticated, pre-verification
+  VerifyIntro: undefined;
+  CameraPriming: undefined;
   VerifyAge: undefined;
+  TransportError: undefined;
   VerificationPending: undefined;
   // Authenticated and verified
   Home: undefined;
@@ -70,7 +76,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 /** Which of the mutually exclusive stacks should be mounted. */
-export type GatedStack = 'boot' | 'auth' | 'pending' | 'verify' | 'home';
+export type GatedStack = 'boot' | 'auth' | 'pending' | 'transportError' | 'verify' | 'home';
 
 /**
  * The gate itself, extracted from the component so it can be tested as what it is: a pure
@@ -83,6 +89,10 @@ export type GatedStack = 'boot' | 'auth' | 'pending' | 'verify' | 'home';
  *   2. signed out wins over verification — verification state is meaningless without a user
  *   3. ONLY an explicit 'verified' reaches home; every other value, including 'loading',
  *      does not. Unknown is never treated as verified.
+ *   4. 'error' (F6.X / VF-7) is checked ahead of 'verify' so a transport failure never renders
+ *      as a decline — though `useVerificationStatus` only ever reports 'error' when there is no
+ *      cached data at all, so in practice it can never preempt an already-known verified,
+ *      pending, or declined state; this ordering is for clarity, not correctness.
  */
 export function selectStack(
   sessionStatus: 'hydrating' | 'signedOut' | 'signedIn',
@@ -99,6 +109,9 @@ export function selectStack(
   }
   if (verification === 'loading' || verification === 'pending') {
     return 'pending';
+  }
+  if (verification === 'error') {
+    return 'transportError';
   }
   // 'none' and 'declined'. Both land on the Persona flow: a declined user may try again, and
   // distinguishing the two in the UI would mean telling someone why they failed, which the
@@ -172,7 +185,7 @@ function HomeHeaderRight() {
  */
 export function RootNavigator() {
   const sessionStatus = useSessionStore((s) => s.status);
-  const { state: verification } = useVerificationStatus();
+  const { state: verification, refetch } = useVerificationStatus();
   const stack = selectStack(sessionStatus, verification);
 
   return (
@@ -234,8 +247,26 @@ export function RootNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="VerificationPending" component={VerificationPendingScreen} />
         </Stack.Navigator>
+      ) : stack === 'transportError' ? (
+        // F6.X / VF-7 — its own single-screen stack, exactly like 'pending' above, so a
+        // transport failure can never even mount PersonaVerificationScreen's ID-scan UI.
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="TransportError">
+            {() => <TransportErrorScreen onRetry={() => refetch()} />}
+          </Stack.Screen>
+        </Stack.Navigator>
       ) : (
-        <Stack.Navigator>
+        <Stack.Navigator initialRouteName="VerifyIntro">
+          <Stack.Screen
+            name="VerifyIntro"
+            component={VerifyIntroScreen}
+            options={{ title: 'Age Verification' }}
+          />
+          <Stack.Screen
+            name="CameraPriming"
+            component={CameraPrimingScreen}
+            options={{ title: 'Camera access' }}
+          />
           <Stack.Screen
             name="VerifyAge"
             component={PersonaVerificationScreen}

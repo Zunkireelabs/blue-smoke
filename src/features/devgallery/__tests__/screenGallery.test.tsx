@@ -72,7 +72,9 @@ describe('screen gallery specs', () => {
       );
     });
     const out = text(renderer);
-    expect(out).toContain('62 screens');
+    // P2-6.0 (UI-BUILD-B) shipped VF-1, ON-5, VF-2..VF-7, and VF-12 as real screens — their
+    // gallery placeholders were removed, dropping the total from 62 to 53.
+    expect(out).toContain('53 screens');
     expect(out).toContain('Boot splash');
     expect(out).toContain('Locked');
   });

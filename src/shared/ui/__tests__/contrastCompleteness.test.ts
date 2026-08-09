@@ -25,6 +25,11 @@ const RESTYLED_SCREENS = [
   'src/features/auth/ResetPasswordConfirmScreen.tsx',
   'src/features/profile/ProfileScreen.tsx',
   'src/features/devices/HomeScreen.tsx',
+  'src/features/auth/SignOutButton.tsx',
+  'src/features/verification/VerifyIntroScreen.tsx',
+  'src/features/verification/CameraPrimingScreen.tsx',
+  'src/features/verification/PersonaVerificationScreen.tsx',
+  'src/features/verification/TransportErrorScreen.tsx',
 ];
 
 function scannedFiles(): SourceFile[] {
