@@ -38,6 +38,20 @@ export function AuthMethodChoiceScreen() {
           onPress={() => navigation.navigate('PhoneInput')}
         />
       </View>
+
+      {/* Dev-only entry to the P1-7.0 harness, mirroring the one on Home. Here so the state
+          machine is reachable without an account at all — the fake is in-memory and performs
+          no privileged action. The route is `__DEV__`-gated in navigation.tsx, so this
+          button must be too, or a release build renders a control that goes nowhere. */}
+      {__DEV__ ? (
+        <View style={styles.devActions}>
+          <Button
+            label="BLE connection demo (dev)"
+            variant="secondary"
+            onPress={() => navigation.navigate('BleDemo')}
+          />
+        </View>
+      ) : null}
     </GradientGround>
   );
 }
@@ -52,5 +66,8 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: tokens.spacing.md,
+  },
+  devActions: {
+    marginTop: tokens.spacing.xxl,
   },
 });

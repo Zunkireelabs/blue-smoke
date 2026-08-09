@@ -240,6 +240,19 @@ export function RootNavigator() {
           <Stack.Screen name="PhoneInput" component={PhoneInputScreen} options={{ title: 'Your number' }} />
           <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
           <Stack.Screen name="PasswordSignIn" component={PasswordSignInScreen} options={{ title: 'Sign in with password' }} />
+          {/* Also registered here, not only in the home stack, because the P1-7.0 harness
+              drives an in-memory fake and performs no privileged action — requiring a
+              verified account to reach a BLE state-machine demo is friction with no
+              benefit. This does not weaken the gate: per this file's own note the gate is
+              UX, not security (the authority is `issue-device-session` server-side), and
+              there is no `linking` config, so it stays undeep-linkable. */}
+          {__DEV__ ? (
+            <Stack.Screen
+              name="BleDemo"
+              component={BleDemoScreen}
+              options={{ title: 'BLE connection (dev)' }}
+            />
+          ) : null}
         </Stack.Navigator>
       ) : stack === 'home' ? (
         <Stack.Navigator>
