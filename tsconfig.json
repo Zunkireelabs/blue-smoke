@@ -32,6 +32,10 @@
     "src/features/ble/__tests__/deviceInfo.test.ts",
     // P1-3.0 — scanner.test.ts imports createMockPeripheral (bleAdapter.ts) too,
     // same Buffer/node:crypto wall. Type-checked under tsconfig.test.json instead.
-    "src/features/ble/__tests__/scanner.test.ts"
+    "src/features/ble/__tests__/scanner.test.ts",
+    // P1-3.0 — base64.test.ts cross-checks against Buffer.from(...).toString('base64')
+    // directly (no bleAdapter import needed to hit the same wall). Type-checked under
+    // tsconfig.test.json instead.
+    "src/features/ble/__tests__/base64.test.ts"
   ]
 }

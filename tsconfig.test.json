@@ -13,7 +13,8 @@
   "include": [
     "src/features/ble/__tests__/auth.test.ts",
     "src/features/ble/__tests__/deviceInfo.test.ts",
-    "src/features/ble/__tests__/scanner.test.ts"
+    "src/features/ble/__tests__/scanner.test.ts",
+    "src/features/ble/__tests__/base64.test.ts"
   ],
   // Root's "exclude" (inherited otherwise) lists this same file, so it must be overridden here —
   // that root entry exists to keep the file OUT of the root program, not out of this one.

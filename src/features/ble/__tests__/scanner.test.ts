@@ -459,6 +459,30 @@ describe('createDeviceScanner — timeout and staleness', () => {
     scanner.dispose();
   });
 
+  test('firstSeenAtMs is carried from the original sighting, not reset on every re-advertisement', () => {
+    const double = fakeScanner();
+    const scanner = createDeviceScanner({
+      scanner: double,
+      now: () => clockMs,
+      scanTimeoutMs: 60_000,
+      deviceStaleAfterMs: 60_000,
+    });
+
+    scanner.start();
+    advertise?.(null, anAdvertisement('aaaa'));
+
+    clockMs = 5_000;
+    advertise?.(null, anAdvertisement('aaaa'));
+
+    const state = scanner.getState();
+    const devices = state.status === 'scanning' ? state.devices : [];
+    expect(devices).toHaveLength(1);
+    expect(devices[0].firstSeenAtMs).toBe(0);
+    expect(devices[0].lastSeenAtMs).toBe(5_000);
+
+    scanner.dispose();
+  });
+
   test('stop() clears the timeout — a stopped scan never becomes noDevicesFound', () => {
     const double = fakeScanner();
     const scanner = createDeviceScanner({
