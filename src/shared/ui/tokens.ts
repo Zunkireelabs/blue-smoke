@@ -57,7 +57,19 @@ const groundRaw = {
 } as const;
 
 const successRaw = {
-  text: '#1E8E5A',
+  /**
+   * Darkened from the brief's `#1E8E5A` (Sadin, 2026-08-09 — review correction).
+   *
+   * The approved value measured 4.14:1 on white and 3.61:1 on `successBg`: usable for a
+   * decorative glyph, but **below the 4.5 AA threshold for text**, on both grounds. Registering
+   * it as large-text-only would have left a trap — `<Text tone="success">Unlocked</Text>` in
+   * `LK-6` would then pass the completeness guard while failing AA in the actual UI, because the
+   * guard checks that a pair is *declared*, not the size it is rendered at.
+   *
+   * `#18774D` is 5.55:1 on white and 4.83:1 on `successBg` — passes AA at body size on both, so
+   * the token is safe wherever someone reaches for it.
+   */
+  text: '#18774D',
   background: '#E3F3EB',
 } as const;
 
@@ -306,17 +318,15 @@ export const contrastPairs: ReadonlyArray<{
     size: 'body',
   },
   {
-    // `success` (#1E8E5A) tops out around 4.1:1 against any light surface in this palette —
-    // short of the 4.5 body threshold no matter which side of the pair it's on, a structural
-    // property of that exact hex, not something a different pairing fixes. It clears the 3:1
-    // large-text threshold comfortably, so `Badge` renders its success glyph at large size —
-    // this entry's `size: 'large'` is true of the actual UI, not a way around the guard.
-    name: 'success on successBg (large text/icon only)',
+    // Asserted at `body`, not `large`: the token was darkened specifically so this pair clears
+    // 4.5:1 (it measures 4.83:1). Keeping it at `large` would have let a future body-size use of
+    // `tone="success"` pass this guard while failing AA on screen — see the note on `successRaw`.
+    name: 'success on successBg',
     fgToken: 'success',
     bgToken: 'successBg',
     fg: semanticColor.success,
     bg: semanticColor.successBg,
-    size: 'large',
+    size: 'body',
   },
   {
     name: 'textPrimary on successBg',

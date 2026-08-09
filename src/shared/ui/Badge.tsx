@@ -12,12 +12,17 @@ export interface BadgeProps {
 /**
  * Status chip for `PF-1` verification status and `LK-*` lock state.
  *
- * The leading glyph is rendered at a large size deliberately, not decoratively: the `success`
- * token's green tops out around 4.1:1 contrast against any light surface in this palette —
- * short of the 4.5 AA body-text threshold no matter which side of the pair it's on, a property
- * of that exact hue — but it clears the 3:1 large-text threshold comfortably (see the
- * `contrastPairs` entry in `tokens.ts`). Rendering it small would make this an accessibility
- * defect, not just a guard-test failure, so the large size is load-bearing, not cosmetic.
+ * ── Colour never carries the meaning ──────────────────────────────────────────────────
+ *
+ * The tone drives a coloured dot; the *label* is what states the status, in primary text on a
+ * tinted ground. That ordering is deliberate and worth preserving: a user who cannot separate
+ * the green from the red still reads "Verified" or "Locked". The dot is marked
+ * `accessibilityElementsHidden` so a screen reader announces the label once, not a bullet
+ * followed by the label.
+ *
+ * (An earlier revision sized the glyph large to clear the 3:1 non-text threshold, because the
+ * original `success` green missed 4.5:1. The token has since been darkened to pass at body
+ * size — see `successRaw` in `tokens.ts` — so the size here is now a plain design choice.)
  */
 export function Badge({ label, tone = 'neutral' }: BadgeProps) {
   return (
