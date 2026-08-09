@@ -17,6 +17,7 @@ import {
 } from '@/features/verification/useVerificationStatus';
 import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
 import { BleDemoScreen } from '@/features/ble/BleDemoScreen';
+import { BleDiscoveryScreen } from '@/features/ble/BleDiscoveryScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 
 /**
@@ -39,6 +40,8 @@ export type RootStackParamList = {
   Home: undefined;
   /** Dev-only P1-7.0 harness — registered under `__DEV__` only, see the home stack below. */
   BleDemo: undefined;
+  /** Dev-only §4.1 discovery → connection flow. Same `__DEV__` gating as BleDemo. */
+  BleDiscovery: undefined;
 };
 
 /**
@@ -157,11 +160,18 @@ export function RootNavigator() {
               UX, not security (the authority is `issue-device-session` server-side), and
               `linking` above registers no URL for this route, so it stays undeep-linkable. */}
           {__DEV__ ? (
-            <Stack.Screen
-              name="BleDemo"
-              component={BleDemoScreen}
-              options={{ title: 'BLE connection (dev)' }}
-            />
+            <>
+              <Stack.Screen
+                name="BleDemo"
+                component={BleDemoScreen}
+                options={{ title: 'BLE connection (dev)' }}
+              />
+              <Stack.Screen
+                name="BleDiscovery"
+                component={BleDiscoveryScreen}
+                options={{ title: 'BLE discovery (dev)' }}
+              />
+            </>
           ) : null}
         </Stack.Navigator>
       ) : stack === 'home' ? (
@@ -171,11 +181,18 @@ export function RootNavigator() {
               production build has no route to the P1-7.0 harness at all — same reasoning
               as the separate-stacks gate above, applied to a developer tool. */}
           {__DEV__ ? (
-            <Stack.Screen
-              name="BleDemo"
-              component={BleDemoScreen}
-              options={{ title: 'BLE connection (dev)' }}
-            />
+            <>
+              <Stack.Screen
+                name="BleDemo"
+                component={BleDemoScreen}
+                options={{ title: 'BLE connection (dev)' }}
+              />
+              <Stack.Screen
+                name="BleDiscovery"
+                component={BleDiscoveryScreen}
+                options={{ title: 'BLE discovery (dev)' }}
+              />
+            </>
           ) : null}
         </Stack.Navigator>
       ) : stack === 'pending' ? (

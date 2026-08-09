@@ -48,6 +48,35 @@ export interface BleManagerLike {
 }
 
 /**
+ * §4.1 — what a scan result carries before anything is connected: an id to
+ * connect with, the advertised local name (`BlueSmoke-xxxx`), and signal
+ * strength for the "which of these is nearest me" question pairing UI asks.
+ */
+export interface ScannedDevice {
+  readonly id: string;
+  readonly name: string | null;
+  readonly rssi: number | null;
+}
+
+/**
+ * Scanning is a SEPARATE interface from `BleManagerLike`, deliberately.
+ * Adding two more required members to `BleManagerLike` would break every
+ * hand-rolled fake manager literal that implements it (11 in auth.test.ts
+ * alone — the exact ripple adding `onDeviceDisconnected` already caused).
+ * Only `scan.ts` needs these, so only `scan.ts` depends on them. The real
+ * `BleManager`, `MockBleManager`, and the dev fake all satisfy this
+ * structurally without any of them changing shape.
+ */
+export interface BleScannerLike {
+  startDeviceScan(
+    serviceUUIDs: string[] | null,
+    options: unknown,
+    listener: (error: Error | null, device: ScannedDevice | null) => void,
+  ): void;
+  stopDeviceScan(): void;
+}
+
+/**
  * The real `BleManager` is expensive and unsafe to construct at module load:
  * its constructor reaches straight into the native module
  * (`NativeEventEmitter` → `NativeModules.BlePlx`), which doesn't exist under

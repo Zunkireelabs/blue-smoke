@@ -45,14 +45,24 @@ export function AuthMethodChoiceScreen() {
           which is only registered under __DEV__ (navigation.tsx) — an ungated button here
           would navigate nowhere in a production build. */}
       {__DEV__ ? (
-        <Pressable
-          style={styles.devButton}
-          onPress={() => navigation.navigate('BleDemo')}
-          accessibilityRole="button"
-          accessibilityLabel="BLE connection demo, developer tool"
-        >
-          <Text style={styles.devButtonText}>BLE connection demo (dev)</Text>
-        </Pressable>
+        <>
+          <Pressable
+            style={styles.devButton}
+            onPress={() => navigation.navigate('BleDiscovery')}
+            accessibilityRole="button"
+            accessibilityLabel="BLE discovery flow, developer tool"
+          >
+            <Text style={styles.devButtonText}>BLE discovery → connect (dev)</Text>
+          </Pressable>
+          <Pressable
+            style={styles.devButton}
+            onPress={() => navigation.navigate('BleDemo')}
+            accessibilityRole="button"
+            accessibilityLabel="BLE connection demo, developer tool"
+          >
+            <Text style={styles.devButtonText}>BLE connection lifecycle (dev)</Text>
+          </Pressable>
+        </>
       ) : null}
     </View>
   );
