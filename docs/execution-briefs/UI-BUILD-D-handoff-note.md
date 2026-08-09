@@ -75,15 +75,15 @@ during Phase C review and left in place deliberately, because you are the first 
 choose the call pattern. Add a test that mounts it and asserts onResolved fires exactly once for a
 poweredOn state across multiple renders.
 
-🔴 STOP AND ASK — how long does a scan run before DV-5?
-USER_FLOWS.md F7.4 says "the empty-after-N-seconds state" and never gives N. I checked: it is not
-in the spec, not in protocol.ts, and not anywhere else. It is a UX decision, not a protocol
-constant, so it is Sadin's to make, not yours to invent.
-My recommendation for him to confirm: 10 seconds, matching the order of the existing BLE timeouts
-in src/features/ble/auth.ts (CONNECT_TIMEOUT_MS is 10_000). Long enough for a device waking from
-advertising-idle, short enough that DV-5's coaching arrives while the user is still holding the
-device. Proceed with 10s as a NAMED constant with a comment saying it is provisional and why —
-never a magic number inline — and flag it in your report so he can overrule it cheaply.
+SCAN DURATION — answered, do not re-raise: 10 SECONDS
+USER_FLOWS.md F7.4 says "the empty-after-N-seconds state" and never gives N; it is not in the spec
+or in protocol.ts either. It is a UX decision rather than a protocol constant, and Sadin has made
+it: 10 seconds, matching the order of the existing BLE timeouts in src/features/ble/auth.ts
+(CONNECT_TIMEOUT_MS is 10_000). Long enough for a device waking from advertising-idle, short enough
+that DV-5's coaching arrives while the user is still holding the device.
+Make it a NAMED constant with a comment recording that it is a UX decision (Sadin, 2026-08-09) and
+not a §4 value — never a magic number inline, and do not put it in protocol.ts, which is for spec
+constants only.
 
 BLE RULES THAT BITE HERE:
   - Scan MUST filter on BLE_SERVICE_UUID from protocol.ts (§4.2), passed as startDeviceScan's
