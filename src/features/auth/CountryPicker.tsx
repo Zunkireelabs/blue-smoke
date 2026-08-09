@@ -39,6 +39,21 @@ interface CountryPickerProps {
   onChange: (country: CountryCode) => void;
 }
 
+/**
+ * Hoisted to module scope rather than defined inline in `renderItem` —
+ * `react/no-unstable-nested-components` flags a component defined during
+ * render because React would see a new component type on every render.
+ */
+function CountryRow({ code, onPress }: { code: CountryCode; onPress: () => void }) {
+  return <ListRow label={countryLabel(code)} onPress={onPress} />;
+}
+
+/** Same hoisting reason as `CountryRow` — `FlatList`'s `ItemSeparatorComponent` expects a
+ * stable component reference, not one redefined on every render. */
+function RowSeparator() {
+  return <View style={styles.separator} />;
+}
+
 export function CountryPicker({ value, onChange }: CountryPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -80,10 +95,10 @@ export function CountryPicker({ value, onChange }: CountryPickerProps) {
             style={styles.list}
             data={filtered}
             keyExtractor={code => code}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            ItemSeparatorComponent={RowSeparator}
             renderItem={({ item }) => (
-              <ListRow
-                label={countryLabel(item)}
+              <CountryRow
+                code={item}
                 onPress={() => {
                   onChange(item);
                   setOpen(false);
