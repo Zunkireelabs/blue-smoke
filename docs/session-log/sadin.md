@@ -4,6 +4,64 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-10 — new machine set up from nothing; P2-8.0 closed, reviewed twice, PR opened
+
+**Branch:** `feature/P2-8.0-server-side-inquiry-creation`, pushed.
+**Landed on `stage`:** PR #13 opened, CI running.
+
+A second machine went from a completely blank state — no Homebrew, no Node, no Ruby past the
+system's ancient 2.6.10, no Xcode beyond Command Line Tools, no git credentials — to the recorded
+2026-08-09 baselines matching exactly (typecheck clean, 501/51, lint 0 errors + 70 warnings,
+bundle:check both platforms), then closed out `P2-8.0`'s last box.
+
+**Gotchas worth stealing, toolchain:**
+
+- `sudo`-requiring installers (Homebrew) fail non-interactively even under the `!` prefix —
+  "stdin is not a TTY" regardless of who runs it. Needs a real Terminal.app window. Same
+  constraint bit `supabase login` and `gh auth login`'s browser flow, exactly as
+  `NEW-MACHINE-SETUP.md` already warned for the Supabase case.
+- System Ruby (2.6.10) cannot install modern CocoaPods — `ffi` itself now requires Ruby ≥ 3.0.
+  Building Ruby from source via `rbenv` failed on the `psych`/`libyaml` extension without
+  Homebrew present. Once Homebrew existed, `brew install cocoapods` pulled its own Ruby and
+  landed on **exactly** `1.17.0`, matching the baseline — not worth hand-building Ruby first.
+- `nvm`-installed Node isn't on `PATH` in fresh non-login shells; symlinking `node`/`npm`/`npx`
+  into `~/.local/bin` (already on `PATH` by default) fixed it for every subsequent shell without
+  needing to source `nvm.sh` each time.
+- `npx supabase link --project-ref <ref>` does **not** prompt for the database password — only
+  `supabase link` (no ref) or a raw `db-url` connection does. Once linked, `supabase db query
+  --linked "..."` executes SQL via the Management API with no DB password at all, which is how the
+  final `verifications` row got confirmed independently in review.
+
+**P2-8.0, closed:** `create-inquiry` now calls Persona (`_shared/personaInquiry.ts`, pure and
+unit-tested, same split as `personaSignature.ts`), writes the pending row, and stops returning
+501. Two things the brief didn't anticipate, both caught in review rather than assumed:
+
+- 🔴 **`meta.session-token` is `null` on every `201` unless `meta.auto-create-inquiry-session:
+  true` is sent on the request.** Not in the brief's §3 shape — found by driving a live sandbox
+  call, confirmed against Persona's own docs before trusting it. Same failure signature as
+  `min_age` and the `already_decided` path: a `201` that looks like success while the one field
+  the app needs to resume is silently absent.
+- The Idempotency-Key (brief §4.3) collapses two concurrent requests into one billable Persona
+  call, but only closes half the race: both callers still race to INSERT the pending row, and the
+  loser hit a bare `verifications_inquiry_id_key` unique-violation as a `500` on the first review
+  pass. Fixed in a follow-up round: `isConcurrentInquiryInsertRace` distinguishes that specific
+  constraint from any other insert failure (including the `id` primary key, which is also a
+  `23505`), and the loser gets the winner's identical response instead of an error for a request
+  Persona had already deduplicated.
+
+**Reviewed, not just reported — this is what actually caught the above.** Every gate was re-run
+independently after each of the two implementation rounds rather than trusted from the report
+(typecheck/test/lint/bundle:check all matched what was claimed both times, 501→525→530 tests).
+The `auto-create-inquiry-session` claim was checked against Persona's live docs before being
+accepted. The final "deployed and verified live" claim — `create-inquiry` `ACTIVE`,
+`verify_jwt: true`, one sandbox `verifications` row at `age_verified: true` / `approved` / `pass`
+— was not accepted from the report either; confirmed directly via `supabase functions list` and
+`supabase db query --linked` once CLI access existed.
+
+**Blocked / needs someone else:** full Xcode (26.6, App Store) was still installing as of this
+entry — `npm run ios` untested on this machine. Command Line Tools alone was enough for
+`pod install`, `bundle:check`, and the Metro-only gates.
+
 ## 2026-08-10 — nothing had ever been deployed; the webhook chain is live and authenticated
 
 **Branch:** `feature/P1-3.0-device-scan-and-results`, **not pushed**. Docs only in git; the real
