@@ -73,6 +73,7 @@ Nothing in this section exists in code. Whole section is greenfield.
 | **ON-7** | Denied once | F1.D1 | `ABSENT` | Try again |
 | **ON-8** | Permanently denied | F1.D2 | `ABSENT` | Open Settings |
 | **ON-9** | Bluetooth off | F1.D5 | `ABSENT` | Turn on Bluetooth |
+| **ON-10** | No Bluetooth hardware | — | `BUILT` | *(none — header back only)* |
 
 **ON-1…3** is a three-card carousel. **ON-2/ON-3** carry the product's core privacy promise —
 this is the most copy-sensitive surface in the app.
@@ -84,6 +85,14 @@ camera at verification start, notifications after the first successful pair.
 cannot and must deep-link to OS Settings. Rendering one for the other is a dead end.
 **ON-9 is distinct again** — Bluetooth *off* is not Bluetooth *denied*, and offering "Open
 Settings" to someone who just needs to flip a toggle is wrong.
+
+**ON-10 is distinct from all of the above, and from the gate's own bare spinner** (P1-2.0
+defect fix). CoreBluetooth's `Unsupported` means this phone has no BLE radio at all — a fact
+with no CTA, since neither the app nor Settings can add hardware. It must not share a screen
+with the `null`/`unknown` "still checking" wait `BluetoothGateScreen` shows first: that wait is
+bounded (`GATE_UNKNOWN_TIMEOUT_MS`) and recoverable with a genuine "Try again"; `unsupported` is
+final. Collapsing either pair back into one screen reintroduces the bug this task fixed — an
+indefinite spinner over a state that was never going to change.
 
 ---
 
@@ -261,14 +270,14 @@ started even with a design, because a named input is missing.
 | Section | Screens | Built | Partial/Stub | Blocked | Absent |
 |---|---|---|---|---|---|
 | SH Shell | 1 | 1 | — | — | — |
-| ON Onboarding | 9 | — | — | — | 9 |
+| ON Onboarding | 10 | 1 | — | — | 9 |
 | AU Auth | 11 | 8 | 3 | — | — |
 | VF Verification | 12 | 1 | 4 | 1 | 6 |
 | DV Devices | 11 | 5 | — | 2 | 4 |
 | LK Lock | 8 | — | — | 4 | 4 |
 | PF Profile | 7 | — | 1 | 4 | 2 |
 | SY System | 3 | — | — | — | 3 |
-| **Total** | **62** | **15** | **8** | **11** | **28** |
+| **Total** | **63** | **16** | **8** | **11** | **28** |
 
 ---
 

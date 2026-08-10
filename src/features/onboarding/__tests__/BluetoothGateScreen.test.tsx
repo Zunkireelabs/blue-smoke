@@ -8,7 +8,7 @@ import React from 'react';
 import { AppState, PermissionsAndroid, Platform } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { BleClientProvider, type BleManagerLike } from '@/features/ble/BleClientContext';
-import { BluetoothGateScreen } from '../BluetoothGateScreen';
+import { BluetoothGateScreen, GATE_UNKNOWN_TIMEOUT_MS } from '../BluetoothGateScreen';
 import { renderedText, findByLabel } from '@/features/auth/testUtils';
 
 function fakeManager(...states: string[]): BleManagerLike {
@@ -40,6 +40,19 @@ async function renderGate(manager: BleManagerLike, onResolved = jest.fn()) {
   });
   return { renderer, onResolved };
 }
+
+// File-wide, not just the P1-2.0 describe block below: `check()` now arms a real
+// `GATE_UNKNOWN_TIMEOUT_MS` `setTimeout` on every call, including every render in the describe
+// block above. None of those tests unmount their renderer, so under real timers that setTimeout
+// outlives the test and fires after Jest's environment has torn down ("Cannot log after tests are
+// done"). Fake timers file-wide sidestep that: a pending fake timer is simply discarded when
+// `jest.useRealTimers()` runs, never firing for real.
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 describe('BluetoothGateScreen — real-state selector', () => {
   const originalOS = Platform.OS;
@@ -156,5 +169,103 @@ describe('BluetoothGateScreen — real-state selector', () => {
     });
 
     expect(onResolved).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * P1-2.0 — the defect this branch fixes: `'unsupported'` and `null`/`'unknown'` used to share one
+ * bare-spinner branch, so a phone with no BLE radio hung forever behind the exact same spinner as
+ * a transient "still checking." These two facts are asserted as genuinely different screens, the
+ * same way the describe block above proves ON-7/8/9 aren't one component with a variant prop.
+ */
+describe('BluetoothGateScreen — ON-10 and the recoverable timeout (P1-2.0)', () => {
+  it("Unsupported renders ON-10, a terminal screen distinct from the bare spinner and every other gate screen", async () => {
+    const { renderer, onResolved } = await renderGate(fakeManager('Unsupported'));
+    const text = renderedText(renderer);
+    expect(text).toContain("This phone can't pair with BlueSmoke");
+    expect(text).not.toContain('Bluetooth is off');
+    expect(text).not.toContain('Permission is turned off');
+    expect(text).not.toContain('We need permission to continue');
+    expect(text).not.toContain('Still checking Bluetooth');
+    expect(onResolved).not.toHaveBeenCalled();
+  });
+
+  it('ON-10 never offers Open Settings — there is no radio for Settings to enable', async () => {
+    const { renderer } = await renderGate(fakeManager('Unsupported'));
+    expect(renderedText(renderer)).not.toContain('Open Settings');
+  });
+
+  it("Unsupported never times out into the recoverable screen — it is a final answer, not a still-checking state", async () => {
+    const { renderer } = await renderGate(fakeManager('Unsupported'));
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+    expect(renderedText(renderer)).toContain("This phone can't pair with BlueSmoke");
+  });
+
+  it('an unresolved/Unknown state shows a bare spinner before the timeout, not the recoverable screen', async () => {
+    const { renderer } = await renderGate(fakeManager('Unknown'));
+    const text = renderedText(renderer);
+    expect(text).not.toContain('Still checking Bluetooth');
+    expect(text).not.toContain("This phone can't pair with BlueSmoke");
+  });
+
+  it('an Unknown state that never resolves flips to the recoverable timeout screen after GATE_UNKNOWN_TIMEOUT_MS', async () => {
+    const { renderer, onResolved } = await renderGate(fakeManager('Unknown'));
+
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+
+    expect(renderedText(renderer)).toContain('Still checking Bluetooth');
+    expect(onResolved).not.toHaveBeenCalled();
+  });
+
+  it("Try again on the timeout screen genuinely re-checks — a resolved PoweredOn still resolves the gate", async () => {
+    const { renderer, onResolved } = await renderGate(fakeManager('Unknown', 'PoweredOn'));
+
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+    expect(renderedText(renderer)).toContain('Still checking Bluetooth');
+
+    await act(async () => {
+      findByLabel(renderer, 'Try again').props.onPress();
+    });
+
+    expect(onResolved).toHaveBeenCalledTimes(1);
+  });
+
+  it('Try again re-arms its own fresh timeout — a second stuck read times out again rather than hanging silently', async () => {
+    const { renderer } = await renderGate(fakeManager('Unknown', 'Unknown'));
+
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+    expect(renderedText(renderer)).toContain('Still checking Bluetooth');
+
+    await act(async () => {
+      findByLabel(renderer, 'Try again').props.onPress();
+    });
+    // The re-check's own read is still in flight (async manager.state()) — back to the bare
+    // spinner, not stuck showing stale "Still checking" copy from the previous attempt.
+    expect(renderedText(renderer)).not.toContain('Still checking Bluetooth');
+
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+    expect(renderedText(renderer)).toContain('Still checking Bluetooth');
+  });
+
+  it('reaching a conclusive state before the timeout clears the pending timer — no stray flip to the timeout screen', async () => {
+    const { renderer } = await renderGate(fakeManager('PoweredOff'));
+    expect(renderedText(renderer)).toContain('Bluetooth is off');
+
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+
+    expect(renderedText(renderer)).toContain('Bluetooth is off');
+    expect(renderedText(renderer)).not.toContain('Still checking Bluetooth');
   });
 });

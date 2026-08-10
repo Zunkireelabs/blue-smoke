@@ -8,7 +8,9 @@ import ReactTestRenderer, { act } from 'react-test-renderer';
 import { BluetoothDeniedScreen } from '../BluetoothDeniedScreen';
 import { BluetoothBlockedScreen } from '../BluetoothBlockedScreen';
 import { BluetoothOffScreen } from '../BluetoothOffScreen';
-import { findByLabel } from '@/features/auth/testUtils';
+import { BluetoothUnsupportedScreen } from '../BluetoothUnsupportedScreen';
+import { BluetoothCheckTimeoutScreen } from '../BluetoothCheckTimeoutScreen';
+import { findByLabel, renderedText } from '@/features/auth/testUtils';
 
 async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: string) {
   await act(async () => {
@@ -68,5 +70,32 @@ describe('ON-9 — BluetoothOffScreen', () => {
     await press(renderer, 'Open Settings');
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
+  });
+});
+
+describe('ON-10 — BluetoothUnsupportedScreen', () => {
+  it('never offers Open Settings or a CoreBluetooth state name', () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = ReactTestRenderer.create(<BluetoothUnsupportedScreen />);
+    });
+
+    const text = renderedText(renderer);
+    expect(text).not.toContain('Open Settings');
+    expect(text).not.toContain('Unsupported');
+    expect(text).not.toContain('CBManagerState');
+  });
+});
+
+describe('BluetoothCheckTimeoutScreen — recoverable still-checking state', () => {
+  it('Try again calls onTryAgain', async () => {
+    const onTryAgain = jest.fn();
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = ReactTestRenderer.create(<BluetoothCheckTimeoutScreen onTryAgain={onTryAgain} />);
+    });
+
+    await press(renderer, 'Try again');
+    expect(onTryAgain).toHaveBeenCalledTimes(1);
   });
 });
