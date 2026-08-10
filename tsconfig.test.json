@@ -17,7 +17,8 @@
     "src/features/ble/__tests__/base64.test.ts",
     "src/features/devices/__tests__/PairDeviceScreen.test.tsx",
     "src/features/ble/__tests__/connection.test.ts",
-    "src/features/ble/__tests__/journey.test.ts"
+    "src/features/ble/__tests__/journey.test.ts",
+    "src/features/ble/__tests__/appState.test.ts"
   ],
   // Root's "exclude" (inherited otherwise) lists this same file, so it must be overridden here —
   // that root entry exists to keep the file OUT of the root program, not out of this one.
