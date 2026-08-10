@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '@/shared/lib/supabaseClient';
 import type { AuthClient, AuthOutcome, AuthResult } from './client';
+import { toAuthUserMessage } from './authErrors';
 import { RESET_PASSWORD_REDIRECT_URL } from './deepLink';
 
 /**
@@ -80,7 +81,7 @@ export const supabaseAuthClient: AuthClient = {
       const { data, error } = await supabase.auth.signUp({ email, password });
 
       if (error || !data.user) {
-        return { ok: false, error: error?.message ?? 'Sign-up failed.' };
+        return { ok: false, error: toAuthUserMessage(error) };
       }
 
       await ensureProfileRow(data.user.id);
@@ -126,9 +127,13 @@ export const supabaseAuthClient: AuthClient = {
         // Password-reset requests are themselves an enumeration vector (does
         // this email have an account?). Supabase's own behavior here does not
         // error on an unknown email, so this branch should only fire for real
-        // failures (rate limit, network, SMTP misconfiguration) — safe to
-        // surface as-is.
-        return { ok: false, error: error.message };
+        // failures (rate limit, network, SMTP misconfiguration).
+        //
+        // It used to say those were "safe to surface as-is" and returned
+        // `error.message`. They are not: SMTP misconfiguration is exactly the
+        // class of failure whose vendor text names our mail provider, the same
+        // way the SMS path named Twilio (see `authErrors.ts`).
+        return { ok: false, error: toAuthUserMessage(error) };
       }
 
       return { ok: true, data: undefined };
@@ -147,7 +152,7 @@ export const supabaseAuthClient: AuthClient = {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
 
       if (error) {
-        return { ok: false, error: error.message };
+        return { ok: false, error: toAuthUserMessage(error) };
       }
 
       return { ok: true, data: undefined };
@@ -165,7 +170,7 @@ export const supabaseAuthClient: AuthClient = {
       const { error } = await supabase.auth.resend({ type: 'signup', email });
 
       if (error) {
-        return { ok: false, error: error.message };
+        return { ok: false, error: toAuthUserMessage(error) };
       }
 
       return { ok: true, data: undefined };
@@ -179,7 +184,7 @@ export const supabaseAuthClient: AuthClient = {
       const { error } = await supabase.auth.signInWithOtp({ phone });
 
       if (error) {
-        return { ok: false, error: error.message };
+        return { ok: false, error: toAuthUserMessage(error) };
       }
 
       return { ok: true, data: undefined };
@@ -208,7 +213,7 @@ export const supabaseAuthClient: AuthClient = {
       const { error } = await supabase.auth.signOut();
 
       if (error) {
-        return { ok: false, error: error.message };
+        return { ok: false, error: toAuthUserMessage(error) };
       }
 
       return { ok: true, data: undefined };
