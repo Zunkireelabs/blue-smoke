@@ -15,7 +15,14 @@
  */
 
 import { Platform } from 'react-native';
-import { PERMISSIONS, RESULTS, requestMultiple, type Permission, type PermissionStatus } from 'react-native-permissions';
+import {
+  PERMISSIONS,
+  RESULTS,
+  checkMultiple,
+  requestMultiple,
+  type Permission,
+  type PermissionStatus,
+} from 'react-native-permissions';
 
 /**
  * Three outcomes, not the library's five — `LIMITED` never applies to a
@@ -66,19 +73,57 @@ function androidPermissionsForApiLevel(apiLevel: number): Permission[] {
 }
 
 /**
+ * `requestMultiple` and `checkMultiple` have the same shape, and the two
+ * exported functions below must not drift apart in how they pick permissions
+ * or fold statuses — only in whether the OS is allowed to show a dialog. So
+ * the whole body lives here once and each wrapper supplies the verb.
+ */
+type PermissionQuery = (permissions: Permission[]) => Promise<Record<Permission, PermissionStatus>>;
+
+async function resolveBlePermissions(query: PermissionQuery): Promise<BlePermissionResult> {
+  if (Platform.OS !== 'android') {
+    return 'granted';
+  }
+
+  const permissions = androidPermissionsForApiLevel(Platform.Version as number);
+  const statuses = await query(permissions);
+  return Object.values(statuses)
+    .map(toBlePermissionResult)
+    .reduce(worstResult, 'granted');
+}
+
+/**
  * Request whatever this OS/API level needs before a scan. Call at the moment
  * of need — opening the pairing screen — never at launch (P1-2.0): asking for
  * Bluetooth before the user has any reason to want it is the pattern that
  * trains people to reflexively deny.
  */
 export async function requestBlePermissions(): Promise<BlePermissionResult> {
-  if (Platform.OS !== 'android') {
-    return 'granted';
-  }
+  return resolveBlePermissions(requestMultiple);
+}
 
-  const permissions = androidPermissionsForApiLevel(Platform.Version as number);
-  const statuses = await requestMultiple(permissions);
-  return Object.values(statuses)
-    .map(toBlePermissionResult)
-    .reduce(worstResult, 'granted');
+/**
+ * Read the current permission state **without prompting** — P1-2.0 item 8,
+ * "permission state re-checked on app foreground".
+ *
+ * 🔴 This is not interchangeable with `requestBlePermissions()`, and using
+ * that one here would be a bug in two directions:
+ *
+ * - On a `denied` permission, `requestMultiple` re-opens the OS dialog. A
+ *   foreground handler runs on every app switch, notification tap and
+ *   incoming call, so that turns the permission prompt into a popup the user
+ *   cannot escape — the fastest way to train someone to deny permanently.
+ * - On a `blocked` one it does nothing at all, silently, so it cannot even
+ *   detect the state it would need to route to Settings.
+ *
+ * `request` is for the moment of need; `check` is for recovery.
+ *
+ * iOS returns `granted` here for the same reason it does above: there is no
+ * pre-flight permission to inspect. iOS surfaces Bluetooth denial as the
+ * adapter state `unauthorized`, which `scanner.ts` already handles as a
+ * `ScanBlockedReason` — a different channel that needs no foreground poll
+ * because CoreBluetooth pushes it.
+ */
+export async function checkBlePermissions(): Promise<BlePermissionResult> {
+  return resolveBlePermissions(checkMultiple);
 }
