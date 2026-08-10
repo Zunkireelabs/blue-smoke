@@ -4,6 +4,74 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-10 — nothing had ever been deployed; the webhook chain is live and authenticated
+
+**Branch:** `feature/P1-3.0-device-scan-and-results`, **not pushed**. Docs only in git; the real
+change of the day was to infrastructure, not code.
+
+**The finding, and how it was found.** While answering a question about whether MCP could set Edge
+Function secrets, I ran `list_edge_functions` against `bluesmoke-dev` to verify rather than assert.
+It returned `[]`. `get_edge_function('persona-webhook')` returned `NotFoundException`. The project
+ref matched `.env` exactly, and all five migrations were applied — so **the database was deployed and
+not one Edge Function ever had been**. There is also no `functions deploy` step anywhere in
+`.github/`, and the app never invokes an Edge Function at all.
+
+**This corrected a story we had been repeating.** "`create-inquiry` returns 501" was true of the code
+and wrong about the system: nobody had ever seen that 501, because the function wasn't deployed and
+nothing called it — a caller would have got a platform 404. And far more importantly,
+`persona-webhook` **had no endpoint**, which is the real reason `verifications` is empty and no dev
+account can verify. The 501 was a symptom we had mistaken for the cause. Today's earlier work — the
+template guard and its 20 tests — was correct code protecting an endpoint that did not exist.
+
+**What is now live**, each verified rather than assumed:
+
+- `persona-webhook` deployed, `ACTIVE`, **`verify_jwt: false`**. Proven by `GET` → `405`: that
+  response can only come from our handler, so the function booted (the two `_shared` imports
+  resolved) *and* gateway JWT checking is genuinely off, which it must be — Persona sends no
+  Supabase JWT, and with it on every delivery would be rejected before the signature check ran.
+- All three secrets set. `PERSONA_TEMPLATE_ID` verified **byte-exact** by comparing Supabase's
+  SHA-256 digest against one computed locally — which also proved the digest is a plain unsalted
+  SHA-256, so the trick works on any future secret whose value we know.
+- Persona webhook created and **Enabled**, Kebab, `2025-12-08`, subscribed to exactly
+  `PASSING_STATUSES ∪ TERMINAL_FAILURE_STATUSES` plus `marked-for-review`.
+- 🔴 **`PERSONA_WEBHOOK_SECRET` proven correct, not merely present.** A locally computed `openssl`
+  HMAC over `` `${t}.{}` `` returned **`400 MISSING_INQUIRY_ID`** rather than `401` — the handler only
+  reaches that line after the signature verifies. So the stored secret matches Persona's byte for
+  byte, and §6.6's scheme validates against a signature computed by something other than our own code.
+
+**Gotchas worth stealing:**
+
+- **A new Persona API key is born with every permission ticked** — including `Access all inquiries`
+  (rule 1: reads ID payloads) and `Create or update inquiry templates`, which can rewrite the very
+  template whose Min 18 check was confirmed yesterday. `persona-webhook`'s guard does not cover that:
+  it verifies *which* template answered, not what that template requires. Narrowed to
+  `Create inquiries` alone.
+- **The Persona webhook was created `Disabled`.** Correct URL, correct events, correct secret, and it
+  would have delivered nothing. Every visible signal said configured.
+- **Two dashboard dropdowns silently shape our parse:** the API version and `Key inflection`. Kebab is
+  mandatory — `inquiryTemplate.ts:44` looks for `inquiry-template`, so a Camel flip returns
+  `absent_from_payload` and refuses every pass. On the API key we pin both via request headers; on the
+  webhook we cannot, because Persona pushes to us. That one is console state we can only observe.
+- **`supabase login` cannot run under the `!` prefix** — non-TTY, so the browser flow fails. Terminal.
+- **Deploying via the MCP tool would have meant retyping 541 lines**, including the HMAC verifier. The
+  CLI reads from disk. Not a convenience call — a mistyped character in `personaSignature.ts` is a
+  security control quietly weakened that still deploys cleanly.
+
+**Still open, and deliberately not closed today:**
+
+- `create-inquiry` is **not deployed** and still returns 501. The app creates its inquiry client-side,
+  so no pending row is written, and `persona-webhook` rightly answers `404 UNKNOWN_INQUIRY` rather
+  than attaching an unknown inquiry to a guessed user. **That is the whole remaining gap**, and it is
+  `P2-8.0`'s last box.
+- ⚠️ **The payload path to `status` is still unconfirmed** (`index.ts:110` says so itself). The
+  signature test used `{}` and stopped at the missing id, so it proved nothing about
+  `data.attributes.payload.data.attributes.status`. Wrong path fails **closed and silently**. Only a
+  real sandbox delivery settles it; it is now a Definition-of-Done line on the P2-8.0 brief.
+- The old **Default API key** still exists in Persona. `Last used at: —`, and its value is legible in
+  a screenshot, so expiring it costs nothing.
+
+---
+
 ## 2026-08-09 — OQ-2 mechanism decided; a silent-failure path found in `persona-webhook`
 
 **Branch:** `feature/P1-3.0-device-scan-and-results`, **not pushed**.
