@@ -9,7 +9,8 @@
  * *between the app and the device*, not about the test harness).
  */
 
-import { aesCmac, hkdfSha256 } from '../crypto';
+import { aesCmac, hkdfSha256, nodeDeviceCoreCrypto, nodeNonceSource } from '../crypto';
+import type { DeviceCoreConfig } from '../deviceCore';
 import {
   AUTH_HKDF_INFO,
   AUTH_PROOF_FIXED_PREFIX,
@@ -19,6 +20,17 @@ import {
   PROTOCOL_VERSION,
 } from '../../../src/features/ble/protocol';
 import { writeUint24LE } from '../byteLayout';
+
+/**
+ * P1-3.0 §2.1 — `DeviceCore` takes no default crypto/nonceSource (deviceCore.ts's module doc
+ * comment explains why: a top-level `node:crypto` import there would break any Metro bundle
+ * that reaches it). Every test construction site spreads this in, the same way the Node test
+ * harness supplies real node:crypto-backed implementations per the P1-3.0 brief §2.1.
+ */
+export const NODE_DEPS: Pick<DeviceCoreConfig, 'crypto' | 'nonceSource'> = {
+  crypto: nodeDeviceCoreCrypto,
+  nonceSource: nodeNonceSource,
+};
 
 export function deriveKSess(kDev: Uint8Array, sessionId: Uint8Array, keyGeneration: number): Buffer {
   return hkdfSha256(

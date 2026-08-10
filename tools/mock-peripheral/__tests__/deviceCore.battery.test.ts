@@ -1,6 +1,7 @@
 import { DeviceCore } from '../deviceCore';
 import { FakeClock } from '../clock';
 import { LOCK_STATE_LAYOUT, LockStateFlagBit } from '../../../src/features/ble/protocol';
+import { NODE_DEPS } from './harness';
 
 const K_DEV = Buffer.alloc(16, 0x77);
 
@@ -13,7 +14,7 @@ function readLowBatteryFlag(bytes: Uint8Array): boolean {
 
 describe('DeviceCore — §4.4 battery model', () => {
   test('reports the configured initial battery percent', () => {
-    const core = new DeviceCore({ kDev: K_DEV, clock: new FakeClock(0), initialBatteryPercent: 42 });
+    const core = new DeviceCore({ kDev: K_DEV, clock: new FakeClock(0), initialBatteryPercent: 42, ...NODE_DEPS });
     expect(readBatteryPercent(core.read('lockState'))).toBe(42);
   });
 
@@ -24,6 +25,7 @@ describe('DeviceCore — §4.4 battery model', () => {
       clock,
       initialBatteryPercent: 50,
       batteryDrainPercentPerHour: 10,
+      ...NODE_DEPS,
     });
     clock.advanceMs(60 * 60 * 1000); // 1 hour
     expect(readBatteryPercent(core.read('lockState'))).toBe(40);
@@ -39,6 +41,7 @@ describe('DeviceCore — §4.4 battery model', () => {
       clock,
       initialBatteryPercent: 20,
       batteryDrainPercentPerHour: 10,
+      ...NODE_DEPS,
     });
     expect(readLowBatteryFlag(core.read('lockState'))).toBe(false);
 
@@ -65,6 +68,7 @@ describe('DeviceCore — §4.4 battery model', () => {
       clock,
       initialBatteryPercent: 20,
       batteryDrainPercentPerHour: 100, // fast drain for the test
+      ...NODE_DEPS,
     });
     const seenFlags: boolean[] = [];
     core.subscribe('lockState', (bytes) => seenFlags.push(readLowBatteryFlag(bytes)));
@@ -76,7 +80,7 @@ describe('DeviceCore — §4.4 battery model', () => {
   });
 
   test('setBatteryPercent is a direct override for ad hoc low-battery testing', () => {
-    const core = new DeviceCore({ kDev: K_DEV, clock: new FakeClock(0), initialBatteryPercent: 90 });
+    const core = new DeviceCore({ kDev: K_DEV, clock: new FakeClock(0), initialBatteryPercent: 90, ...NODE_DEPS });
     core.setBatteryPercent(5);
     const lockState = core.read('lockState');
     expect(readBatteryPercent(lockState)).toBe(5);

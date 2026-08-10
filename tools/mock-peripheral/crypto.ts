@@ -10,7 +10,8 @@
  * see __tests__/cmac.rfc4493.test.ts.
  */
 
-import { createCipheriv, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { DeviceCoreCrypto } from './deviceCore';
 
 const BLOCK_SIZE_BYTES = 16;
 
@@ -122,4 +123,18 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
     return false;
   }
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/**
+ * P1-3.0 §2.1 — the `DeviceCoreCrypto` this module implements, bundled for the Node test
+ * harness to inject into `DeviceCore`/`createMockPeripheral`. `deviceCore.ts` never imports
+ * this file (or `node:crypto`) directly — see its module doc comment — so every test
+ * construction site supplies it explicitly, the same way a real firmware bridge or the app's
+ * own dev stub would.
+ */
+export const nodeDeviceCoreCrypto: DeviceCoreCrypto = { aesCmac, hkdfSha256, constantTimeEqual };
+
+/** The Node test harness's nonce source — real `node:crypto.randomBytes`, same as before the inversion. */
+export function nodeNonceSource(): Uint8Array {
+  return randomBytes(32);
 }

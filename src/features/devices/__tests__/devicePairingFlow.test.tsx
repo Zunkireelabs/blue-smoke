@@ -13,6 +13,7 @@ import { Platform } from 'react-native';
 
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { BleClientProvider, type BleManagerLike } from '@/features/ble/BleClientContext';
 import { HomeScreen } from '../HomeScreen';
 import { DevicePairingPrimingScreen } from '../DevicePairingPrimingScreen';
@@ -72,6 +73,8 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
       kDev: K_DEV,
       clock: new FakeClock(0),
       deviceId: 'mock-device-0001',
+      crypto: nodeDeviceCoreCrypto,
+      nonceSource: nodeNonceSource,
     });
     const renderer = renderFlow(manager);
 
@@ -96,7 +99,12 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
   });
 
   it('"Not now" on the priming screen returns to the device list, not a dead end', async () => {
-    const { manager } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0) });
+    const { manager } = createMockPeripheral({
+      kDev: K_DEV,
+      clock: new FakeClock(0),
+      crypto: nodeDeviceCoreCrypto,
+      nonceSource: nodeNonceSource,
+    });
     const renderer = renderFlow(manager);
 
     await press(renderer, 'Pair a device');

@@ -23,6 +23,7 @@ import ReactTestRenderer, { act } from 'react-test-renderer';
 
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { BleClientProvider, useBleManager, type BleDeviceLike, type BleManagerLike } from '../BleClientContext';
 import { readDeviceInfo } from '../deviceInfo';
 import { BLE_SERVICE_UUID, PROTOCOL_VERSION, ProvisioningState } from '../protocol';
@@ -36,6 +37,8 @@ function buildMockPeripheral() {
     clock: new FakeClock(0),
     deviceId: DEVICE_ID,
     provisioningState: ProvisioningState.ACTIVATED,
+    crypto: nodeDeviceCoreCrypto,
+    nonceSource: nodeNonceSource,
   });
 }
 

@@ -162,10 +162,17 @@ npm run ios              # works; `npm run android` has never been run (no JDK)
 npx supabase db push     # migrations
 ```
 
-**`npm run lint` has a ruled warning baseline, currently 70.** It is *not* "≤ 70 forever" — the rule
+**`npm run lint` has a ruled warning baseline, currently 111.** It is *not* "≤ 111 forever" — the rule
 is **no `eslint-disable`, and no `no-bitwise` outside `src/features/ble`, `crypto`, `byteLayout`**,
 where byte-level work makes bitwise operators unavoidable. Adding a file to those directories may
 legitimately raise the count. Suppressing a warning to hold the number down is a breach.
+
+*Raised 70 → 111 by `P1-3.0` (dev BLE seam), all 41 in `tools/mock-peripheral/byteLayout.ts`:
+removing `Buffer` (a Node global absent from Hermes) meant hand-rolling little-endian reads/writes
+and a base64 codec in `Uint8Array`. The codec was deliberately placed in `byteLayout.ts` rather
+than `bleAdapter.ts` so the bitwise work lands in a file this rule already exempts — in
+`bleAdapter.ts` the same code would have been a breach. Verified file-by-file against a clean
+`stage` worktree: no other file's count moved, and no `eslint-disable` was added.*
 
 **Run the mock BLE peripheral** (`P0-2.5`) for any BLE work — real hardware isn't available until ~Day 26. It implements spec §4 including failure paths. See its README.
 

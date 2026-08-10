@@ -6,6 +6,7 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { readDeviceInfo } from '../deviceInfo';
 import {
   CHARACTERISTIC_LENGTH_BYTES,
@@ -79,6 +80,8 @@ function buildMockPeripheral(provisioningState?: ProvisioningState) {
     hwRevision: MOCK_HW_REVISION,
     fwVersion: MOCK_FW_VERSION,
     keyGeneration: MOCK_KEY_GENERATION,
+    crypto: nodeDeviceCoreCrypto,
+    nonceSource: nodeNonceSource,
     ...(provisioningState === undefined ? {} : { provisioningState }),
   });
 }
