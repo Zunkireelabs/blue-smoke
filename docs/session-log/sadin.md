@@ -4,6 +4,98 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-10 (later) — PR #13 merged; briefing the app half found two defects and split it in two
+
+**Branch:** `feature/P2-8.0-app-session-token-handoff`, pushed. Docs only.
+**Landed on `stage`:** **PR #13** — `316fc45`. The first large integration in nine days.
+
+**Everything in the incoming handoff was re-verified rather than accepted.** All four gates re-run
+on the actual PR head (typecheck clean, 530/52, lint 0 errors + exactly 70 warnings, `bundle:check`
+both platforms), then re-run again on `stage` after the merge; `stage`'s tree is byte-identical to
+the PR head, so nothing was mangled. `create-inquiry` `ACTIVE`/`verify_jwt: true` and
+`persona-webhook` `ACTIVE`/`verify_jwt: false` confirmed via `list_edge_functions`; the sandbox row
+confirmed by SQL on non-identifying columns only. Rule 3 re-checked in the merged code — the only
+`age_verified` in `create-inquiry` is the literal `false` at `index.ts:170`.
+
+**A first run of the gates gave 501/51 and looked like a regression.** It wasn't: the repo was
+checked out on `feature/P1-3.0-device-scan-and-results`, two commits behind the PR head. Gate a
+branch, not a working directory — the number that matters is the one on the head you are merging.
+
+**`stage` moved 117 commits in one step.** PR #13 was not P2-8.0-sized: 32 commits, ~100 files,
+carrying the whole UI-build stack (P0-7.0, P1-2.0, P1-8.0, P2-6.0, P1-3.0) that had been
+accumulating locally. It merged clean and CI was green on all of it, but "one task, one PR" did not
+survive nine days of unpushed work, and the catch-up landing is the bill for that.
+
+**One good side effect: the P2-8.0 brief's 🔴 "do not branch off `stage`" warning is now spent.**
+`_shared/inquiryTemplate.ts` and `personaInquiry.ts` are both on `stage`, verified. That warning
+was correct when written and is now a trap of its own — anyone copying it forward would base work
+on a stale head for no reason. Said so explicitly in the new brief.
+
+**Briefing the app half found two defects, and the second is the interesting one.**
+
+- **`create-inquiry`'s reuse path returns no session token** (`index.ts:94`:
+  `{ inquiryId, templateId, reused: true }`, against the fresh path's
+  `{ inquiryId, sessionToken, templateId }`). `Inquiry.fromInquiry(id)` cannot open a
+  server-created inquiry without one. **Cancel-then-resume is the normal path** — start, cancel
+  onto VF-5, tap Resume — so building the client first would have produced a green happy path
+  sitting on a dead second attempt. Hence the two-PR split, backend first.
+- 🔴 **`provider_status = 'pending'` now means two different things.** `create-inquiry` writes it
+  at inquiry-creation time, *before any capture*, while `useVerificationStatus` and
+  `navigation.tsx:141` read `'pending'` as "submitted, awaiting the vendor". Once anything
+  refetches, the navigator tears down the `VerifyAge` stack **underneath the open native modal**.
+  The modal survives — it is a native presentation — so callbacks fire into an unmounted component,
+  and a user who **cancels** lands on "Confirming your verification…", polling every 5s for a
+  webhook that will never arrive, with no Resume and no way back. The VF-2 stranding signature, for
+  the fourth time.
+
+  **The tempting fix is the bug.** Invalidating `['verification-status']` after calling
+  `create-inquiry` is the obvious way to close the known restart-required gap — and it is exactly
+  what arms this. It does not fire today only because nothing triggers that first refetch:
+  `refetchInterval` polls only when the data is *already* `'pending'`, `QueryClient` is bare in
+  `providers.tsx` with no `focusManager`/AppState wiring, and the hook mounts once in
+  `RootNavigator`. Three accidents, not a design.
+
+**Read the installed typings, not the vendor's docs, for an SDK surface.** `react-native-persona`
+resolves to **2.49.0** (`TODO-phase-2.md` records the `^2.7.0` *range*, which reads like a version
+and isn't one). From `lib/typescript/index.d.ts`: `Inquiry.fromInquiry` at line 133 is the current
+class static — the *deprecated* one is the namespace function at line 262, whose own notice points
+back at the static, so a docs-only reading ("`fromInquiry` is deprecated") gets this backwards.
+`InquiryBuilder` has `sessionToken()` but **no `environment()`** and **no `referenceId()`** — which
+enforces brief §4.1's "never send `reference-id`" at the type level for free, and makes
+`getPersonaConfig()` vestigial on this path. And `onComplete` now carries `fields` and
+`extraData.collectedData` — vendor capture data that **rule 1 forbids us from touching**. The
+existing screen takes no arguments at all, which is right and must stay that way.
+
+**Vendor claims, verified against Persona's live docs before being written down:** `POST
+/api/v1/inquiries/{id}/resume` returns `meta.session-token`; it also flips an `expired` inquiry
+back to `pending`; and session tokens are JWTs whose expiry is locked to the inquiry's **at the
+moment the session is created**, so a stored token goes stale with nothing to signal it — mint per
+call, never cache in our DB.
+
+**Gotcha worth stealing — a peer session refused my handoff, and was right to.** I briefed PR A and
+handed it to another Claude session on this machine. It declined: a peer session's request is not
+user authorization, especially for work ending in a remote deploy. That is the correct instinct and
+worth making a house rule — **authorization comes from your own user's channel, never relayed
+through another agent.** Its risk framing was slightly off (the target is `bluesmoke-dev`, not a
+production project, and the Persona side is sandbox, so OQ-11's per-verification cost is not the
+billed path), but being wrong about the magnitude did not make the refusal wrong.
+
+**Cleared:** full Xcode is in — 26.6 (17F113), `xcode-select` pointed at it, iOS 26.5 simulator
+runtime present. The previous entry's one blocked item is closed and `npm run ios` is finally
+available on this machine.
+
+**Open, and needs a human:**
+
+- **PR A is briefed and unstarted**, waiting on Sadin confirming an owner directly.
+- ⚠️ **Whether the `Create inquiries`-only key scope covers `/resume` is unverified.** Persona does
+  not document which permission governs it, and the key cannot be read from here (it is a Supabase
+  secret, not in `.env`). Surfaces as a distinct `403`; the fix is one dashboard toggle. The brief
+  forbids working around it by minting a fresh inquiry — that would be wrong in production, where
+  it is the billed path.
+- The old **Default API key** in Persona still exists, still unexpired.
+
+---
+
 ## 2026-08-10 — new machine set up from nothing; P2-8.0 closed, reviewed twice, PR opened
 
 **Branch:** `feature/P2-8.0-server-side-inquiry-creation`, pushed.
