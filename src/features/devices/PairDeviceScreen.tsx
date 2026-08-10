@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { openSettings } from 'react-native-permissions';
 
 import { Button, Card, EmptyState, ErrorState, LoadingState, Screen, Text, tokens } from '@/shared/ui';
-import { requestBlePermissions, type BlePermissionResult } from '@/features/ble/permissions';
+import { checkBlePermissions, requestBlePermissions, type BlePermissionResult } from '@/features/ble/permissions';
 import { useBleScanner } from '@/features/ble/BleClientContext';
 import { createDeviceScanner, type DiscoveredDevice, type ScanBlockedReason, type ScanState } from '@/features/ble/scanner';
+import { createAppStateCoordinator } from '@/features/ble/appState';
 
 /**
  * P1-3.0/P1-2.0 — the pairing screen: request the OS Bluetooth permission,
@@ -42,10 +43,16 @@ export function PairDeviceScreen() {
     };
   }, [scanner]);
 
+  // `query` is `requestBlePermissions` for the initial call — the moment of
+  // need, where an OS prompt is appropriate — and `checkBlePermissions` for
+  // the foreground-recovery path below, which must never re-prompt.
   const checkPermissionAndScan = useCallback(
-    async (isCancelled: () => boolean = () => false) => {
+    async (
+      isCancelled: () => boolean = () => false,
+      query: () => Promise<BlePermissionResult> = requestBlePermissions,
+    ) => {
       setPermission('checking');
-      const result = await requestBlePermissions();
+      const result = await query();
       if (isCancelled()) {
         return;
       }
@@ -67,6 +74,23 @@ export function PairDeviceScreen() {
       };
     }, [checkPermissionAndScan, scanner]),
   );
+
+  // P1-2.0 item 8 — re-check permission on foreground return (e.g. from the
+  // "Open Settings" button) so a granted permission resumes scanning without
+  // the user having to leave and re-enter the screen. `checkBlePermissions()`
+  // only — see its 🔴 docstring for why `requestBlePermissions()` here would
+  // turn every app switch into an unescapable OS prompt.
+  useEffect(() => {
+    const coordinator = createAppStateCoordinator({
+      appState: AppState,
+      onEnterForeground: () => {
+        checkPermissionAndScan(() => false, checkBlePermissions);
+      },
+    });
+    return () => {
+      coordinator.dispose();
+    };
+  }, [checkPermissionAndScan]);
 
   if (permission === 'checking') {
     return (

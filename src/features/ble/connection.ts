@@ -1,6 +1,7 @@
 /**
- * BLE connection lifecycle: connect, reconnect with backoff, and
- * foreground/background state handling — spec §4.9, §7.1.
+ * BLE connection lifecycle: connect and reconnect with backoff — spec §4.9.
+ * Foreground/background state handling (spec §7.1) lives in `appState.ts`,
+ * not here — `createAppStateCoordinator()` and `reconcileConnections()`.
  *
  * P1-7.0. 🔴 A session never survives a disconnect, clean or abrupt: every
  * reconnect re-runs the full §4.5 handshake from `auth.ts` rather than

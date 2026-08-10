@@ -7,11 +7,11 @@
  * auth-screen tests instead of adding it.
  */
 import React from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { requestMultiple } from 'react-native-permissions';
+import { checkMultiple, requestMultiple } from 'react-native-permissions';
 
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
@@ -36,12 +36,40 @@ jest.mock('react-native-permissions', () => ({
     LIMITED: 'limited',
   },
   requestMultiple: jest.fn(),
+  checkMultiple: jest.fn(),
   openSettings: jest.fn().mockResolvedValue(undefined),
 }));
 
 const mockRequestMultiple = requestMultiple as unknown as jest.MockedFunction<
   (permissions: string[]) => Promise<Record<string, string>>
 >;
+const mockCheckMultiple = checkMultiple as unknown as jest.MockedFunction<
+  (permissions: string[]) => Promise<Record<string, string>>
+>;
+
+/**
+ * P1-7.0 — the seam PairDeviceScreen's foreground-recovery coordinator runs
+ * against: RN's real `AppState` throws under Jest (no native module), so
+ * `addEventListener`/`currentState` are stubbed directly on the real
+ * singleton, same shape as `appState.test.ts`'s `FakeAppState` but applied to
+ * the actual object the screen imports.
+ */
+function mockAppStateTransitions() {
+  let listener: ((state: string) => void) | undefined;
+  Object.defineProperty(AppState, 'currentState', { value: 'active', writable: true, configurable: true });
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((type, handler) => {
+    if (type === 'change') {
+      listener = handler as (state: string) => void;
+    }
+    return { remove: () => { listener = undefined; } };
+  });
+  return {
+    emit(state: string) {
+      Object.defineProperty(AppState, 'currentState', { value: state, writable: true, configurable: true });
+      listener?.(state);
+    },
+  };
+}
 
 const K_DEV = Uint8Array.from({ length: 16 }, (_, i) => 0x10 + i);
 
@@ -212,6 +240,11 @@ describe('PairDeviceScreen — Android permission gate', () => {
     Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
     Object.defineProperty(Platform, 'Version', { value: 33, configurable: true });
     mockRequestMultiple.mockReset();
+    mockCheckMultiple.mockReset();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(() => {
@@ -257,5 +290,32 @@ describe('PairDeviceScreen — Android permission gate', () => {
     });
 
     expect(renderedText(renderer)).toContain('BlueSmoke-0000');
+  });
+
+  test('P1-2.0 item 8 — blocked, user returns from Settings granted: the screen scans, without a second OS prompt', async () => {
+    mockRequestMultiple.mockResolvedValue({ BLUETOOTH_SCAN: 'blocked', BLUETOOTH_CONNECT: 'granted' });
+    mockCheckMultiple.mockResolvedValue({ BLUETOOTH_SCAN: 'granted', BLUETOOTH_CONNECT: 'granted' });
+    const appState = mockAppStateTransitions();
+    const { manager } = setup();
+
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = renderScreen(manager);
+    });
+
+    expect(findByLabel(renderer, 'Open Settings')).toBeTruthy();
+    expect(mockRequestMultiple).toHaveBeenCalledTimes(1);
+
+    // The user leaves for Settings (backgrounding this app) and returns having granted it.
+    await act(async () => {
+      appState.emit('background');
+      appState.emit('active');
+    });
+
+    expect(renderedText(renderer)).toContain('BlueSmoke-0000');
+    expect(mockCheckMultiple).toHaveBeenCalledTimes(1);
+    // The proof: foreground recovery used check, never request — a second
+    // request would mean a second unescapable OS prompt.
+    expect(mockRequestMultiple).toHaveBeenCalledTimes(1);
   });
 });
