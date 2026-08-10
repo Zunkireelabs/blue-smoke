@@ -58,6 +58,16 @@ export interface AuthClient {
    * silent, say so and flag it."
    */
   confirmPasswordReset(newPassword: string): Promise<AuthResult>;
+  /**
+   * Another addition beyond the brief's §3.5 sketch, same reasoning as
+   * `confirmPasswordReset` above: `AU-3`'s "check your email" state (P0-7.0
+   * execution brief) needs a real Resend action, not a button that quietly
+   * does nothing. Maps to `supabase.auth.resend({ type: 'signup' })` — the
+   * SDK's own method for this, not a second `signUpWithEmail` call (which
+   * would return "account already exists" for the very account that just
+   * signed up).
+   */
+  resendSignupConfirmation(email: string): Promise<AuthResult>;
   requestPhoneOtp(phone: string): Promise<AuthResult>;
   verifyPhoneOtp(phone: string, code: string): Promise<AuthResult<AuthOutcome>>;
   signOut(): Promise<AuthResult>;

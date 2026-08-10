@@ -42,6 +42,7 @@ describe('supabaseAuthClient — config forced absent', () => {
     ['signInWithEmail', () => supabaseAuthClient.signInWithEmail('a@example.com', 'password123')],
     ['requestPasswordReset', () => supabaseAuthClient.requestPasswordReset('a@example.com')],
     ['confirmPasswordReset', () => supabaseAuthClient.confirmPasswordReset('newpassword123')],
+    ['resendSignupConfirmation', () => supabaseAuthClient.resendSignupConfirmation('a@example.com')],
     ['requestPhoneOtp', () => supabaseAuthClient.requestPhoneOtp('+12015550123')],
     ['verifyPhoneOtp', () => supabaseAuthClient.verifyPhoneOtp('+12015550123', '123456')],
     ['signOut', () => supabaseAuthClient.signOut()],

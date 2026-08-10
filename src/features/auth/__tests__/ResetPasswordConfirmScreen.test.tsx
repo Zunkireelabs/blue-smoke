@@ -5,18 +5,24 @@
  */
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
+import { NavigationContainer } from '@react-navigation/native';
 import { ResetPasswordConfirmScreen } from '../ResetPasswordConfirmScreen';
 import { AuthClientProvider } from '../AuthClientContext';
 import { createMockAuthClient } from '../mockAuthClient';
 import { findByLabel, findInput, renderedText } from '../testUtils';
 
+// NavigationContainer: AU-11 (P0-7.0) added a "Continue" button, so the
+// screen now calls useNavigation() unconditionally — it throws at render
+// time outside one, same as Signup/LoginScreen.
 function renderScreen(client = createMockAuthClient()) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <AuthClientProvider client={client}>
-        <ResetPasswordConfirmScreen />
-      </AuthClientProvider>,
+      <NavigationContainer>
+        <AuthClientProvider client={client}>
+          <ResetPasswordConfirmScreen />
+        </AuthClientProvider>
+      </NavigationContainer>,
     );
   });
   return renderer;

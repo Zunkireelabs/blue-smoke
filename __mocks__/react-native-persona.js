@@ -11,7 +11,17 @@ const Environment = {
   PRODUCTION: 'production',
 };
 
+// P2-6.0 (UI-BUILD-B) addition: the real SDK invokes these callbacks from native code once the
+// user interacts with (or the SDK itself resolves) the modal it launches — this mock's `start()`
+// is a no-op, so nothing ever called them. `__lastHandlers` exposes the most recently registered
+// set so a test can simulate the SDK calling back, e.g. `__lastHandlers().onCanceled()`, without
+// every test file needing its own copy of this plumbing.
+let lastHandlers = null;
+
 class TemplateBuilder {
+  constructor() {
+    this.handlers = {};
+  }
   environment() {
     return this;
   }
@@ -21,16 +31,20 @@ class TemplateBuilder {
   fields() {
     return this;
   }
-  onComplete() {
+  onComplete(fn) {
+    this.handlers.onComplete = fn;
     return this;
   }
-  onCanceled() {
+  onCanceled(fn) {
+    this.handlers.onCanceled = fn;
     return this;
   }
-  onError() {
+  onError(fn) {
+    this.handlers.onError = fn;
     return this;
   }
   build() {
+    lastHandlers = this.handlers;
     return { start: () => {} };
   }
 }
@@ -41,4 +55,8 @@ const Inquiry = {
   fromInquiry: () => new TemplateBuilder(),
 };
 
-module.exports = { Environment, Inquiry };
+function __lastHandlers() {
+  return lastHandlers;
+}
+
+module.exports = { Environment, Inquiry, __lastHandlers };

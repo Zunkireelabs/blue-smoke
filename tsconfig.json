@@ -29,6 +29,12 @@
     // Same reason as auth.test.ts above — deviceInfo.test.ts also imports
     // tools/mock-peripheral/bleAdapter.ts, so it type-checks under
     // tsconfig.test.json instead.
-    "src/features/ble/__tests__/deviceInfo.test.ts"
+    "src/features/ble/__tests__/deviceInfo.test.ts",
+    // P2-6.0 (UI-BUILD-B) — bleSeam.acceptance.test.tsx also imports
+    // tools/mock-peripheral/bleAdapter.ts, same reason as the two above.
+    "src/features/ble/__tests__/bleSeam.acceptance.test.tsx",
+    // P1-3.0 — devicePairingFlow.test.tsx also imports tools/mock-peripheral/bleAdapter.ts and
+    // clock.ts, same reason as the three above.
+    "src/features/devices/__tests__/devicePairingFlow.test.tsx"
   ]
 }

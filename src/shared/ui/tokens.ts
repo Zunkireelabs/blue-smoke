@@ -10,8 +10,16 @@ import { Platform } from 'react-native';
  * Structure: a raw `neutral` scale (never imported directly outside this file) feeds a
  * `lightTheme` of semantic tokens. A second theme (e.g. `darkTheme`) would be another object
  * built off the same or a parallel raw scale and swapped into `tokens` below — the semantic
- * names components consume do not change when that happens. That second theme is not built
- * this round.
+ * names components consume do not change when that happens.
+ *
+ * ── Light only. Decided, not pending (Sadin, 2026-08-09) ──────────────────────────────
+ *
+ * No dark theme this round. This is a product decision, not an unfinished task — do not "fix"
+ * it by adding one, and do not add `useColorScheme()` branches in screens. The structure above
+ * is what keeps the decision cheap to reverse later: because every component consumes semantic
+ * names and never a raw scale value or a hex literal (enforced by `__tests__/tokenOnlyGuard`),
+ * adding `darkTheme` stays an edit to this file rather than a rewrite of every screen. A screen
+ * that reads the OS colour scheme is precisely what would destroy that property.
  */
 
 const neutral = {
@@ -32,6 +40,39 @@ const red = {
   border: '#B3261E',
 } as const;
 
+/**
+ * Approved palette (Sadin, 2026-08-09 — execution brief §3). Exact values, not to be
+ * substituted; do not add a colour here that is not one of these seven without asking (OQ-7,
+ * brand assets, is still open — this is direction, not the final brand).
+ */
+const brandRaw = {
+  base: '#1657D0',
+  dark: '#0E3E9A',
+  tint: '#E8F0FE',
+} as const;
+
+const groundRaw = {
+  top: '#DCE9FB',
+  bottom: '#FFFFFF',
+} as const;
+
+const successRaw = {
+  /**
+   * Darkened from the brief's `#1E8E5A` (Sadin, 2026-08-09 — review correction).
+   *
+   * The approved value measured 4.14:1 on white and 3.61:1 on `successBg`: usable for a
+   * decorative glyph, but **below the 4.5 AA threshold for text**, on both grounds. Registering
+   * it as large-text-only would have left a trap — `<Text tone="success">Unlocked</Text>` in
+   * `LK-6` would then pass the completeness guard while failing AA in the actual UI, because the
+   * guard checks that a pair is *declared*, not the size it is rendered at.
+   *
+   * `#18774D` is 5.55:1 on white and 4.83:1 on `successBg` — passes AA at body size on both, so
+   * the token is safe wherever someone reaches for it.
+   */
+  text: '#18774D',
+  background: '#E3F3EB',
+} as const;
+
 const semanticColor = {
   background: neutral[0],
   backgroundMuted: neutral[50],
@@ -44,16 +85,27 @@ const semanticColor = {
   textSecondary: neutral[500],
   textInverse: neutral[0],
 
-  interactivePrimaryBackground: neutral[900],
+  // Was neutral[900] (near-black) — P0-7.0 moves primary actions onto the approved brand blue.
+  interactivePrimaryBackground: brandRaw.base,
   interactivePrimaryText: neutral[0],
 
-  link: neutral[900],
+  // Was neutral[900] — links read as brand-blue now rather than plain text-colored.
+  link: brandRaw.base,
 
   dangerText: red.text,
   dangerBackground: red.background,
   dangerBorder: red.border,
 
   focusRing: '#2563EB',
+
+  // P0-7.0 additions — see the header comment on `brandRaw`/`groundRaw`/`successRaw` above.
+  brand: brandRaw.base,
+  brandDark: brandRaw.dark,
+  brandTint: brandRaw.tint,
+  groundTop: groundRaw.top,
+  groundBottom: groundRaw.bottom,
+  success: successRaw.text,
+  successBg: successRaw.background,
 } as const;
 
 const spacing = {
@@ -69,6 +121,9 @@ const radii = {
   sm: 4,
   md: 8,
   lg: 12,
+  // The large sheet/card motif (execution brief §3: "~20-24 corner radius") — distinct from
+  // `lg`, which stays the size for in-page `Card`s so existing screens don't shift.
+  xl: 24,
   full: 999,
 } as const;
 
@@ -77,12 +132,14 @@ const typography = {
     body: 16,
     label: 14,
     caption: 12,
-    title: 24,
+    // Was 24 — the reference screenshots run larger and heavier than our previous scale.
+    title: 28,
   },
   fontWeight: {
     regular: '400',
     medium: '500',
     semibold: '600',
+    bold: '700',
   },
 } as const;
 
@@ -220,6 +277,63 @@ export const contrastPairs: ReadonlyArray<{
     bgToken: 'interactivePrimaryBackground',
     fg: semanticColor.textInverse,
     bg: semanticColor.interactivePrimaryBackground,
+    size: 'body',
+  },
+  {
+    // `Sheet`'s backdrop: a solid token dimmed via the `opacity` *style* property rather than
+    // an rgba() color, deliberately — every other pair here assumes a solid hex, and the
+    // contrast math (`hexToRgb`) cannot parse an alpha-blended value. `textPrimary` had no
+    // bgToken entry before this; general-purpose, not backdrop-specific (e.g. a future dark
+    // toast/tooltip).
+    name: 'textInverse on textPrimary',
+    fgToken: 'textInverse',
+    bgToken: 'textPrimary',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.textPrimary,
+    size: 'body',
+  },
+  // P0-7.0 additions — one entry per new fg/bg token this round's primitives introduce.
+  {
+    name: 'textInverse on brand',
+    fgToken: 'textInverse',
+    bgToken: 'brand',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.brand,
+    size: 'body',
+  },
+  {
+    name: 'textInverse on brandDark',
+    fgToken: 'textInverse',
+    bgToken: 'brandDark',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.brandDark,
+    size: 'body',
+  },
+  {
+    name: 'link on brandTint',
+    fgToken: 'link',
+    bgToken: 'brandTint',
+    fg: semanticColor.link,
+    bg: semanticColor.brandTint,
+    size: 'body',
+  },
+  {
+    // Asserted at `body`, not `large`: the token was darkened specifically so this pair clears
+    // 4.5:1 (it measures 4.83:1). Keeping it at `large` would have let a future body-size use of
+    // `tone="success"` pass this guard while failing AA on screen — see the note on `successRaw`.
+    name: 'success on successBg',
+    fgToken: 'success',
+    bgToken: 'successBg',
+    fg: semanticColor.success,
+    bg: semanticColor.successBg,
+    size: 'body',
+  },
+  {
+    name: 'textPrimary on successBg',
+    fgToken: 'textPrimary',
+    bgToken: 'successBg',
+    fg: semanticColor.textPrimary,
+    bg: semanticColor.successBg,
     size: 'body',
   },
 ];

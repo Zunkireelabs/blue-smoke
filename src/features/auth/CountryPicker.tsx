@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { getCountries, getCountryCallingCode, type CountryCode } from 'libphonenumber-js/min';
+import { Button, ListRow, Text, TextField, tokens } from '@/shared/ui';
 
 /**
  * P1-1.0 §3.3 — country-code picker for the phone input screen. No
@@ -38,6 +39,21 @@ interface CountryPickerProps {
   onChange: (country: CountryCode) => void;
 }
 
+/**
+ * Hoisted to module scope rather than defined inline in `renderItem` —
+ * `react/no-unstable-nested-components` flags a component defined during
+ * render because React would see a new component type on every render.
+ */
+function CountryRow({ code, onPress }: { code: CountryCode; onPress: () => void }) {
+  return <ListRow label={countryLabel(code)} onPress={onPress} />;
+}
+
+/** Same hoisting reason as `CountryRow` — `FlatList`'s `ItemSeparatorComponent` expects a
+ * stable component reference, not one redefined on every render. */
+function RowSeparator() {
+  return <View style={styles.separator} />;
+}
+
 export function CountryPicker({ value, onChange }: CountryPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -63,13 +79,12 @@ export function CountryPicker({ value, onChange }: CountryPickerProps) {
         accessibilityRole="button"
         accessibilityLabel="Country code"
       >
-        <Text style={styles.triggerText}>{countryLabel(value)}</Text>
+        <Text variant="body">{countryLabel(value)}</Text>
       </Pressable>
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalContainer}>
-          <TextInput
-            style={styles.search}
+          <TextField
             placeholder="Search country"
             value={query}
             onChangeText={setQuery}
@@ -77,32 +92,31 @@ export function CountryPicker({ value, onChange }: CountryPickerProps) {
             accessibilityLabel="Search country"
           />
           <FlatList
+            style={styles.list}
             data={filtered}
             keyExtractor={code => code}
+            ItemSeparatorComponent={RowSeparator}
             renderItem={({ item }) => (
-              <Pressable
-                style={styles.row}
+              <CountryRow
+                code={item}
                 onPress={() => {
                   onChange(item);
                   setOpen(false);
                   setQuery('');
                 }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.rowText}>{countryLabel(item)}</Text>
-              </Pressable>
+              />
             )}
           />
-          <Pressable
-            style={styles.close}
-            onPress={() => {
-              setOpen(false);
-              setQuery('');
-            }}
-            accessibilityRole="button"
-          >
-            <Text style={styles.closeText}>Cancel</Text>
-          </Pressable>
+          <View style={styles.close}>
+            <Button
+              label="Cancel"
+              variant="secondary"
+              onPress={() => {
+                setOpen(false);
+                setQuery('');
+              }}
+            />
+          </View>
         </View>
       </Modal>
     </>
@@ -111,44 +125,26 @@ export function CountryPicker({ value, onChange }: CountryPickerProps) {
 
 const styles = StyleSheet.create({
   trigger: {
+    minHeight: tokens.touchTarget.minHeight,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  triggerText: {
-    fontSize: 16,
+    borderColor: tokens.color.border,
+    borderRadius: tokens.radii.md,
+    paddingHorizontal: tokens.spacing.md,
+    justifyContent: 'center',
   },
   modalContainer: {
     flex: 1,
-    paddingTop: 60,
-    paddingHorizontal: 16,
+    paddingTop: tokens.spacing.xxl * 2,
+    paddingHorizontal: tokens.spacing.lg,
+    backgroundColor: tokens.color.background,
   },
-  search: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginBottom: 12,
+  list: {
+    marginTop: tokens.spacing.md,
   },
-  row: {
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-  },
-  rowText: {
-    fontSize: 16,
+  separator: {
+    height: tokens.spacing.xs,
   },
   close: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  closeText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    paddingVertical: tokens.spacing.md,
   },
 });

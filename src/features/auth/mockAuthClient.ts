@@ -84,6 +84,12 @@ export function createMockAuthClient(options: MockAuthClientOptions = {}): MockA
       return { ok: true, data: undefined };
     },
 
+    async resendSignupConfirmation(_email): Promise<AuthResult> {
+      // No real email delivery in the mock — always succeeds, same pattern
+      // as confirmPasswordReset above.
+      return { ok: true, data: undefined };
+    },
+
     async requestPhoneOtp(phone): Promise<AuthResult> {
       otpRequested.add(phone);
       return { ok: true, data: undefined };

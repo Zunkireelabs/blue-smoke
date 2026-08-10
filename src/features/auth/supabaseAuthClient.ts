@@ -154,6 +154,24 @@ export const supabaseAuthClient: AuthClient = {
     });
   },
 
+  /**
+   * `AU-3`'s Resend action. `supabase.auth.resend` is the SDK's dedicated
+   * method for this — a second `signUp` call would return "account already
+   * exists" for the very account whose confirmation email this resends.
+   */
+  async resendSignupConfirmation(email): Promise<AuthResult> {
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+
+      return { ok: true, data: undefined };
+    });
+  },
+
   /** Method B (§1.2.1), step 1: send the SMS code via Twilio Verify. */
   async requestPhoneOtp(phone): Promise<AuthResult> {
     return runSafely(async () => {

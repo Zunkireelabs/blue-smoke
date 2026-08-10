@@ -10,7 +10,12 @@
     // list every time one hits the same wall (P3-2.0/P3-3.0 will).
     "types": ["node", "jest"]
   },
-  "include": ["src/features/ble/__tests__/auth.test.ts", "src/features/ble/__tests__/deviceInfo.test.ts"],
+  "include": [
+    "src/features/ble/__tests__/auth.test.ts",
+    "src/features/ble/__tests__/deviceInfo.test.ts",
+    "src/features/ble/__tests__/bleSeam.acceptance.test.tsx",
+    "src/features/devices/__tests__/devicePairingFlow.test.tsx"
+  ],
   // Root's "exclude" (inherited otherwise) lists this same file, so it must be overridden here —
   // that root entry exists to keep the file OUT of the root program, not out of this one.
   "exclude": []

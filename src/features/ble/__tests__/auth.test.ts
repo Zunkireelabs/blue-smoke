@@ -140,6 +140,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
     // (the real connectToDevice would otherwise re-issue a fresh nonce).
     const staleManager: BleManagerLike = {
       state: () => manager.state(),
+      startDeviceScan: (u, o, l) => manager.startDeviceScan(u, o, l),
+      stopDeviceScan: () => manager.stopDeviceScan(),
       connectToDevice: async () => device,
       isDeviceConnected: (id) => manager.isDeviceConnected(id),
       cancelDeviceConnection: (id) => manager.cancelDeviceConnection(id),
@@ -161,6 +163,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       // notifies on commandResult — models a lost/undelivered notification.
       const silentManager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -207,6 +211,10 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       };
       return {
         state: async () => 'PoweredOn',
+        startDeviceScan: () => {
+          throw new Error('not used by this test');
+        },
+        stopDeviceScan: () => {},
         isDeviceConnected: async () => false,
         cancelDeviceConnection: async (id) => device.id === id ? device : device,
         connectToDevice: () => (stage === 'connect' ? neverSettles : Promise.resolve(device)),
@@ -266,6 +274,10 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
     test('a rejecting connectToDevice resolves to a typed transport outcome', async () => {
       const rejectingManager: BleManagerLike = {
         state: async () => 'PoweredOn',
+        startDeviceScan: () => {
+          throw new Error('not used by this test');
+        },
+        stopDeviceScan: () => {},
         isDeviceConnected: async () => false,
         cancelDeviceConnection: async (id) => {
           throw new Error(`not connected: ${id}`);
@@ -289,6 +301,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
       const manager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -319,6 +333,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
       const manager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -361,6 +377,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       // correctly ignores) — see this execution report's deviations.
       const faultManager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -409,6 +427,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       // this fires before the handshake has written anything.
       const strayManager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -453,6 +473,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
       const duplicateManager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -498,6 +520,8 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       const remove = jest.fn();
       const manager: BleManagerLike = {
         state: () => realManager.state(),
+        startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
+        stopDeviceScan: () => realManager.stopDeviceScan(),
         isDeviceConnected: (id) => realManager.isDeviceConnected(id),
         cancelDeviceConnection: (id) => realManager.cancelDeviceConnection(id),
         connectToDevice: async (id) => {
@@ -550,6 +574,10 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
       // reached, so the finally must not call remove() on it.
       const rejectingManager: BleManagerLike = {
         state: async () => 'PoweredOn',
+        startDeviceScan: () => {
+          throw new Error('not used by this test');
+        },
+        stopDeviceScan: () => {},
         isDeviceConnected: async () => false,
         cancelDeviceConnection: async (id) => {
           throw new Error(`not connected: ${id}`);

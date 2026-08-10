@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Button, GradientGround, Text, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 
 /**
@@ -20,52 +21,32 @@ export function AuthMethodChoiceScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sign up or log in</Text>
+    <GradientGround style={styles.sheet}>
+      <Text variant="title" style={styles.title}>
+        Sign up or log in
+      </Text>
 
-      <Pressable
-        style={styles.button}
-        onPress={() => navigation.navigate('Login')}
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Email"
-      >
-        <Text style={styles.buttonText}>Continue with Email</Text>
-      </Pressable>
-
-      <Pressable
-        style={styles.button}
-        onPress={() => navigation.navigate('PhoneInput')}
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Phone"
-      >
-        <Text style={styles.buttonText}>Continue with Phone</Text>
-      </Pressable>
-    </View>
+      <View style={styles.actions}>
+        <Button label="Continue with Email" onPress={() => navigation.navigate('Login')} />
+        <Button
+          label="Continue with Phone"
+          variant="secondary"
+          onPress={() => navigation.navigate('PhoneInput')}
+        />
+      </View>
+    </GradientGround>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  sheet: {
     justifyContent: 'center',
-    padding: 24,
-    gap: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16,
     textAlign: 'center',
+    marginBottom: tokens.spacing.xxl,
   },
-  button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  actions: {
+    gap: tokens.spacing.md,
   },
 });

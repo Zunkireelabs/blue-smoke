@@ -1,18 +1,9 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Button, Screen, Text, TextField, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { loginSchema } from './schemas';
@@ -91,165 +82,108 @@ export function LoginScreen() {
 
   if (status === 'signedIn') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Signed in</Text>
-      </View>
+      <Screen>
+        <Text variant="title" style={styles.centerText}>
+          Signed in
+        </Text>
+      </Screen>
     );
   }
 
   const isSubmitting = status === 'submitting';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Log in</Text>
+    <Screen scroll centered={false}>
+      <Text variant="title" style={styles.title}>
+        Log in
+      </Text>
 
-        <Text style={styles.label}>Email</Text>
-        <Controller
-          control={control}
-          name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              editable={!isSubmitting}
-              accessibilityLabel="Email"
-            />
-          )}
-        />
-        {errors.email && <Text style={styles.fieldError}>{errors.email.message}</Text>}
+      <Controller
+        control={control}
+        name="email"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Email"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            editable={!isSubmitting}
+            error={errors.email?.message}
+            accessibilityLabel="Email"
+          />
+        )}
+      />
 
-        <Text style={styles.label}>Password</Text>
-        <Controller
-          control={control}
-          name="password"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              secureTextEntry
-              autoComplete="password"
-              editable={!isSubmitting}
-              accessibilityLabel="Password"
-            />
-          )}
-        />
-        {errors.password && <Text style={styles.fieldError}>{errors.password.message}</Text>}
+      <Controller
+        control={control}
+        name="password"
+        render={({ field: { onChange, onBlur, value } }) => (
+          <TextField
+            label="Password"
+            value={value}
+            onChangeText={onChange}
+            onBlur={onBlur}
+            secureTextEntry
+            autoComplete="password"
+            editable={!isSubmitting}
+            error={errors.password?.message}
+            accessibilityLabel="Password"
+          />
+        )}
+      />
 
-        <Pressable
+      <View style={styles.forgotPassword}>
+        <Button
+          label="Forgot password?"
+          variant="secondary"
           onPress={() => navigation.navigate('PasswordReset')}
-          accessibilityRole="button"
-          accessibilityLabel="Forgot password?"
-          style={styles.forgotPassword}
-        >
-          <Text style={styles.link}>Forgot password?</Text>
-        </Pressable>
+        />
+      </View>
 
-        {formError && <Text style={styles.formError}>{formError}</Text>}
+      {formError && (
+        <Text variant="caption" tone="danger" style={styles.formError}>
+          {formError}
+        </Text>
+      )}
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleSubmit(onSubmit)}
+      <View style={styles.button}>
+        <Button
+          label="Log in"
+          loading={isSubmitting}
           disabled={isSubmitting}
-          accessibilityRole="button"
-          accessibilityLabel="Log in"
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Log in</Text>
-          )}
-        </Pressable>
+          onPress={handleSubmit(onSubmit)}
+        />
+      </View>
 
-        <Pressable
-          onPress={() => navigation.navigate('Signup')}
-          accessibilityRole="button"
-          accessibilityLabel="New here? Create an account"
-          style={styles.linkButton}
-        >
-          <Text style={styles.link}>New here? Create an account</Text>
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <Button
+        label="New here? Create an account"
+        variant="secondary"
+        onPress={() => navigation.navigate('Signup')}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
+  centerText: {
+    textAlign: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: tokens.spacing.lg,
   },
-  label: {
-    fontSize: 14,
-    marginTop: 12,
-    marginBottom: 4,
-    color: '#333',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  fieldError: {
-    color: '#c0392b',
-    fontSize: 13,
-    marginTop: 4,
+  forgotPassword: {
+    marginTop: tokens.spacing.sm,
+    alignSelf: 'flex-end',
   },
   formError: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 16,
+    marginTop: tokens.spacing.lg,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  forgotPassword: {
-    marginTop: 8,
-    alignItems: 'flex-end',
-  },
-  linkButton: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  link: {
-    color: '#1a1a1a',
-    fontSize: 14,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
+    marginTop: tokens.spacing.xl,
+    marginBottom: tokens.spacing.md,
   },
 });

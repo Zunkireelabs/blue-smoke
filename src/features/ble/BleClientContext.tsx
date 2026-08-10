@@ -16,6 +16,22 @@ import { BleManager } from 'react-native-ble-plx';
 
 export interface BleDeviceLike {
   readonly id: string;
+  /**
+   * §4.1 — populated from the scan/advertisement, same as real `react-native-ble-plx`'s
+   * `Device.rssi`/`Device.name`: no extra call is needed to read either at scan time (that's
+   * what `readRSSI()` is for — a live re-read on an already-connected device, §7.2's job, not
+   * this one). Both already exist as public fields on `MockDevice`
+   * (`tools/mock-peripheral/bleAdapter.ts`) — this only widens the interface to match what's
+   * already there, per this file's "narrow slice ... nothing wider" rule above.
+   *
+   * Optional, not just nullable: several existing hand-rolled fake devices (P1-4.0's
+   * `auth.test.ts`/`deviceInfo.test.ts`) satisfy `BleDeviceLike` without either field, since
+   * they never scan — only connect directly. Making these required would force edits across
+   * another task's in-flight test files for no benefit to them. Callers that DO care (P1-3.0's
+   * scan) normalize a missing value to `null` themselves.
+   */
+  readonly rssi?: number | null;
+  readonly name?: string | null;
   discoverAllServicesAndCharacteristics(): Promise<BleDeviceLike>;
   readCharacteristicForService(
     serviceUUID: string,
@@ -35,6 +51,13 @@ export interface BleDeviceLike {
 
 export interface BleManagerLike {
   state(): Promise<string>;
+  /** §4.1 — the app must filter scan results on the service UUID; `serviceUUIDs` carries that filter. */
+  startDeviceScan(
+    serviceUUIDs: string[] | null,
+    options: unknown,
+    listener: (error: Error | null, device: BleDeviceLike | null) => void,
+  ): void;
+  stopDeviceScan(): void;
   connectToDevice(deviceId: string): Promise<BleDeviceLike>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
   cancelDeviceConnection(deviceId: string): Promise<BleDeviceLike>;

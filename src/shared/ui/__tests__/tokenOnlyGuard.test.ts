@@ -12,7 +12,32 @@ import { listSourceFiles, readSourceFile } from '../sourceFiles';
  */
 const LITERAL_COLOR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(/;
 
-const RESTYLED_SCREENS = ['src/features/auth/PhoneInputScreen.tsx', 'src/features/auth/OtpEntryScreen.tsx'];
+const RESTYLED_SCREENS = [
+  'src/features/auth/AuthMethodChoiceScreen.tsx',
+  'src/features/auth/SignupScreen.tsx',
+  'src/features/auth/LoginScreen.tsx',
+  'src/features/auth/PhoneInputScreen.tsx',
+  'src/features/auth/CountryPicker.tsx',
+  'src/features/auth/OtpEntryScreen.tsx',
+  'src/features/auth/PasswordResetRequestScreen.tsx',
+  'src/features/auth/ResetPasswordConfirmScreen.tsx',
+  'src/features/profile/ProfileScreen.tsx',
+  'src/features/devices/HomeScreen.tsx',
+  'src/features/auth/SignOutButton.tsx',
+  'src/features/verification/VerifyIntroScreen.tsx',
+  'src/features/verification/CameraPrimingScreen.tsx',
+  'src/features/verification/PersonaVerificationScreen.tsx',
+  'src/features/verification/TransportErrorScreen.tsx',
+  'src/features/onboarding/OnboardingCarouselScreen.tsx',
+  'src/features/onboarding/BluetoothPrimingScreen.tsx',
+  'src/features/onboarding/NotificationPrimingScreen.tsx',
+  'src/features/onboarding/BluetoothDeniedScreen.tsx',
+  'src/features/onboarding/BluetoothBlockedScreen.tsx',
+  'src/features/onboarding/BluetoothOffScreen.tsx',
+  'src/features/onboarding/BluetoothGateScreen.tsx',
+  'src/features/devices/DeviceScanScreen.tsx',
+  'src/features/devices/PairingBoundaryScreen.tsx',
+];
 
 function filesUnderGuard() {
   const kitFiles = listSourceFiles('src/shared/ui').filter((f) => path.basename(f.relativePath) !== 'tokens.ts');
