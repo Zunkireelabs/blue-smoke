@@ -210,12 +210,11 @@ their compliance program, not ours to verify).
 > Depends on Sadin's `feature/P0-3.0-baas-setup` being synced first (schema conflict already
 > flagged separately).
 
-- [ ] `verifications` row inserted `pending` on inquiry creation, updated by the webhook (pass
-      **and** decline) *(**half done.** The webhook update path is built and is the sole writer.
-      The *insert* is not: `create-inquiry` returns **501 NOT_IMPLEMENTED** on purpose — server-side
-      inquiry creation needs Persona's API key plus the `reference-id` and `min_age` conventions
-      §6.6 says not to guess. A plausible stub would let the app appear to work while verifying
-      nobody, so the gap is left visible.)*
+- [x] `verifications` row inserted `pending` on inquiry creation, updated by the webhook (pass
+      **and** decline) *(`create-inquiry` now calls Persona, writes the pending row, and stops
+      returning 501 — P2-8.0. Request/response handling lives in `_shared/personaInquiry.ts`,
+      unit-tested; `index.ts` stays thin wiring. `reference-id` is deliberately never sent
+      (brief §4.1) — the inquiry↔user binding is this row, not anything Persona holds.)*
 - [x] RLS verified: insert-own and select-own only; no client update, no delete; webhook write
       goes through the service role *(`verifications_write_denial_proof.sql`)*
 - [x] Verification status surfaced in the app UI *(`useVerificationStatus` + the navigation gate)*
