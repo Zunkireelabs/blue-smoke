@@ -335,7 +335,10 @@ the app working** — account, profile and verification are all reachable withou
       states into the two phases the app has policy for — `inactive` is transient, never
       backgrounding — plus `reconcileConnections()` for the foreground repair path; 15 tests in
       `appState.test.ts`. Verified against the injected `AppStateLike` seam, not a physical device —
-      §4's four native-config boxes above stay open)*
+      §4's four native-config boxes above stay open. **"Relaunch" here means cold start** — the
+      initial phase is read from `currentState` and pinned by tests 1–3. It does **not** mean BLE
+      state restoration, which is the separate `CBCentralManagerOptionRestoreIdentifierKey` box
+      above and is still open)*
 - [ ] All BLE operations have explicit timeouts — **no unbounded awaits** (spec §9.3)
 - [ ] Findings from the `P0-4.5` spike applied
 - [ ] **Force-quit behaviour documented honestly** — and confirmed harmless because the firmware dead-man timer is authoritative (spec §7.1)

@@ -318,4 +318,53 @@ describe('PairDeviceScreen — Android permission gate', () => {
     // request would mean a second unescapable OS prompt.
     expect(mockRequestMultiple).toHaveBeenCalledTimes(1);
   });
+
+  test('an unchanged permission on foreground does not flash the checking spinner over the device list', async () => {
+    mockRequestMultiple.mockResolvedValue({ BLUETOOTH_SCAN: 'granted', BLUETOOTH_CONNECT: 'granted' });
+    mockCheckMultiple.mockResolvedValue({ BLUETOOTH_SCAN: 'granted', BLUETOOTH_CONNECT: 'granted' });
+    const appState = mockAppStateTransitions();
+    const { manager } = setup();
+
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = renderScreen(manager);
+    });
+    expect(renderedText(renderer)).toContain('BlueSmoke-0000');
+
+    // 🔴 The bug this pins is a *transient*: the screen briefly re-renders as
+    // <LoadingState "Checking Bluetooth permission…" /> and then restores the
+    // list. Asserting the final state cannot see it, and neither can sampling
+    // inside a single act() — act batches every update in the block and only
+    // the last commit reaches the tree.
+    //
+    // So hold checkMultiple unresolved. That creates a real suspension point
+    // where the intermediate commit is the *settled* state of the tree and is
+    // directly observable.
+    let releaseCheck!: (statuses: Record<string, string>) => void;
+    mockCheckMultiple.mockReturnValue(
+      new Promise<Record<string, string>>((resolve) => {
+        releaseCheck = resolve;
+      }),
+    );
+
+    await act(async () => {
+      appState.emit('background');
+      appState.emit('active');
+    });
+
+    // The foreground re-check is now in flight and awaiting checkMultiple.
+    // A recovery path that announced itself would be showing a spinner here.
+    const midFlight = renderedText(renderer);
+    expect(midFlight).not.toContain('Checking Bluetooth permission');
+    expect(midFlight).toContain('BlueSmoke-0000');
+
+    await act(async () => {
+      releaseCheck({ BLUETOOTH_SCAN: 'granted', BLUETOOTH_CONNECT: 'granted' });
+    });
+
+    expect(renderedText(renderer)).toContain('BlueSmoke-0000');
+    // Guards against passing for the wrong reason — if the foreground handler
+    // never ran at all, there would have been no spinner to avoid.
+    expect(mockCheckMultiple).toHaveBeenCalledTimes(1);
+  });
 });

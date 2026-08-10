@@ -43,15 +43,11 @@ export function PairDeviceScreen() {
     };
   }, [scanner]);
 
-  // `query` is `requestBlePermissions` for the initial call — the moment of
-  // need, where an OS prompt is appropriate — and `checkBlePermissions` for
-  // the foreground-recovery path below, which must never re-prompt.
-  const checkPermissionAndScan = useCallback(
-    async (
-      isCancelled: () => boolean = () => false,
-      query: () => Promise<BlePermissionResult> = requestBlePermissions,
-    ) => {
-      setPermission('checking');
+  // Shared tail of both permission paths: resolve, then reflect. Deliberately
+  // does NOT touch the 'checking' state — whether the screen announces that it
+  // is working is the caller's decision, and the two callers differ on it.
+  const applyPermission = useCallback(
+    async (query: () => Promise<BlePermissionResult>, isCancelled: () => boolean) => {
       const result = await query();
       if (isCancelled()) {
         return;
@@ -64,33 +60,65 @@ export function PairDeviceScreen() {
     [scanner],
   );
 
+  /**
+   * The moment of need — entering the screen, or tapping "Allow Bluetooth".
+   * Prompts, and shows a spinner while it does, because the user has just
+   * asked for something and an OS dialog is about to appear.
+   */
+  const requestPermissionAndScan = useCallback(
+    (isCancelled: () => boolean) => {
+      setPermission('checking');
+      return applyPermission(requestBlePermissions, isCancelled);
+    },
+    [applyPermission],
+  );
+
+  /**
+   * Foreground recovery — P1-2.0 item 8. Runs on every return to the app, so
+   * it is deliberately **silent**: it never enters 'checking'.
+   *
+   * 🔴 Two separate reasons, and both matter:
+   *
+   * - `checkBlePermissions()`, never `requestBlePermissions()` — see that
+   *   export's docstring. Re-requesting here would make every app switch
+   *   reopen the OS dialog.
+   * - No 'checking' state. Setting it would tear the rendered device list down
+   *   and replace it with a spinner on *every* background→foreground cycle,
+   *   even though the permission is unchanged in the overwhelmingly common
+   *   case. If the result is the same, `setPermission` re-renders nothing,
+   *   which is the whole point.
+   */
+  const recheckPermissionAndScan = useCallback(
+    (isCancelled: () => boolean) => applyPermission(checkBlePermissions, isCancelled),
+    [applyPermission],
+  );
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      checkPermissionAndScan(() => cancelled);
+      requestPermissionAndScan(() => cancelled);
+
+      // The coordinator lives here, not in a plain useEffect, so it is bound to
+      // *focus* rather than to mount. On an unfocused-but-mounted screen a
+      // foreground event would otherwise call scanner.start() behind a screen
+      // the user isn't looking at — falsifying P1-3.0's "scan stopped on screen
+      // exit, no battery leak". Today's Home→PairDevice stack unmounts on back
+      // so it could not be observed; it would go live the moment anything is
+      // pushed on top of this screen.
+      const coordinator = createAppStateCoordinator({
+        appState: AppState,
+        onEnterForeground: () => {
+          recheckPermissionAndScan(() => cancelled);
+        },
+      });
+
       return () => {
         cancelled = true;
+        coordinator.dispose();
         scanner.stop();
       };
-    }, [checkPermissionAndScan, scanner]),
+    }, [requestPermissionAndScan, recheckPermissionAndScan, scanner]),
   );
-
-  // P1-2.0 item 8 — re-check permission on foreground return (e.g. from the
-  // "Open Settings" button) so a granted permission resumes scanning without
-  // the user having to leave and re-enter the screen. `checkBlePermissions()`
-  // only — see its 🔴 docstring for why `requestBlePermissions()` here would
-  // turn every app switch into an unescapable OS prompt.
-  useEffect(() => {
-    const coordinator = createAppStateCoordinator({
-      appState: AppState,
-      onEnterForeground: () => {
-        checkPermissionAndScan(() => false, checkBlePermissions);
-      },
-    });
-    return () => {
-      coordinator.dispose();
-    };
-  }, [checkPermissionAndScan]);
 
   if (permission === 'checking') {
     return (
@@ -108,7 +136,10 @@ export function PairDeviceScreen() {
           body="Blue Smoke needs Bluetooth permission to find your device."
           retryLabel="Allow Bluetooth"
           onRetry={() => {
-            checkPermissionAndScan();
+            // A deliberate re-request: the user tapped the button, so this is a
+            // moment of need and the OS prompt is wanted. Nothing to cancel —
+            // the screen is on-screen by definition when its button is tapped.
+            requestPermissionAndScan(() => false);
           }}
         />
       </Screen>
