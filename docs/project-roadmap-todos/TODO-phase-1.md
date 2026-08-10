@@ -7,10 +7,11 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · **30 / 91 sub-tasks** *(Day 10, 2026-08-09: `P1-3.0` +8 (8/9 — everything
-except the ≥2-Android-OEM hardware box), `P1-7.0` +2 (2/12 — auto-reconnect-with-backoff and
-re-handshake-on-reconnect). Previously `20 / 91`, audited Day 9: `P1-1.0` 15 · `P1-2.0` 1 ·
-`P1-4.0` 4.)*
+**Progress:** 0 / 8 tasks · **32 / 91 sub-tasks** *(Day 10, 2026-08-10: `P1-7.0` +1 (3/12 —
+app-state transitions handled, on top of Day 10's earlier auto-reconnect-with-backoff and
+re-handshake-on-reconnect), `P1-2.0` +1 (2/9 — permission state re-checked on app foreground).
+Previously `30 / 91`, Day 10 (2026-08-09): `P1-3.0` +8 (8/9 — everything except the ≥2-Android-OEM
+hardware box), `P1-7.0` +2 (2/12). Audited Day 9: `P1-1.0` 15 · `P1-2.0` 1 · `P1-4.0` 4.)*
 
 > **Denominator corrected — it was never 77.** Counting the boxes under the eight PRD tasks gives
 > **91**: `P1-1.0` 17 · `2.0` 9 · `3.0` 9 · `4.0` 13 · `5.0` 12 · `6.0` 11 · `7.0` 12 · `8.0` 8.
@@ -107,7 +108,11 @@ the app working** — account, profile and verification are all reachable withou
       this box is about)*
 - [ ] **Denial recovery path** — explanation + deep link to Settings
 - [ ] "Permanently denied" state handled distinctly from "denied once"
-- [ ] Permission state re-checked on app foreground
+- [x] Permission state re-checked on app foreground *(`PairDeviceScreen.tsx` mounts an
+      `AppStateCoordinator`; `onEnterForeground` calls `checkBlePermissions()` — never
+      `requestBlePermissions()`, which would re-prompt on every app switch — and resumes the scan
+      if now granted. Tested in `PairDeviceScreen.test.tsx`: blocked → Settings → granted resumes
+      scanning without a second `requestMultiple` call)*
 - [ ] **No dead ends** — verified by walking every denial combination
 
 **Assumption:** standard OS permission dialogs are acceptable to client.
@@ -325,7 +330,12 @@ the app working** — account, profile and verification are all reachable withou
 - [ ] Android: foreground service (type `connectedDevice`) with a clear persistent notification
 - [ ] Android: battery-optimisation exemption requested with an honest explanation
 - [ ] Connection parameters applied per spec §4.9, incl. the 4000 ms supervision timeout
-- [ ] App-state transitions handled: foreground ↔ background ↔ relaunch
+- [x] App-state transitions handled: foreground ↔ background ↔ relaunch *(`src/features/ble/appState.ts`'s
+      `createAppStateCoordinator()` collapses RN's `active`/`background`/`inactive`/unrecognised
+      states into the two phases the app has policy for — `inactive` is transient, never
+      backgrounding — plus `reconcileConnections()` for the foreground repair path; 15 tests in
+      `appState.test.ts`. Verified against the injected `AppStateLike` seam, not a physical device —
+      §4's four native-config boxes above stay open)*
 - [ ] All BLE operations have explicit timeouts — **no unbounded awaits** (spec §9.3)
 - [ ] Findings from the `P0-4.5` spike applied
 - [ ] **Force-quit behaviour documented honestly** — and confirmed harmless because the firmware dead-man timer is authoritative (spec §7.1)
