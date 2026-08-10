@@ -243,12 +243,12 @@ export function RootNavigator() {
             component={AuthMethodChoiceScreen}
             options={{ title: 'Welcome' }}
           />
-          <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="PhoneInput" component={PhoneInputScreen} />
-          <Stack.Screen name="OtpVerify" component={OtpEntryScreen} />
-          <Stack.Screen name="PasswordReset" component={PasswordResetRequestScreen} />
-          <Stack.Screen name="ResetPasswordConfirm" component={ResetPasswordConfirmScreen} />
+          <Stack.Screen name="Signup" component={SignupScreen} options={{ title: 'Create account' }} />
+          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Log in' }} />
+          <Stack.Screen name="PhoneInput" component={PhoneInputScreen} options={{ title: 'Your number' }} />
+          <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
+          <Stack.Screen name="PasswordReset" component={PasswordResetRequestScreen} options={{ title: 'Reset password' }} />
+          <Stack.Screen name="ResetPasswordConfirm" component={ResetPasswordConfirmScreen} options={{ title: 'New password' }} />
         </Stack.Navigator>
       ) : stack === 'home' ? (
         <Stack.Navigator>
