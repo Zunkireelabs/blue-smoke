@@ -1,8 +1,8 @@
 # Hardware bring-up checklist — first real board, Day 11 (2026-08-10)
 
-**Status:** written before the board was in hand. Fill in §3 *while the hardware is in front of you* —
-the whole point of this document is that the answers are cheap to get with the board present and
-expensive to get any other way.
+**Status:** written before the board was in hand; **first bench attempt made the same day — see §3.0.
+It did not get as far as a GATT dump, because the board never advertises.** The rest of §3 is still
+the plan for the attempt that follows, once the client answers.
 
 **Why this exists.** `BLE_SERVICE_UUID` and the six §4.2 characteristic UUIDs in
 `src/features/ble/protocol.ts` were **invented at spec-writing time** (commit `0bb8e80`, 2026-08-05)
@@ -30,6 +30,62 @@ publishes its own GATT table, and any phone can read it.** See
 exactly this. (LightBlue is an acceptable substitute.)
 
 This needs **no** app build, no toolchain, no USB cable. It works the moment the board powers on.
+
+## 3.0 Bench attempt 1 — 2026-08-10 — 🔴 **the board does not advertise**
+
+Board, PW200 and an Android phone (nRF Connect) all present. **No GATT dump was obtained**, because
+the device never appeared in a scan. Everything below §3.0 remains unfilled for that reason.
+
+### What was observed
+
+| | |
+|---|---|
+| Power | Laptop USB-C only. **Never tested on battery.** |
+| LEDs | **Two white LEDs blinking continuously** while on USB, indefinitely, pattern unchanging |
+| Board button | Pressed; LEDs continued blinking. No device appeared in any scan afterwards |
+| Scan result | **Nothing above −60 dBm at ~10 cm**, across repeated scans over ~40 minutes |
+
+Every device that did appear was identified and excluded — three Midea air-conditioners (`38:2F:B0:…`
+and `BC:89:F8:EC:98:91`, manufacturer ID `<0x06A8>`, ASCII serial in the payload), a JBL Flip 7
+speaker, an LG webOS TV, a soundbar. A board 10 cm from the phone would read **−30 to −50 dBm** and
+be the strongest thing on screen by a wide margin. Nothing ever was.
+
+### 🔴 The PW200 button was pressed — once, and it reported OK
+
+During bring-up the PowerWriter's button was pressed **one time**. `POWER` blue and `OK` green lit;
+`NG` never lit. The board's own LEDs brightened during the press, which is consistent with the target
+being reset and driven through a programming cycle.
+
+**This most likely consumed one licence credit** — §9.2 of
+[`hqd-device-architecture.md`](hqd-device-architecture.md) records the vendor's own warning. **It
+must be reported to the client**, not absorbed silently: it is their tooling and their credit.
+
+It also means **the firmware now on this board is whatever the PW200 wrote on 2026-08-10**, not
+necessarily what shipped on it. Anyone reading a future GATT dump from this board needs that fact
+first — it decides whether they are looking at production behaviour.
+
+The one useful consequence: "the board is unflashed" is no longer a live explanation for the silence.
+It was flashed, the writer reported success, and it still does not advertise.
+
+### Not yet tested — do these before escalating further
+
+- **Battery power.** Everything above was on USB. Many devices disable BLE entirely while charging,
+  and continuous blinking on USB is a textbook charge-in-progress or charge-fault indication. This is
+  the single most likely remaining explanation.
+- **Whether a LiPo is even connected.** Three wires (red / blue / black) leave the PCBA to a component
+  that was not identified. Red+black+blue is equally consistent with a cell carrying a thermistor and
+  with a heater coil.
+- **Puff / MEMS microphone trigger**, long-press (≥10 s), and five-rapid-press pairing gestures.
+
+### What this is worth
+
+It is a harder fact than anything the specification contains. §4's six characteristics on
+`42530001-…` were invented (spec v1.12); OQ-13 asked who owns the GATT profile. **This adds a prior
+question: what puts the device into a discoverable state at all?** Neither the Itron SDK document nor
+the PCBA archive says. That question now goes to the client with OQ-13 — and unlike the UUID, it
+cannot be answered by observation, because there is nothing to observe until it is answered.
+
+---
 
 ## 3. The capture — fill this in
 
