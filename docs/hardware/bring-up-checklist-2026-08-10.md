@@ -53,8 +53,17 @@ be the strongest thing on screen by a wide margin. Nothing ever was.
 ### 🔴 The PW200 button was pressed — once, and it reported OK
 
 During bring-up the PowerWriter's button was pressed **one time**. `POWER` blue and `OK` green lit;
-`NG` never lit. The board's own LEDs brightened during the press, which is consistent with the target
-being reset and driven through a programming cycle.
+`NG` never lit. The board's own LEDs brightened during the press.
+
+**This was a completed firmware flash, on the vendor's own reading.** Slide 9 of
+`Instructions for using the PW200 update program.pptx` says verbatim: *"Press the button on the PW200
+and wait for a few seconds. A green indicator light will appear, indicating that the upgrade process
+was successful."* Green is the documented success signal, not an idle state.
+
+Note what was **not** done: slides 2–8 (install PowerWriter on a PC, load the `.pkg`, upload it into
+the PW200, disconnect) were never performed. The programmer therefore arrived **with a `.pkg` already
+loaded by the client** — which is why one press sufficed, and which means the image written was
+theirs, not one we chose.
 
 **This most likely consumed one licence credit** — §9.2 of
 [`hqd-device-architecture.md`](hqd-device-architecture.md) records the vendor's own warning. **It
@@ -64,8 +73,10 @@ It also means **the firmware now on this board is whatever the PW200 wrote on 20
 necessarily what shipped on it. Anyone reading a future GATT dump from this board needs that fact
 first — it decides whether they are looking at production behaviour.
 
-The one useful consequence: "the board is unflashed" is no longer a live explanation for the silence.
-It was flashed, the writer reported success, and it still does not advertise.
+The one useful consequence, and it is worth a lot: **"the board is unflashed" is dead as an
+explanation.** The device was programmed with the client's own firmware image, their own tool
+reported their own documented success signal, and it still does not advertise. Whatever keeps this
+device off the air is in the firmware's intended behaviour, not in the board's state.
 
 ### Not yet tested — do these before escalating further
 

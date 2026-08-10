@@ -133,12 +133,17 @@ that comes before all of the below.
    deliberate product decision rather than our default.
 
 **One thing to flag from our side.** While trying to get the board talking, we pressed the button on
-the PowerWriter once, with it connected to the board; it reported OK. From your PW200 guide we
-understand that may consume one of your licensed programming credits — if so, that is one credit used
-on 2026-08-10, and we would rather you heard it from us than found it in a log. We have set the
-programmer aside since; we have no need to flash anything, only to connect over Bluetooth. Worth
-noting for item 1 that the board still did not advertise afterwards, so whatever state it is in is
-not simply an unprogrammed one.
+the PowerWriter once, with it connected to the board. It showed the green light your PW200 guide
+describes on slide 9 as indicating a successful upgrade — so we take it a firmware flash completed.
+We had not run the earlier steps in that guide, so the PW200 evidently arrived from you with the
+`.pkg` already loaded. From the same guide we understand this may consume one of your licensed
+programming credits; if so, that is one credit used on 2026-08-10, and we would rather you heard it
+from us than found it in a log. We have set the programmer aside since — we have no need to flash
+anything, only to connect over Bluetooth.
+
+We mention it mainly because it bears on item 1: **the board did not advertise after that successful
+flash either.** So its silence does not look like an unprogrammed or half-configured board — it
+appears to be what your firmware is meant to do until something we don't know about happens.
 
 **One thing we can confirm back to you:** the age-gated unlock you asked about is understood as
 required. That does put some work on your firmware side — the device needs a per-device key written
