@@ -13,6 +13,8 @@ import {
   buildCreateInquiryRequest,
   buildIdempotencyKey,
   buildResumeInquiryRequest,
+  createRequestFingerprintMaterial,
+  hashRequestFingerprint,
   isConcurrentInquiryInsertRace,
   parseCreateInquiryResponse,
   parseResumeInquiryResponse,
@@ -63,21 +65,77 @@ describe('buildCreateInquiryRequest', () => {
 });
 
 describe('buildIdempotencyKey', () => {
+  const FP = 'fingerprint-a';
+
   it('is not the bare user_id (brief §4.3)', () => {
-    const key = buildIdempotencyKey('user-1', 0);
+    const key = buildIdempotencyKey('user-1', 0, FP);
     expect(key).not.toBe('user-1');
   });
 
-  it('is identical for two concurrent requests at the same attempt number', () => {
-    expect(buildIdempotencyKey('user-1', 2)).toBe(buildIdempotencyKey('user-1', 2));
+  it('is identical for two concurrent requests at the same attempt number and fingerprint', () => {
+    expect(buildIdempotencyKey('user-1', 2, FP)).toBe(buildIdempotencyKey('user-1', 2, FP));
   });
 
   it('differs across attempt numbers for the same user — a fresh attempt must not reuse a stale key', () => {
-    expect(buildIdempotencyKey('user-1', 0)).not.toBe(buildIdempotencyKey('user-1', 1));
+    expect(buildIdempotencyKey('user-1', 0, FP)).not.toBe(buildIdempotencyKey('user-1', 1, FP));
   });
 
   it('differs across users at the same attempt number', () => {
-    expect(buildIdempotencyKey('user-1', 0)).not.toBe(buildIdempotencyKey('user-2', 0));
+    expect(buildIdempotencyKey('user-1', 0, FP)).not.toBe(buildIdempotencyKey('user-2', 0, FP));
+  });
+
+  it('P2-8.0: differs across request fingerprints for the same user/attempt — a body change must not reuse a burned key', () => {
+    expect(buildIdempotencyKey('user-1', 0, 'fingerprint-a')).not.toBe(
+      buildIdempotencyKey('user-1', 0, 'fingerprint-b'),
+    );
+  });
+});
+
+describe('hashRequestFingerprint', () => {
+  it('P2-8.0: is deterministic for identical parameters — required so concurrent requests still collapse', async () => {
+    const a = await hashRequestFingerprint({ templateId: 'itmpl_A' });
+    const b = await hashRequestFingerprint({ templateId: 'itmpl_A' });
+    expect(a).toBe(b);
+  });
+
+  it('P2-8.0: differs when the template id changes — a template swap must not reuse a bound key', async () => {
+    const a = await hashRequestFingerprint({ templateId: 'itmpl_A' });
+    const b = await hashRequestFingerprint({ templateId: 'itmpl_B' });
+    expect(a).not.toBe(b);
+  });
+
+  it('P2-8.0: is short enough to keep the key a sane length, and hex', async () => {
+    expect(await hashRequestFingerprint({ templateId: 'itmpl_A' })).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe('createRequestFingerprintMaterial', () => {
+  /**
+   * P2-8.0's core property. The fingerprint is only protective if it is computed from the
+   * request we ACTUALLY send: a hand-maintained mirror of the body would drift the moment
+   * someone adds a field, and the drift's failure mode is a permanently bricked user. These
+   * assert the coupling rather than the hash — so a future body change that forgets the key
+   * derivation fails here instead of in production.
+   */
+  it('contains the exact body bytes buildCreateInquiryRequest sends', () => {
+    const request = buildCreateInquiryRequest({
+      apiKey: 'api_test_key',
+      templateId: 'itmpl_A',
+      idempotencyKey: 'irrelevant',
+    });
+    expect(createRequestFingerprintMaterial('itmpl_A')).toContain(request.body);
+  });
+
+  it('covers the pinned Persona-Version — a version bump rebinds the key on Persona’s side too', () => {
+    expect(createRequestFingerprintMaterial('itmpl_A')).toContain(PERSONA_API_VERSION);
+  });
+
+  it('covers the pinned Key-Inflection', () => {
+    expect(createRequestFingerprintMaterial('itmpl_A')).toContain('Key-Inflection:kebab');
+  });
+
+  it('never contains the API key — the fingerprint feeds a value we may print', () => {
+    expect(createRequestFingerprintMaterial('itmpl_A')).not.toContain('api_test_key');
   });
 });
 
@@ -151,6 +209,59 @@ describe('parseCreateInquiryResponse', () => {
       ok: false,
       kind: 'unexpected',
       detail: expect.any(String),
+    });
+  });
+
+  describe('P2-8.0: idempotency conflict — a burned key must not be misdiagnosed as a vendor outage', () => {
+    it('a 400 whose body names an idempotency error → idempotency_conflict, not unexpected', () => {
+      const body = JSON.stringify({
+        errors: [
+          {
+            title: 'Bad Request',
+            detail:
+              'Keys for idempotent requests can only be used with the same parameters they were first used with.',
+          },
+        ],
+      });
+      expect(parseCreateInquiryResponse({ status: 400, rawBody: body })).toEqual({
+        ok: false,
+        kind: 'idempotency_conflict',
+        detail: expect.any(String),
+      });
+    });
+
+    it('detects the conflict from the title field alone', () => {
+      const body = JSON.stringify({ errors: [{ title: 'Idempotency-Key conflict', detail: 'unrelated text' }] });
+      expect(parseCreateInquiryResponse({ status: 400, rawBody: body }).ok).toBe(false);
+      expect((parseCreateInquiryResponse({ status: 400, rawBody: body }) as { kind: string }).kind).toBe(
+        'idempotency_conflict',
+      );
+    });
+
+    it('a 400 that is NOT an idempotency error stays unexpected — the body is the discriminator, not the status alone', () => {
+      const body = JSON.stringify({ errors: [{ title: 'Bad Request', detail: 'inquiry-template-id is invalid' }] });
+      expect(parseCreateInquiryResponse({ status: 400, rawBody: body })).toEqual({
+        ok: false,
+        kind: 'unexpected',
+        detail: expect.any(String),
+      });
+    });
+
+    it('a 400 with an unparseable body stays unexpected rather than throwing', () => {
+      expect(() => parseCreateInquiryResponse({ status: 400, rawBody: '{not json' })).not.toThrow();
+      expect(parseCreateInquiryResponse({ status: 400, rawBody: '{not json' })).toEqual({
+        ok: false,
+        kind: 'unexpected',
+        detail: expect.any(String),
+      });
+    });
+
+    it('a 400 with an empty body stays unexpected', () => {
+      expect(parseCreateInquiryResponse({ status: 400, rawBody: '' })).toEqual({
+        ok: false,
+        kind: 'unexpected',
+        detail: expect.any(String),
+      });
     });
   });
 

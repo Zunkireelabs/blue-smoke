@@ -45,6 +45,23 @@ export interface PersonaHttpRequest {
   readonly body: string;
 }
 
+/**
+ * The exact bytes of the create request body. Split out of `buildCreateInquiryRequest` so
+ * `createRequestFingerprintMaterial` below hashes the REAL body rather than a hand-maintained
+ * copy of it — the whole point of P2-8.0 is that a body change must not depend on a human
+ * remembering to update the key derivation alongside it.
+ *
+ * Brief §4.1: deliberately no `reference-id` — see the module doc.
+ * `auto-create-inquiry-session: true` — see the module doc above; without it Persona returns
+ * `meta.session-token: null` on every 201, confirmed against a live sandbox call.
+ */
+function buildCreateInquiryBody(templateId: string): string {
+  return JSON.stringify({
+    data: { attributes: { 'inquiry-template-id': templateId } },
+    meta: { 'auto-create-inquiry-session': true },
+  });
+}
+
 export function buildCreateInquiryRequest(input: BuildCreateInquiryRequestInput): PersonaHttpRequest {
   return {
     url: PERSONA_INQUIRIES_URL,
@@ -56,14 +73,58 @@ export function buildCreateInquiryRequest(input: BuildCreateInquiryRequestInput)
       'Key-Inflection': 'kebab',
       'Idempotency-Key': input.idempotencyKey,
     },
-    // Brief §4.1: deliberately no `reference-id` — see the module doc.
-    // `auto-create-inquiry-session: true` — see the module doc above; without it Persona
-    // returns `meta.session-token: null` on every 201, confirmed against a live sandbox call.
-    body: JSON.stringify({
-      data: { attributes: { 'inquiry-template-id': input.templateId } },
-      meta: { 'auto-create-inquiry-session': true },
-    }),
+    body: buildCreateInquiryBody(input.templateId),
   };
+}
+
+/**
+ * P2-8.0 — brief §2.1: everything Persona binds an `Idempotency-Key` to on first use, as one
+ * string. That is the request body plus the two headers that change how the request is
+ * interpreted and what shape comes back (`Persona-Version`, `Key-Inflection`); the API key and
+ * the key itself are excluded — the first is a credential that must never reach a hash we may
+ * one day print, the second is the output.
+ *
+ * Derived from `buildCreateInquiryBody` rather than restating the body's fields, so ANY future
+ * change to the request — a new field, a template swap, a `Persona-Version` bump — moves the
+ * fingerprint automatically. The brief offered a hand-bumped `KEY_VERSION` constant as an
+ * acceptable alternative; it was rejected because its failure mode when someone forgets to bump
+ * it is a permanently bricked user, which is the defect being fixed.
+ *
+ * Exported only so a test can assert the coupling to the real request holds.
+ */
+export function createRequestFingerprintMaterial(templateId: string): string {
+  return [
+    `Persona-Version:${PERSONA_API_VERSION}`,
+    'Key-Inflection:kebab',
+    buildCreateInquiryBody(templateId),
+  ].join('\n');
+}
+
+export interface RequestFingerprintInput {
+  readonly templateId: string;
+}
+
+/**
+ * A short, deterministic hash of `createRequestFingerprintMaterial`. Folded into
+ * `buildIdempotencyKey` below so that a body change mints a fresh key automatically instead of
+ * silently reusing one Persona has already bound to the OLD body forever — see the module
+ * `CreateInquiryFailureKind` doc for what happens when it doesn't.
+ *
+ * `crypto.subtle` — present in both Deno (the Edge Function runtime) and Node 18+ (the test
+ * suite), same runtime-agnostic pattern as `personaSignature.ts`'s `hmacSha256Hex`.
+ */
+export async function hashRequestFingerprint(input: RequestFingerprintInput): Promise<string> {
+  const encoder = new TextEncoder();
+  const serialized = createRequestFingerprintMaterial(input.templateId);
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(serialized));
+  const bytes = new Uint8Array(digest);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  // Truncated: this only needs to be sensitive to a body change, not collision-resistant
+  // against an adversary — the full 64 hex chars buys nothing here.
+  return hex.slice(0, 16);
 }
 
 /**
@@ -78,9 +139,16 @@ export function buildCreateInquiryRequest(input: BuildCreateInquiryRequestInput)
  * returns its cached response for a replayed `Idempotency-Key` rather than billing a second
  * inquiry. A genuinely new attempt only starts once the previous row exists, so it always
  * observes a higher count and gets a fresh key.
+ *
+ * P2-8.0 fix: `requestFingerprint` (from `hashRequestFingerprint` above) is folded in too, so
+ * the same user/attempt pair gets a DIFFERENT key if the request body changes underneath it —
+ * Persona binds a key to its first-use parameters permanently, so without this a body change
+ * bricks every user holding the old key (see the `CreateInquiryFailureKind` doc). Deterministic
+ * inputs still produce a deterministic key, so the concurrent-request collapse above is
+ * unaffected.
  */
-export function buildIdempotencyKey(userId: string, attemptNumber: number): string {
-  return `create-inquiry:${userId}:${attemptNumber}`;
+export function buildIdempotencyKey(userId: string, attemptNumber: number, requestFingerprint: string): string {
+  return `create-inquiry:${userId}:${attemptNumber}:${requestFingerprint}`;
 }
 
 /**
@@ -91,6 +159,12 @@ export function buildIdempotencyKey(userId: string, attemptNumber: number): stri
  *   forbidden              — 403, key lacks `inquiry.write` (a likely first-run failure — §2)
  *   unprocessable           — 422
  *   rate_limited            — 429, `RateLimit-Reset` surfaced when present
+ *   idempotency_conflict    — P2-8.0: a 400 whose body identifies an Idempotency-Key bound to
+ *                              different parameters than this request. Given its own kind (not
+ *                              swept into `unexpected`) so it stops presenting as a vendor
+ *                              outage — see the brief. A bare 400 that is NOT an idempotency
+ *                              error stays `unexpected`; the body is the discriminator, not the
+ *                              status code alone.
  *   malformed_response      — the body on ANY status could not be read as the documented shape
  *   missing_session_token   — 201, but `meta.session-token` is absent. The app cannot resume an
  *                              inquiry without it, so this must fail loudly (brief §5) rather
@@ -102,6 +176,7 @@ export type CreateInquiryFailureKind =
   | 'forbidden'
   | 'unprocessable'
   | 'rate_limited'
+  | 'idempotency_conflict'
   | 'malformed_response'
   | 'missing_session_token'
   | 'unexpected';
@@ -122,6 +197,32 @@ export type CreateInquiryOutcome =
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * P2-8.0 §2.2: the discriminator for `idempotency_conflict`. Persona's JSON:API error shape is
+ * `{ errors: [{ title, detail, ... }] }` — this looks for "idempoten" (matches both
+ * "idempotent" and "idempotency") in either field of any entry, case-insensitively, rather than
+ * trusting the status code alone. Never throws on an unparseable body — returns `false` and lets
+ * the caller fall back to `unexpected`, the same fail-safe direction as the rest of this module.
+ */
+function isIdempotencyConflictBody(rawBody: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    return false;
+  }
+  const errors = asRecord(parsed)?.errors;
+  if (!Array.isArray(errors)) {
+    return false;
+  }
+  return errors.some((entry) => {
+    const record = asRecord(entry);
+    const title = typeof record?.title === 'string' ? record.title.toLowerCase() : '';
+    const detail = typeof record?.detail === 'string' ? record.detail.toLowerCase() : '';
+    return title.includes('idempoten') || detail.includes('idempoten');
+  });
 }
 
 export interface ParseCreateInquiryResponseInput {
@@ -158,6 +259,14 @@ export function parseCreateInquiryResponse(input: ParseCreateInquiryResponseInpu
       kind: 'rate_limited',
       detail: 'Persona rate limit exceeded (429)',
       ...(Number.isFinite(resetSeconds) ? { retryAfterSeconds: resetSeconds } : {}),
+    };
+  }
+
+  if (status === 400 && isIdempotencyConflictBody(input.rawBody)) {
+    return {
+      ok: false,
+      kind: 'idempotency_conflict',
+      detail: 'Persona rejected the Idempotency-Key — bound to different parameters on first use (400)',
     };
   }
 
