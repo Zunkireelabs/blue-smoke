@@ -156,11 +156,20 @@ machine that no longer exists:
 ```bash
 npm run typecheck        # tsc --noEmit, x3 projects (app, mock, tests)
 npm run lint             # 0 errors; a ruled warning baseline, see below
-npm test                 # 273 tests / 30 suites
+npm test                 # 578 tests / 54 suites
 npm run bundle:check     # iOS + Android Metro bundle — catches what tsc can't
+npm run bundle:check:release  # release-mode bundle; proves the dev BLE mock is absent (P1-3.0)
 npm run ios              # works; `npm run android` has never been run (no JDK)
 npx supabase db push     # migrations
 ```
+
+⚠️ **`npm run typecheck` does not cover `supabase/functions/**`.** `tsconfig.json` excludes that
+whole subtree, so `tsc` never sees a single Edge Function — verified 2026-08-11. A green typecheck
+is **no evidence at all** about backend changes; only the Jest tests over `_shared/**` and a live
+call against the deployed function are. Do not report "typecheck clean" as though it covered an
+Edge Function diff. The practical consequence: a non-exhaustive `switch` over a shared union in
+that subtree compiles happily and fails at runtime, so if you add a member to a union there, hunt
+down every `switch` over it by hand.
 
 **`npm run lint` has a ruled warning baseline, currently 111.** It is *not* "≤ 111 forever" — the rule
 is **no `eslint-disable`, and no `no-bitwise` outside `src/features/ble`, `crypto`, `byteLayout`**,
@@ -230,16 +239,35 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-*(Updated Day 10, 2026-08-09. This block goes stale fastest — distrust it if the date is old.)*
+*(Updated Day 12, 2026-08-11. This block goes stale fastest — distrust it if the date is old.)*
 
-- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code, and it now signs in and walks
-  end to end on dev** (phone test-OTP → verify stack → seeded Home; Track A, 2026-08-09 — the
-  sign-in blocker was a missing `react-native-url-polyfill`, see the Track A brief). `typecheck`,
-  `test` (274 tests / 30 suites) and `bundle:check` are green; iOS runs on the simulator.
-  **Android has never been compiled** — no JDK, no `ANDROID_HOME` — and both platforms on
-  physical hardware are in the Definition of Done.
-- **Where the work is:** `chore/integrate-auth-db-persona`, ~62 commits, **not pushed**. `stage` is
-  far behind it. Reading `stage` or `main` will mislead you about current state.
+- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code, and it signs in and walks end
+  to end on dev** (phone test-OTP → verify stack → seeded Home). `typecheck`, `test`
+  (**578 tests / 54 suites**), `lint` (0 errors, **111** warnings), `bundle:check` and
+  `bundle:check:release` are all green; iOS runs on the simulator. **Android has never been
+  compiled** — no JDK, no `ANDROID_HOME` — and both platforms on physical hardware are in the
+  Definition of Done.
+- **Where the work is: `stage` (`ee143ac`), and it is now the truth.** The old warning that `stage`
+  was far behind an unpushed `chore/integrate-auth-db-persona` is **spent** — that branch is merged.
+  `main` is still stale by design between promotions.
+- **Landed 2026-08-11:** PR #14 (P1-3.0 dev BLE seam — device screens reachable on a simulator for
+  the first time, behind a `__DEV__` + ESLint + release-bundle triple guard), PR #15 (P1-2.0
+  Bluetooth gate — `unsupported` split from still-checking; all five radio states driven live),
+  PR #16 (P2-8.0 — `create-inquiry`'s reuse path now returns a session token via Persona's
+  `/resume`, so both success shapes carry one contract).
+- 🔴 **`create-inquiry` can permanently brick a user, and already has.** Its Persona
+  `Idempotency-Key` derives from `(userId, attemptNumber)`, and `attemptNumber` only advances after
+  a *successful* call — so once a key is burned (Persona binds a key to its first-use parameters
+  forever, and the request body changed when `auto-create-inquiry-session` was added) that user
+  retries the dead key forever. **Two of the three seeded test numbers — `+14152127777` and
+  `+14152127778` — cannot start verification at all.** Persona returns `400`, which our parser
+  buckets into `unexpected` → `502 PERSONA_BAD_RESPONSE`, so it reads as a vendor outage when it is
+  our own request. Briefed and claimed: `fix/P2-8.0-idempotency-key-burn`. **Use `+14152127779`
+  for any verification testing until this lands.**
+- **Verification is server-owned but the app hasn't moved yet.** `create-inquiry` mints the inquiry
+  and writes the binding row; `PersonaVerificationScreen` still calls `Inquiry.fromTemplate(...)`
+  and never calls the endpoint. PR B (`feature/P2-8.0-app-session-token-handoff`) is the swap, is
+  **11 commits behind `stage`**, and needs a rebase before it opens a PR.
 - **Blocking the whole plan:** **OQ-1** (sample IDs, hardware ~Day 26), **OQ-4** (who burns the
   device root key into OTP at manufacture), and 🔴 **OQ-12** (the `serial_hash` salt — same factory
   conversation as OQ-4, so chase them together). All answered by the client; all take longer to
