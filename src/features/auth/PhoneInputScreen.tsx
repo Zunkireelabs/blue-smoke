@@ -28,6 +28,15 @@ import { phoneE164Schema } from './schemas';
 
 type Status = 'idle' | 'submitting';
 
+/**
+ * ITU-T E.164 caps a full international number at 15 digits including the country calling
+ * code. The country code is supplied by the picker rather than typed here, so 15 is a
+ * deliberately generous ceiling for the part the user does type — it bounds the field
+ * without second-guessing any specific country's numbering plan. `parsePhoneNumberFromString`
+ * on submit remains the real validity check; this only stops unbounded input.
+ */
+const MAX_SUBSCRIBER_DIGITS = 15;
+
 export function PhoneInputScreen() {
   const authClient = useAuthClient();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -42,7 +51,14 @@ export function PhoneInputScreen() {
   }
 
   function handleChangeText(text: string) {
-    setPhoneText(new AsYouType(country).input(text));
+    // Cap the DIGITS, not the rendered string: the formatting `AsYouType` adds (spaces,
+    // parens, dashes) varies by country, so a character cap would bite at a different real
+    // length for every one. Without this the field accepted arbitrarily long input —
+    // observed on the simulator taking 30+ digits, at which point `AsYouType` silently stops
+    // formatting and the user just sees a wall of numbers with no indication anything is
+    // wrong.
+    const digits = text.replace(/\D/g, '').slice(0, MAX_SUBSCRIBER_DIGITS);
+    setPhoneText(new AsYouType(country).input(digits));
   }
 
   async function onSubmit() {
