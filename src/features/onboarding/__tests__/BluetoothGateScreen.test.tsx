@@ -257,6 +257,30 @@ describe('BluetoothGateScreen — ON-10 and the recoverable timeout (P1-2.0)', (
     expect(renderedText(renderer)).toContain('Still checking Bluetooth');
   });
 
+  it('a RESOLVED gate never flips to the timeout screen on a foreground re-check, even if the caller keeps it mounted', async () => {
+    // The trap: `poweredOn` is the one state with no early return of its own — it falls through
+    // to the spinner while the caller navigates away. A foreground re-check re-arms the timer,
+    // and because the re-read resolves to the SAME 'poweredOn', `setState` is a no-op React bails
+    // out of, so the conclusive-state effect never re-runs to clear it. Today's only caller
+    // (`DevicePairingGateScreen`) calls `navigation.replace` on resolve, so the gate unmounts and
+    // this cannot bite in production — this test exists so the NEXT caller, one that keeps the
+    // gate mounted, doesn't silently render "Still checking Bluetooth" over a working radio.
+    const { renderer, onResolved } = await renderGate(fakeManager('PoweredOn'));
+    expect(onResolved).toHaveBeenCalledTimes(1);
+
+    const listenerCalls = (AppState.addEventListener as jest.Mock).mock.calls;
+    const changeHandler = [...listenerCalls].reverse().find(([event]) => event === 'change')?.[1];
+    await act(async () => {
+      changeHandler?.('active');
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(GATE_UNKNOWN_TIMEOUT_MS);
+    });
+
+    expect(renderedText(renderer)).not.toContain('Still checking Bluetooth');
+  });
+
   it('reaching a conclusive state before the timeout clears the pending timer — no stray flip to the timeout screen', async () => {
     const { renderer } = await renderGate(fakeManager('PoweredOff'));
     expect(renderedText(renderer)).toContain('Bluetooth is off');

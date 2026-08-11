@@ -123,8 +123,15 @@ export function BluetoothGateScreen({ onResolved }: BluetoothGateScreenProps) {
   if (state === 'unsupported') {
     return <BluetoothUnsupportedScreen />;
   }
-  if (timedOut) {
-    // Reachable only from null/'unknown' — every other state was returned above already.
+  if (timedOut && state !== 'poweredOn') {
+    // Reachable only from null/'unknown'. Every other state returned above EXCEPT 'poweredOn',
+    // which deliberately falls through to the spinner while the caller takes over — so it needs
+    // the explicit exclusion here rather than an early return of its own. Without it, a caller
+    // that keeps this gate mounted after `onResolved` (today's `DevicePairingGateScreen` calls
+    // `navigation.replace`, so it doesn't) would flip to "Still checking Bluetooth" over a
+    // working radio: an `AppState` foreground re-check re-arms the timer, and the re-read
+    // settling on the SAME 'poweredOn' is a no-op `setState` React bails out of, so the
+    // conclusive-state effect above never re-runs to clear it.
     return <BluetoothCheckTimeoutScreen onTryAgain={check} />;
   }
 
