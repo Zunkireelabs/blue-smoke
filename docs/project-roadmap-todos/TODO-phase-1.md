@@ -77,6 +77,17 @@
 - [ ] Tested on both platforms, both methods *(no physical device or simulator on this machine,
       brief §2 — unit/typecheck/lint only; genuinely deferred, not faked)*
 
+**Method A — PR 2, password as a later credential** *(email + code auth pivot, see
+`docs/execution-briefs/P1-1.0-email-code-auth-with-passwords.md`)* — Method A's original boxes
+above predate this pivot and describe screens PR 1 deleted; they are left ticked as history, not
+current scope. This is the current scope:
+- [x] "Set a password" in Settings (`PF-8`) — new + confirm password, no current-password field
+      (Supabase "Secure password change" confirmed OFF on `bluesmoke-dev`, 2026-08-11)
+- [x] "Use password instead" sign-in (`AU-14`), reached only via a subordinate action on the
+      email-code screen — never a competing front door
+- [x] Security section on Profile (`PF-1`) gated on `user?.email`, so a phone-only account never
+      sees a dead-end "Set a password" row
+
 **Assumption:** BaaS auth supports email/password and reset email flow; Twilio Verify account
 provisioned for the phone method (§1.2.1, confirmed 2026-08-05).
 **Excludes:** social / SSO login.

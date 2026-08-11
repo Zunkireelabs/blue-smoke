@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Badge,
   Button,
   Card,
   ErrorState,
+  ListRow,
   LoadingState,
   Screen,
   Text,
@@ -14,6 +17,7 @@ import {
 import { useAuthClient } from '@/features/auth/AuthClientContext';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { accountIdentifier } from '@/shared/lib/accountIdentifier';
+import type { RootStackParamList } from '@/app/navigation';
 import { useProfile } from './useProfile';
 
 /**
@@ -22,7 +26,22 @@ import { useProfile } from './useProfile';
  * ── Scope: this is PART of P1-8.0, not all of it ──────────────────────────────────────
  *
  * Built here: account details (identifier, display name, member since), verification status
- * with its date, and sign-out. Four sub-tasks in TODO-phase-1.md remain deliberately unbuilt
+ * with its date, a Security section (P1-1.0 PR 2 — "Set a password", PF-8), and sign-out.
+ *
+ * ── Security is gated on having an email ────────────────────────────────────────────────
+ *
+ * The Security card renders only when `user?.email` is truthy. A phone-only account must not
+ * see "Set a password": `signInWithEmail` needs an email, so the row would be a dead end for
+ * that account.
+ *
+ * 🔴 **Truthiness is the point, not a null check.** A phone-only account's `email` is the
+ * EMPTY STRING, not null — measured against `bluesmoke-dev` 2026-08-11. So `user?.email !== null`
+ * would be TRUE for exactly the accounts this gate must exclude. Do not "clarify" this into an
+ * explicit null comparison; `ProfileScreen.test.tsx` mutation-tests that refactor and fails it. `signInWithPassword({ phone, password })` does work (verified live against
+ * `bluesmoke-dev`), but wiring phone + password removes the SMS-possession factor from phone
+ * auth — a deliberate, separate product decision, out of scope here.
+ *
+ * Four sub-tasks in TODO-phase-1.md remain deliberately unbuilt
  * because each needs a value that does not exist yet, and CLAUDE.md forbids inventing one:
  *
  *   - Support contact link — blocked on OQ-2 (manual-review fallback: owner, channel, SLA).
@@ -43,6 +62,7 @@ import { useProfile } from './useProfile';
  */
 export function ProfileScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = useSessionStore((s) => s.user);
   const { profile, isLoading, error, refetch, updateDisplayName } = useProfile();
 
@@ -139,6 +159,25 @@ export function ProfileScreen() {
             : formatDate(profile.memberSince)}
         </Text>
       </Card>
+
+      {user?.email && (
+        <Card style={styles.card}>
+          <Text variant="label" tone="secondary">
+            Security
+          </Text>
+          {/*
+            Always "Set a password", never "Change password" — reviewed twice, intentional
+            both times. Nothing distinguishes an account that already has one: `app_metadata`,
+            `user_metadata` and `auth.identities` are byte-identical before and after setting
+            a password (measured 2026-08-11), and every `auth.users` row carries a bcrypt hash
+            regardless, including phone-only accounts that have never seen a password field.
+            Accurate labelling would need a `has_password` column we deliberately did not add;
+            `setPassword` is idempotent, so one label serves both cases. See
+            `SetPasswordScreen.tsx` for the full reasoning.
+          */}
+          <ListRow label="Set a password" onPress={() => navigation.navigate('SetPassword')} />
+        </Card>
+      )}
 
       <View style={styles.signOut}>
         <Button

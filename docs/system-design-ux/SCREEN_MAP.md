@@ -105,7 +105,7 @@ indefinite spinner over a state that was never going to change.
 
 ---
 
-## AU · Authentication — `BUILT`, task **P1-1.0** (6/6)
+## AU · Authentication — `BUILT`, task **P1-1.0** (7/7)
 
 | ID | Screen | Route | Flow | Status |
 |---|---|---|---|---|
@@ -115,6 +115,7 @@ indefinite spinner over a state that was never going to change.
 | **AU-7** | OTP entry | `OtpVerify` | F3.5 | `BUILT` |
 | **AU-12** | Email entry | `EmailCodeRequest` | F1.4 → *(F2/F4 reconciliation pending, see below)* | `BUILT` |
 | **AU-13** | Email code entry | `EmailCodeEntry` | *(same flow, next node)* | `BUILT` |
+| **AU-14** | Password sign-in *(P1-1.0 PR 2)* | `PasswordSignIn` | *(subordinate to F1.4 — reached only via AU-12's "Use password instead")* | `BUILT` |
 
 🔴 **Retired ids — do not reuse: AU-2, AU-3, AU-4, AU-8, AU-9, AU-10, AU-11.** P1-1.0 replaced
 email + password with a single 6-digit-code front door (email + code, keeping passwords as a
@@ -128,9 +129,11 @@ away.
 
 **CTAs as built:** AU-1 → *Continue with Email* → AU-12 · *Continue with Phone* → AU-5.
 AU-12 → *Send code* → AU-13 (one path serves both a brand-new address and a returning one — there
-is no separate signup/login choice to make). AU-13 auto-submits at 6 digits, *Resend code*
-(60s cooldown). AU-5 → country trigger → AU-6 · *Send code* → AU-7. AU-7 → *Resend code*
-(30s cooldown), auto-submits at 6 digits.
+is no separate signup/login choice to make) · *Use password instead* (subordinate, `variant="secondary"`)
+→ AU-14. AU-13 auto-submits at 6 digits, *Resend code* (60s cooldown). AU-5 → country trigger →
+AU-6 · *Send code* → AU-7. AU-7 → *Resend code* (30s cooldown), auto-submits at 6 digits.
+AU-14 → *Sign in* → `signInWithEmail`; session-store's `onAuthStateChange` drives navigation on
+success, same as every other auth screen — AU-14 never navigates manually.
 
 **⚠️ `USER_FLOWS.md` needs reconciliation, flagged not fixed here.** Deleting AU-2 (signup) and
 AU-4 (login) orphans `USER_FLOWS.md`'s **F2** and **F4** — with codes, those two flows collapse
@@ -247,16 +250,22 @@ celebratory treatment is explicitly wanted.
 
 | ID | Screen | Flow | Status | Notes |
 |---|---|---|---|---|
-| **PF-1** | Account | F9.1 | `PARTIAL` | identifier, display name, verification status, member since, sign out |
-| **PF-2** | Security | F9.2 | `ABSENT` | change password · sign out of all devices |
+| **PF-1** | Account | F9.1 | `PARTIAL` | identifier, display name, verification status, member since, Security section, sign out |
+| **PF-2** | Security | F9.2 | `PARTIAL` | "Set a password" ships inline on PF-1 (P1-1.0 PR 2); the standalone Security screen and "sign out of all devices" remain `ABSENT` |
 | **PF-3** | Devices | F9.3 | `ABSENT` | → DV-9 · rename · unpair |
 | **PF-4** | Notifications | F9.4 | `ABSENT` | ⛔ push has no client code |
 | **PF-5** | Help & support | F9.5 | `ABSENT` | ⛔ **OQ-2** |
 | **PF-6** | Legal | F9.6 | `ABSENT` | ⛔ no privacy/terms URLs exist |
 | **PF-7** | Danger zone | F9.7 | `ABSENT` | ⛔ **OQ-11(d)** · delete account, two-step confirm |
+| **PF-8** | Set a password *(P1-1.0 PR 2)* | F9.2 | `BUILT` | new + confirm password, no current-password field |
 
 **PF-1 is built** and reachable from a *Profile* header action on **DV-1**. Its error state has no
 sign-out — worth fixing, since sign-out is the app's only escape hatch.
+
+**PF-8's Security card on PF-1 is gated on having an email** (`user?.email`): a phone-only account
+never sees "Set a password", since `signInWithEmail` needs an email to sign back in with it — see
+`ProfileScreen.tsx`'s header comment. `PF-1` → *Set a password* → **PF-8** → `setPassword`, then
+confirmation + back to PF-1.
 
 ---
 
@@ -282,17 +291,21 @@ started even with a design, because a named input is missing.
 |---|---|---|---|---|---|
 | SH Shell | 1 | 1 | — | — | — |
 | ON Onboarding | 10 | 10 | — | — | — |
-| AU Auth | 6 | 6 | — | — | — |
+| AU Auth | 7 | 7 | — | — | — |
 | VF Verification | 12 | 1 | 4 | 1 | 6 |
 | DV Devices | 11 | 5 | — | 2 | 4 |
 | LK Lock | 8 | — | — | 4 | 4 |
-| PF Profile | 7 | — | 1 | 4 | 2 |
+| PF Profile | 8 | 1 | 2 | 4 | 1 |
 | SY System | 3 | — | — | — | 3 |
-| **Total** | **58** | **23** | **5** | **11** | **19** |
+| **Total** | **60** | **25** | **6** | **11** | **18** |
 
-*AU dropped from 11 to 6 screens in P1-1.0 (email + code auth, keeping passwords): seven rows
-were retired with the deleted password screens, two were added (`AU-12`, `AU-13`), and the four
-survivors were already `BUILT` — so the section is now fully `BUILT` with no `PARTIAL` count.*
+*AU dropped from 11 to 6 screens in P1-1.0 PR 1 (email + code auth, keeping passwords): seven rows
+were retired with the deleted password screens, two were added (`AU-12`, `AU-13`). PR 2 adds one
+more — `AU-14` (password sign-in) — bringing the section to 7, still fully `BUILT`.*
+
+*PF gained `PF-8` (Set a password) in P1-1.0 PR 2, and `PF-2` moved `ABSENT` → `PARTIAL`: the
+"Set a password" half of Security now ships (inline on PF-1), while the standalone Security
+screen and "sign out of all devices" remain unbuilt.*
 
 ---
 

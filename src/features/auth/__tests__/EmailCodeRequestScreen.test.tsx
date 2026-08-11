@@ -14,7 +14,7 @@ import { findInput, findByLabel, renderedText } from '../testUtils';
 import type { RootStackParamList } from '@/app/navigation';
 
 const Stack = createNativeStackNavigator<
-  Pick<RootStackParamList, 'EmailCodeRequest' | 'EmailCodeEntry'>
+  Pick<RootStackParamList, 'EmailCodeRequest' | 'EmailCodeEntry' | 'PasswordSignIn'>
 >();
 
 function EmailCodeEntryPlaceholder({
@@ -23,6 +23,10 @@ function EmailCodeEntryPlaceholder({
   route: RouteProp<RootStackParamList, 'EmailCodeEntry'>;
 }) {
   return <Text>{`CODE SCREEN ${route.params.email}`}</Text>;
+}
+
+function PasswordSignInPlaceholder() {
+  return <Text>PASSWORD SIGN IN SCREEN</Text>;
 }
 
 function renderEmailCodeRequest(client = createMockAuthClient()) {
@@ -34,6 +38,7 @@ function renderEmailCodeRequest(client = createMockAuthClient()) {
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} />
             <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryPlaceholder} />
+            <Stack.Screen name="PasswordSignIn" component={PasswordSignInPlaceholder} />
           </Stack.Navigator>
         </AuthClientProvider>
       </NavigationContainer>,
@@ -102,5 +107,17 @@ describe('EmailCodeRequestScreen', () => {
     // The bug this guards against: a rejected await skips the status reset,
     // leaving the button permanently disabled/loading with no way back.
     expect(findByLabel(renderer, 'Send code').props.disabled).toBe(false);
+  });
+
+  it('navigates to PasswordSignIn via the subordinate "Use password instead" action', async () => {
+    const { renderer, client } = renderEmailCodeRequest();
+    const spy = jest.spyOn(client, 'requestEmailCode');
+
+    await act(async () => {
+      await findByLabel(renderer, 'Use password instead').props.onPress();
+    });
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(renderedText(renderer)).toContain('PASSWORD SIGN IN SCREEN');
   });
 });

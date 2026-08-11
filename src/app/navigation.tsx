@@ -10,6 +10,8 @@ import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
 import { EmailCodeEntryScreen } from '@/features/auth/EmailCodeEntryScreen';
 import { PhoneInputScreen } from '@/features/auth/PhoneInputScreen';
 import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
+import { PasswordSignInScreen } from '@/features/auth/PasswordSignInScreen';
+import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import { OnboardingCarouselScreen } from '@/features/onboarding/OnboardingCarouselScreen';
 import { VerifyIntroScreen } from '@/features/verification/VerifyIntroScreen';
 import { CameraPrimingScreen } from '@/features/verification/CameraPrimingScreen';
@@ -44,6 +46,7 @@ export type RootStackParamList = {
   EmailCodeEntry: { email: string };
   PhoneInput: undefined;
   OtpVerify: { phone: string };
+  PasswordSignIn: undefined;
   // Authenticated, pre-verification
   VerifyIntro: undefined;
   CameraPriming: undefined;
@@ -53,6 +56,7 @@ export type RootStackParamList = {
   // Authenticated and verified
   Home: undefined;
   Profile: undefined;
+  SetPassword: undefined;
   // P1-3.0 — device pairing, F7.2-F7.5. Stops at device selection; see PairingBoundaryScreen.
   BluetoothPriming: undefined;
   BluetoothGate: undefined;
@@ -232,6 +236,7 @@ export function RootNavigator() {
           <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
           <Stack.Screen name="PhoneInput" component={PhoneInputScreen} options={{ title: 'Your number' }} />
           <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
+          <Stack.Screen name="PasswordSignIn" component={PasswordSignInScreen} options={{ title: 'Sign in with password' }} />
         </Stack.Navigator>
       ) : stack === 'home' ? (
         <Stack.Navigator>
@@ -246,6 +251,7 @@ export function RootNavigator() {
             }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
+          <Stack.Screen name="SetPassword" component={SetPasswordScreen} options={{ title: 'Set a password' }} />
           {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection. */}
           <Stack.Screen
             name="BluetoothPriming"
