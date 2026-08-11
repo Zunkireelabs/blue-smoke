@@ -35,3 +35,5 @@ export { PageDots } from './PageDots';
 export type { PageDotsProps } from './PageDots';
 export { BackButton } from './BackButton';
 export type { BackButtonProps } from './BackButton';
+export { ScreenScaffold } from './ScreenScaffold';
+export type { ScreenScaffoldProps } from './ScreenScaffold';
