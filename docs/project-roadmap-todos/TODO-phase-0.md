@@ -158,13 +158,20 @@ acknowledges §4, any change requires a version bump and written notice, per §4
 - [ ] Three Supabase projects provisioned: dev / staging / prod — dev + staging provisioned and migrated; prod not created yet (deferred)
 - [x] Auth configured: email/password + password-reset email flow *(dev project `bluesmoke-dev`
       only — staging and prod unconfigured. Phone/OTP via Twilio Verify configured alongside it,
-      see `P1-1.0`.)*
+      see `P1-1.0`. **This box was ticked while no email had ever been delivered**; the config
+      existed and the send path was untested. Genuinely proven 2026-08-09 — custom SMTP via Resend
+      (`smtp.resend.com:465`, sender `noreply@ble.everestdeploy.com`), reset mail Delivered and
+      opened, allow-list proven honoured by a two-send control. 🔴 Two caveats that are not
+      cosmetic: the deep link opening the app is **unproven** (needs a device), and
+      **`signUp()` sends no `emailRedirectTo`**, so with Confirm email ON no email signup can
+      currently confirm — see `docs/session-log/hardik.md` 2026-08-09. That defect is recorded, not
+      fixed here.)*
 - [x] Schema written as versioned migrations (spec §5.2) — `profiles`, `verifications`, `devices`, `device_ownership`, `device_keys`, `device_sessions`, `push_tokens`, `audit_log`
 - [x] **`verifications` contains no DOB, name, ID number, image, or embedding column** — verified by schema review
 - [x] RLS enabled on **every** table (spec §5.3) — applied to dev, confirmed via advisors; applied to staging 2026-08-06
 - [x] RLS policies written for all tables
 - [x] **`device_keys` has RLS enabled and zero policies** (deny-all to clients) — verified
-- [x] RLS **tested with a second user's JWT** — cross-user reads must fail — `supabase/tests/rls_ownership_proof.sql`, run against dev 2026-08-05 and staging 2026-08-06, all 8 checks pass on both
+- [x] RLS **tested with a second user's JWT** — cross-user reads must fail — `supabase/tests/rls_ownership_proof.sql`, run against dev 2026-08-05 and staging 2026-08-06, all 8 checks pass on both *(that version simulates the JWT by setting the same GUCs PostgREST sets. **Superseded 2026-08-09 by a live-HTTP version** — `rls_ownership_proof_live.mjs` + seed/teardown SQL — run against dev with two real users' access tokens from `POST /auth/v1/token?grant_type=password`: **10/10 PASS**, 8 checks + 2 guards. Run **twice**, once before seeding as a vacuity control: A's "sees own row" checks FAIL with no fixtures, and the update check returns INCONCLUSIVE rather than PASS, so neither is vacuous. The SQL proof is **kept, not deleted** — it is the only version needing no network and no service-role key. See `supabase/README.md`.)*
 - [x] Supabase Vault configured for `K_dev` wrapping — `device_keys.k_dev_secret_id` references `vault.secrets`; round-trip + client-denial proven in `supabase/tests/vault_k_dev_proof.sql` (dev 2026-08-05, staging 2026-08-06, all 4 checks pass on both). Mechanism only — no real `K_dev` exists yet, blocked on OQ-4
 - [ ] APNs + FCM credentials configured
 - [x] Migration workflow documented; no dashboard schema edits
