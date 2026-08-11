@@ -192,6 +192,113 @@ export function parseCreateInquiryResponse(input: ParseCreateInquiryResponseInpu
   return { ok: true, inquiryId, sessionToken };
 }
 
+export interface BuildResumeInquiryRequestInput {
+  readonly apiKey: string;
+  readonly inquiryId: string;
+}
+
+/**
+ * `POST /inquiries/{id}/resume` — resume-path execution brief §2–§3. Mints a fresh session
+ * token for an inquiry that already exists, so `create-inquiry/index.ts`'s reuse branch can
+ * call this instead of `buildCreateInquiryRequest` when a `pending` row is found. Same two
+ * pinned headers as create, for the same reason (module doc above) — the response is read via
+ * the literal kebab key, so a `Key-Inflection` drift would silently break this path too.
+ *
+ * No `Idempotency-Key`: resume isn't the operation that key exists to deduplicate, and reusing
+ * `buildIdempotencyKey`'s value here would collide with the create call's key for the same
+ * attempt.
+ */
+export function buildResumeInquiryRequest(input: BuildResumeInquiryRequestInput): PersonaHttpRequest {
+  return {
+    url: `${PERSONA_INQUIRIES_URL}/${input.inquiryId}/resume`,
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      'Persona-Version': PERSONA_API_VERSION,
+      'Key-Inflection': 'kebab',
+    },
+    // Resume takes no attributes of its own — nothing to send but the request itself.
+    body: '',
+  };
+}
+
+export interface ParseResumeInquiryResponseInput {
+  readonly status: number;
+  readonly rawBody: string;
+  /** `RateLimit-Reset` response header, when present — only meaningful on a 429. */
+  readonly rateLimitReset?: string | null;
+}
+
+/**
+ * The single authority on what a Persona `POST /inquiries/{id}/resume` response means. Same
+ * never-throws discipline as `parseCreateInquiryResponse`, and the same `CreateInquiryOutcome`
+ * / `CreateInquiryFailureKind` shape — resume-path brief §3 calls for reusing both rather than
+ * inventing a parallel type for what is, from the caller's side, the same decision.
+ *
+ * Success is `200` OR `201` — resume returns the existing inquiry rather than creating one, so
+ * unlike create's fixed `201` this does not assume a single status ahead of a live call; both
+ * are treated as success and anything else is `unexpected`.
+ */
+export function parseResumeInquiryResponse(input: ParseResumeInquiryResponseInput): CreateInquiryOutcome {
+  const { status } = input;
+
+  if (status === 401) {
+    return { ok: false, kind: 'unauthenticated', detail: 'Persona rejected the API key on resume (401)' };
+  }
+  if (status === 403) {
+    return {
+      ok: false,
+      kind: 'forbidden',
+      detail: 'Persona key lacks the required permission for resume (403)',
+    };
+  }
+  if (status === 422) {
+    return { ok: false, kind: 'unprocessable', detail: 'Persona rejected the resume request (422)' };
+  }
+  if (status === 429) {
+    const resetSeconds = input.rateLimitReset ? Number(input.rateLimitReset) : NaN;
+    return {
+      ok: false,
+      kind: 'rate_limited',
+      detail: 'Persona rate limit exceeded on resume (429)',
+      ...(Number.isFinite(resetSeconds) ? { retryAfterSeconds: resetSeconds } : {}),
+    };
+  }
+
+  if (status !== 200 && status !== 201) {
+    return {
+      ok: false,
+      kind: 'unexpected',
+      detail: `Persona returned unexpected status ${status} on resume`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = input.rawBody ? JSON.parse(input.rawBody) : null;
+  } catch {
+    return { ok: false, kind: 'malformed_response', detail: `${status} resume body was not valid JSON` };
+  }
+
+  const body = asRecord(parsed);
+  const inquiryId = asRecord(body?.data)?.id;
+  if (typeof inquiryId !== 'string' || inquiryId.length === 0) {
+    return { ok: false, kind: 'malformed_response', detail: `${status} resume body missing data.id` };
+  }
+
+  // Read via the literal kebab key — never `sessionToken` — same trap as create (module doc).
+  const sessionToken = asRecord(body?.meta)?.['session-token'];
+  if (typeof sessionToken !== 'string' || sessionToken.length === 0) {
+    return {
+      ok: false,
+      kind: 'missing_session_token',
+      detail: `${status} resume body missing meta.session-token`,
+    };
+  }
+
+  return { ok: true, inquiryId, sessionToken };
+}
+
 /**
  * The partial unique index from migration `20260807090000` — `verifications.inquiry_id`,
  * `where inquiry_id is not null`. Named so `isConcurrentInquiryInsertRace` can tell THIS
