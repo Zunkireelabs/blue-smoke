@@ -95,6 +95,36 @@ describe('BrandMark', () => {
     expect(innerPath.props.fill).toBe(tokens.color.brand);
   });
 
+  it('defaults to tone="gradient": unchanged from every existing render', async () => {
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+
+    await act(async () => {
+      renderer = ReactTestRenderer.create(<BrandMark size={100} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const outerPath = renderer!.root.findByProps({ d: OUTER_FLAME_PATH });
+    expect(outerPath.props.fill).toMatch(/^url\(#brandMarkGradient-.+\)$/);
+  });
+
+  it('tone="solid": outer flame renders flat white, no gradient', async () => {
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+
+    await act(async () => {
+      renderer = ReactTestRenderer.create(<BrandMark size={100} tone="solid" groundColor={tokens.color.brand} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const outerPath = renderer!.root.findByProps({ d: OUTER_FLAME_PATH });
+    expect(outerPath.props.fill).toBe(tokens.color.surface);
+    expect(renderer!.root.findAllByProps({ offset: '0' })).toHaveLength(0);
+
+    const innerPath = renderer!.root.findByProps({ d: INNER_FLAME_PATH });
+    expect(innerPath.props.fill).toBe(tokens.color.brand);
+  });
+
   it('reduced motion ON: starts no animation', async () => {
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
     const loopSpy = jest.spyOn(Animated, 'loop');

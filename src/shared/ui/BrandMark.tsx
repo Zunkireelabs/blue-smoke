@@ -12,6 +12,13 @@ export interface BrandMarkProps {
    * (the default), brand blue on PR 2's icon tile.
    */
   groundColor?: string;
+  /**
+   * `'gradient'` (default, unchanged) — the outer flame in the brand gradient, as shipped.
+   * `'solid'` — the outer flame in flat white, for use on `BrandGround`: the gradient's
+   * `brandGlow` top stop loses contrast against the same blue it would sit on. `groundColor`
+   * still carries the inner knockout either way — this only changes the outer fill.
+   */
+  tone?: 'gradient' | 'solid';
 }
 
 // 100x100 grid — execution brief P0-7.0 geometry v3 "Geometry" table. Do not improvise these
@@ -85,7 +92,7 @@ function startBreath(scaleY: Animated.Value, scaleX: Animated.Value) {
  * or reports `true`, the mark renders its rest state (the flame's authored, undistorted
  * geometry) and starts no animation at all.
  */
-export function BrandMark({ size, groundColor = tokens.color.surface }: BrandMarkProps) {
+export function BrandMark({ size, groundColor = tokens.color.surface, tone = 'gradient' }: BrandMarkProps) {
   // Per-instance — a module constant would collide when two BrandMarks mount at once (PR 2's
   // icon tile alongside the splash), silently pointing both gradients at whichever <LinearGradient>
   // rendered last.
@@ -126,13 +133,19 @@ export function BrandMark({ size, groundColor = tokens.color.surface }: BrandMar
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
-        <Defs>
-          <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={tokens.color.brandGlow} />
-            <Stop offset="1" stopColor={tokens.color.brand} />
-          </LinearGradient>
-        </Defs>
-        <Path d={OUTER_FLAME_PATH} fill={`url(#${gradientId})`} />
+        {tone === 'gradient' ? (
+          <>
+            <Defs>
+              <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor={tokens.color.brandGlow} />
+                <Stop offset="1" stopColor={tokens.color.brand} />
+              </LinearGradient>
+            </Defs>
+            <Path d={OUTER_FLAME_PATH} fill={`url(#${gradientId})`} />
+          </>
+        ) : (
+          <Path d={OUTER_FLAME_PATH} fill={tokens.color.surface} />
+        )}
       </Svg>
       <Animated.View style={[StyleSheet.absoluteFill, styles.innerLayer, { transform: [{ scaleY }, { scaleX }] }]}>
         <Svg width={size} height={size} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
