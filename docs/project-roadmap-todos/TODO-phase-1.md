@@ -120,13 +120,18 @@ the app working** — account, profile and verification are all reachable withou
       component behind a variant prop. iOS never reaches ON-7 — see that file's own note on why)*
 - [x] Permission state re-checked on app foreground *(P1-2.0 — `BluetoothGateScreen`'s `AppState`
       listener, tested)*
-- [ ] **No dead ends** — verified by walking every denial combination *(NOT done — ON-4/6/7/8/9 have
-      no real trigger yet (Phase D wires it), and the live simulator walk of them via a signed-in
-      session was blocked by repeated phone-OTP failures this session, most likely Twilio trial
-      rate-limiting per this project's own documented constraint on `+14152127*`-style test
-      numbers. Covered instead by automated tests that press every CTA and assert its effect, plus
-      the state-routing regression test — but that is not the same as walking it live. Do this once
-      Phase D gives these screens a real trigger to walk.)*
+- [ ] **No dead ends** — verified by walking every denial combination *(**mostly done; one gap, and
+      it is Android.** Both original blockers are gone: P1-3.0 gave these screens a real trigger
+      (`Home` → "Pair a device" → ON-4 → gate), and the signed-in session walks fine now. On
+      2026-08-11 all five radio states were driven live on the iOS simulator through that real
+      trigger, by forcing `createDevBleManager`'s fixture state: `PoweredOn` → resolves to
+      DeviceScan · `PoweredOff` → ON-9 · `Unauthorized` → ON-8 · `Unsupported` → ON-10 · `Unknown`
+      → bounded spinner → timeout screen, whose "Try again" was pressed and re-armed a fresh
+      timeout rather than sticking. ON-10's header back chevron was pressed and genuinely exits.
+      **Still not walked: ON-7 (denied once).** iOS never reaches it by design — it needs Android,
+      which has still never been compiled on this project (no JDK). **ON-6 also still has no real
+      trigger** (notification priming is F7.9, past P1-3.0's pairing boundary). Leaving unticked
+      for those two rather than rounding up.)*
 
 **Assumption:** standard OS permission dialogs are acceptable to client.
 **Excludes:** custom permission-priming screens beyond the agreed flow.
