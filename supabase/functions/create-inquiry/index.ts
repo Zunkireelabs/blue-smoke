@@ -24,8 +24,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   buildCreateInquiryRequest,
   buildIdempotencyKey,
+  buildResumeInquiryRequest,
   isConcurrentInquiryInsertRace,
   parseCreateInquiryResponse,
+  parseResumeInquiryResponse,
 } from '../_shared/personaInquiry.ts';
 
 function json(status: number, body: Record<string, unknown>): Response {
@@ -91,7 +93,59 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   if (pending?.inquiry_id) {
-    return json(200, { inquiryId: pending.inquiry_id, templateId, reused: true });
+    // resume-path brief §2: session tokens are locked to the inquiry's expiry at the moment
+    // they're minted, so the old `reused: true` shape with no token left the app unable to open
+    // a server-created inquiry a second time. Mint one per call — never cache it in this row.
+    const resumeRequest = buildResumeInquiryRequest({
+      apiKey: personaApiKey,
+      inquiryId: pending.inquiry_id,
+    });
+
+    const resumeResponse = await fetch(resumeRequest.url, {
+      method: resumeRequest.method,
+      headers: resumeRequest.headers,
+      body: resumeRequest.body,
+    });
+    const resumeRawBody = await resumeResponse.text();
+    const resumeOutcome = parseResumeInquiryResponse({
+      status: resumeResponse.status,
+      rawBody: resumeRawBody,
+      rateLimitReset: resumeResponse.headers.get('RateLimit-Reset'),
+    });
+
+    if (!resumeOutcome.ok) {
+      // Same discipline as the create-path failure log below: `.message`/`.detail` only, never
+      // inquiry_id or user_id, both of which this branch holds.
+      console.error(`create-inquiry: Persona resume failed — ${resumeOutcome.kind}: ${resumeOutcome.detail}`);
+      switch (resumeOutcome.kind) {
+        case 'unauthenticated':
+          return json(401, { error: 'PERSONA_UNAUTHENTICATED' });
+        case 'forbidden':
+          return json(403, { error: 'PERSONA_FORBIDDEN' });
+        case 'unprocessable':
+          return json(422, { error: 'PERSONA_UNPROCESSABLE' });
+        case 'rate_limited':
+          return json(429, {
+            error: 'PERSONA_RATE_LIMITED',
+            ...(resumeOutcome.retryAfterSeconds !== undefined
+              ? { retryAfterSeconds: resumeOutcome.retryAfterSeconds }
+              : {}),
+          });
+        case 'missing_session_token':
+        case 'malformed_response':
+        case 'unexpected':
+          // brief §5: do not fall back to creating a fresh inquiry here — that silently doubles
+          // the per-verification cost against a fixed-price PRD (OQ-11).
+          return json(502, { error: 'PERSONA_BAD_RESPONSE' });
+      }
+    }
+
+    return json(200, {
+      inquiryId: resumeOutcome.inquiryId,
+      sessionToken: resumeOutcome.sessionToken,
+      templateId,
+      reused: true,
+    });
   }
 
   // 🔴 min_age is the sharp edge of this whole endpoint. A Persona template that scans an ID

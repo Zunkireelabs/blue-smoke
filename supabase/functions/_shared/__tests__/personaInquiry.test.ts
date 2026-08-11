@@ -12,8 +12,10 @@ import {
   PERSONA_INQUIRIES_URL,
   buildCreateInquiryRequest,
   buildIdempotencyKey,
+  buildResumeInquiryRequest,
   isConcurrentInquiryInsertRace,
   parseCreateInquiryResponse,
+  parseResumeInquiryResponse,
 } from '../personaInquiry';
 
 describe('buildCreateInquiryRequest', () => {
@@ -190,6 +192,157 @@ describe('parseCreateInquiryResponse', () => {
   it('a 201 with an empty-string session-token → missing_session_token', () => {
     const body = JSON.stringify({ data: { id: 'inq_abc123' }, meta: { 'session-token': '' } });
     expect(parseCreateInquiryResponse({ status: 201, rawBody: body })).toEqual({
+      ok: false,
+      kind: 'missing_session_token',
+      detail: expect.any(String),
+    });
+  });
+});
+
+describe('buildResumeInquiryRequest', () => {
+  const request = buildResumeInquiryRequest({
+    apiKey: 'api_test_key',
+    inquiryId: 'inq_abc123',
+  });
+
+  it('posts to the documented resume endpoint for the given inquiry', () => {
+    expect(request.method).toBe('POST');
+    expect(request.url).toBe(`${PERSONA_INQUIRIES_URL}/inq_abc123/resume`);
+  });
+
+  it('sends the API key as a bearer token', () => {
+    expect(request.headers.Authorization).toBe('Bearer api_test_key');
+  });
+
+  it('pins Persona-Version explicitly rather than relying on the key default', () => {
+    expect(request.headers['Persona-Version']).toBe('2025-12-08');
+    expect(PERSONA_API_VERSION).toBe('2025-12-08');
+  });
+
+  it('pins Key-Inflection to kebab explicitly', () => {
+    expect(request.headers['Key-Inflection']).toBe('kebab');
+  });
+
+  it('sends no Idempotency-Key — resume is not the operation that key deduplicates', () => {
+    expect(request.headers).not.toHaveProperty('Idempotency-Key');
+  });
+});
+
+describe('parseResumeInquiryResponse', () => {
+  const VALID_BODY = JSON.stringify({
+    data: { id: 'inq_abc123', type: 'inquiry' },
+    meta: { 'session-token': 'sess_resumed789' },
+  });
+
+  it('parses a valid 200 into inquiryId + sessionToken', () => {
+    const outcome = parseResumeInquiryResponse({ status: 200, rawBody: VALID_BODY });
+    expect(outcome).toEqual({ ok: true, inquiryId: 'inq_abc123', sessionToken: 'sess_resumed789' });
+  });
+
+  it('parses a valid 201 into inquiryId + sessionToken', () => {
+    const outcome = parseResumeInquiryResponse({ status: 201, rawBody: VALID_BODY });
+    expect(outcome).toEqual({ ok: true, inquiryId: 'inq_abc123', sessionToken: 'sess_resumed789' });
+  });
+
+  it('reads the literal kebab key, not a camelCase fallback', () => {
+    const camelBody = JSON.stringify({
+      data: { id: 'inq_abc123' },
+      meta: { sessionToken: 'sess_resumed789' },
+    });
+    expect(parseResumeInquiryResponse({ status: 200, rawBody: camelBody })).toEqual({
+      ok: false,
+      kind: 'missing_session_token',
+      detail: expect.any(String),
+    });
+  });
+
+  it('401 → unauthenticated', () => {
+    expect(parseResumeInquiryResponse({ status: 401, rawBody: '' })).toEqual({
+      ok: false,
+      kind: 'unauthenticated',
+      detail: expect.any(String),
+    });
+  });
+
+  it('403 → forbidden', () => {
+    expect(parseResumeInquiryResponse({ status: 403, rawBody: '' })).toEqual({
+      ok: false,
+      kind: 'forbidden',
+      detail: expect.any(String),
+    });
+  });
+
+  it('422 → unprocessable', () => {
+    expect(parseResumeInquiryResponse({ status: 422, rawBody: '' })).toEqual({
+      ok: false,
+      kind: 'unprocessable',
+      detail: expect.any(String),
+    });
+  });
+
+  it('429 → rate_limited, surfacing RateLimit-Reset when present', () => {
+    expect(
+      parseResumeInquiryResponse({ status: 429, rawBody: '', rateLimitReset: '1770000060' }),
+    ).toEqual({
+      ok: false,
+      kind: 'rate_limited',
+      detail: expect.any(String),
+      retryAfterSeconds: 1_770_000_060,
+    });
+  });
+
+  it('429 → rate_limited without a retryAfterSeconds when the header is absent', () => {
+    const outcome = parseResumeInquiryResponse({ status: 429, rawBody: '' });
+    expect(outcome).toEqual({ ok: false, kind: 'rate_limited', detail: expect.any(String) });
+    expect(outcome).not.toHaveProperty('retryAfterSeconds');
+  });
+
+  it('an unexpected status (e.g. 404) → unexpected, not a silent pass-through', () => {
+    expect(parseResumeInquiryResponse({ status: 404, rawBody: 'Not Found' })).toEqual({
+      ok: false,
+      kind: 'unexpected',
+      detail: expect.any(String),
+    });
+  });
+
+  it('a 200 with an empty body → malformed_response', () => {
+    expect(parseResumeInquiryResponse({ status: 200, rawBody: '' })).toEqual({
+      ok: false,
+      kind: 'malformed_response',
+      detail: expect.any(String),
+    });
+  });
+
+  it('a 200 with non-JSON garbage → malformed_response, never throws', () => {
+    expect(() => parseResumeInquiryResponse({ status: 200, rawBody: '{not json' })).not.toThrow();
+    expect(parseResumeInquiryResponse({ status: 200, rawBody: '{not json' })).toEqual({
+      ok: false,
+      kind: 'malformed_response',
+      detail: expect.any(String),
+    });
+  });
+
+  it('a 200 missing data.id → malformed_response', () => {
+    const body = JSON.stringify({ meta: { 'session-token': 'sess_resumed789' } });
+    expect(parseResumeInquiryResponse({ status: 200, rawBody: body })).toEqual({
+      ok: false,
+      kind: 'malformed_response',
+      detail: expect.any(String),
+    });
+  });
+
+  it('a 200 missing meta.session-token → missing_session_token, fails loudly rather than stranding the app', () => {
+    const body = JSON.stringify({ data: { id: 'inq_abc123' } });
+    expect(parseResumeInquiryResponse({ status: 200, rawBody: body })).toEqual({
+      ok: false,
+      kind: 'missing_session_token',
+      detail: expect.any(String),
+    });
+  });
+
+  it('a 200 with an empty-string session-token → missing_session_token', () => {
+    const body = JSON.stringify({ data: { id: 'inq_abc123' }, meta: { 'session-token': '' } });
+    expect(parseResumeInquiryResponse({ status: 200, rawBody: body })).toEqual({
       ok: false,
       kind: 'missing_session_token',
       detail: expect.any(String),
