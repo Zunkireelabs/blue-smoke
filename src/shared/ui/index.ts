@@ -31,3 +31,5 @@ export { BrandGround } from './BrandGround';
 export type { BrandGroundProps } from './BrandGround';
 export { BrandMark } from './BrandMark';
 export type { BrandMarkProps } from './BrandMark';
+export { PageDots } from './PageDots';
+export type { PageDotsProps } from './PageDots';
