@@ -1,11 +1,10 @@
 import { Platform } from 'react-native';
 
 /**
- * PROVISIONAL neutral palette — OQ-7 (brand assets) is unanswered (spec §13). Every visual
+ * The BlueSmoke palette — OQ-7 (brand assets) resolved 2026-08-11 (spec §13). Every visual
  * value in `src/shared/ui/**` and any screen built on it must come from this file and nowhere
- * else (enforced by `__tests__/tokenOnlyGuard.test.ts`), so that when brand assets land, the
- * reskin is an edit to this file alone. Nothing below is a brand decision — it's a grayscale
- * placeholder chosen only to be legible and AA-compliant.
+ * else (enforced by `__tests__/tokenOnlyGuard.test.ts`), so a reskin stays an edit to this file
+ * alone.
  *
  * Structure: a raw `neutral` scale (never imported directly outside this file) feeds a
  * `lightTheme` of semantic tokens. A second theme (e.g. `darkTheme`) would be another object
@@ -41,14 +40,18 @@ const red = {
 } as const;
 
 /**
- * Approved palette (Sadin, 2026-08-09 — execution brief §3). Exact values, not to be
- * substituted; do not add a colour here that is not one of these seven without asking (OQ-7,
- * brand assets, is still open — this is direction, not the final brand).
+ * Approved palette (Sadin, 2026-08-09 — execution brief §3, extended 2026-08-11 for the
+ * P0-7.0 flame mark). Exact values, not to be substituted; do not add a colour here without
+ * asking.
  */
 const brandRaw = {
   base: '#1657D0',
   dark: '#0E3E9A',
   tint: '#E8F0FE',
+  // P0-7.0 geometry v2 — the eighth brand colour, and decorative-only: the top stop of the
+  // flame mark's gradient, nowhere else. Never a text colour — see `EXEMPT_TOKENS` in
+  // contrastCompleteness.test.ts.
+  glow: '#22C1F2',
 } as const;
 
 const groundRaw = {
@@ -102,6 +105,8 @@ const semanticColor = {
   brand: brandRaw.base,
   brandDark: brandRaw.dark,
   brandTint: brandRaw.tint,
+  // P0-7.0 geometry v2 — BrandMark's gradient top stop only. Decorative-only, never text.
+  brandGlow: brandRaw.glow,
   groundTop: groundRaw.top,
   groundBottom: groundRaw.bottom,
   success: successRaw.text,

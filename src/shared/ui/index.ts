@@ -27,3 +27,5 @@ export { useCountdown } from './Countdown';
 export type { Countdown } from './Countdown';
 export { GradientGround } from './GradientGround';
 export type { GradientGroundProps } from './GradientGround';
+export { BrandMark } from './BrandMark';
+export type { BrandMarkProps } from './BrandMark';

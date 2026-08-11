@@ -57,9 +57,24 @@ const COLOR_REFERENCE = /(\w+)\s*(?::|=)\s*\{?\s*tokens\.color\.(\w+)\b/g;
 const FG_KEYS = new Set(['color', 'placeholderTextColor']);
 /** Keys whose value is the surface text/an icon sits on. */
 const BG_KEYS = new Set(['backgroundColor']);
-/** Keys whose value never renders text or an icon — outlines only. Tokens found under these
- * keys must be named in `EXEMPT_TOKENS` below, not silently skipped. */
+/** Keys whose value never renders text or an icon — outlines only. Applies to every scanned
+ * file. Tokens found under these keys must be named in `EXEMPT_TOKENS` below, not silently
+ * skipped. */
 const BORDER_KEYS = new Set(['borderColor', 'shadowColor']);
+
+/**
+ * `fill`/`stroke`/`stopColor`/`groundColor` cover BrandMark's SVG flame (P0-7.0): a logo shape,
+ * not text or a standalone icon, so it carries no WCAG text-contrast obligation *there*.
+ *
+ * Deliberately scoped to `BrandMark.tsx` alone, not treated as globally decorative (review
+ * finding, P0-7.0 geometry v3 rework): `react-native-svg` is now a project dependency, and a
+ * future real icon (header actions are text-only today for want of one) could reach for
+ * `fill: tokens.color.X` too. Exempting these keys everywhere would let that icon silently
+ * escape its own contrast obligation instead of forcing a conscious classification the way this
+ * guard is meant to.
+ */
+const BRANDMARK_PATH = 'src/shared/ui/BrandMark.tsx';
+const BRANDMARK_DECORATIVE_KEYS = new Set(['fill', 'stroke', 'stopColor', 'groundColor']);
 
 /**
  * Named, reasoned exemption list for tokens that legitimately never render text or an icon —
@@ -74,6 +89,10 @@ const EXEMPT_TOKENS: Readonly<Record<string, string>> = {
   focusRing: 'Focus-indicator outline, never a text or icon fill; not yet used by any component.',
   brand: "Button's secondary-variant outline — same non-text role as `border`. Its fg/bg roles "
     + 'elsewhere (link text, Toggle track) already have their own contrastPairs entries above.',
+  brandGlow: "BrandMark's gradient top stop (P0-7.0 geometry v3) — decorative-only, never a text colour.",
+  surface: "BrandMark's `groundColor` default (P0-7.0 geometry v3) — the splash's white ground, "
+    + 'passed as the inner flame knockout fill. Already covered as a bgToken above; this entry '
+    + 'is for its separate, non-text use as a shape fill.',
 };
 
 /** The destructured form (`const { color } = tokens; color.surface`) produces a different
@@ -100,13 +119,15 @@ function scan(files: SourceFile[]): ScanResult {
     if (DESTRUCTURED_COLOR_ACCESS.test(file.contents)) {
       destructured.push(file.relativePath);
     }
+    const borderKeysForFile =
+      file.relativePath === BRANDMARK_PATH ? new Set([...BORDER_KEYS, ...BRANDMARK_DECORATIVE_KEYS]) : BORDER_KEYS;
     for (const match of file.contents.matchAll(COLOR_REFERENCE)) {
       const [, key, tokenName] = match;
       if (FG_KEYS.has(key)) {
         fg.add(tokenName);
       } else if (BG_KEYS.has(key)) {
         bg.add(tokenName);
-      } else if (BORDER_KEYS.has(key)) {
+      } else if (borderKeysForFile.has(key)) {
         border.add(tokenName);
       } else {
         unclassified.push(`${file.relativePath}: "${key}" -> tokens.color.${tokenName}`);
