@@ -18,6 +18,11 @@ import { emailCodeRequestSchema } from './schemas';
  * `PhoneInputScreen` (its closest sibling: single field, single submit,
  * same non-enumerating error discipline) rather than on Hardik's
  * `EmailCodeRequestScreen`, which imported raw React Native only.
+ *
+ * P1-1.0 PR 2 adds a subordinate "Use password instead" action below the
+ * primary "Send code" button, navigating to `PasswordSignIn` (AU-14). It is
+ * `variant="secondary"` (tone="link") and must never compete with the code
+ * front door — password is a later credential, not a second entry point.
  */
 
 type Status = 'idle' | 'submitting';
@@ -98,6 +103,15 @@ export function EmailCodeRequestScreen() {
           loading={isSubmitting}
         />
       </View>
+
+      <View style={styles.usePasswordButton}>
+        <Button
+          label="Use password instead"
+          variant="secondary"
+          disabled={isSubmitting}
+          onPress={() => navigation.navigate('PasswordSignIn')}
+        />
+      </View>
     </Screen>
   );
 }
@@ -118,5 +132,8 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: tokens.spacing.xl,
+  },
+  usePasswordButton: {
+    marginTop: tokens.spacing.md,
   },
 });

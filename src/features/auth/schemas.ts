@@ -6,16 +6,20 @@ import { z } from 'zod';
  * only front door: there is no separate signup/login schema, and no reset
  * schema — the code is the recovery path.
  *
- * `passwordSchema` survives, **unrouted**, for PR 2's "Set a password" in
- * Settings — password sign-in itself is a later credential, not a competing
+ * `passwordSchema` now routes: PR 2 wires it into `setPasswordSchema` below
+ * for "Set a password" in Settings, and directly for "Use password instead"
+ * sign-in — password sign-in itself is a later credential, not a competing
  * front door (see `client.ts`). `signupSchema`, `loginSchema` and
- * `passwordResetRequestSchema` do not: they validated forms this PR deletes.
+ * `passwordResetRequestSchema` do not survive: they validated forms PR 1
+ * deleted.
  *
  * Password strength: no policy is specified anywhere in TECHNICAL_SPEC.md.
- * `MIN_PASSWORD_LENGTH` below is a placeholder floor, not a spec value — it
- * must be confirmed against (and kept in sync with) the Supabase project's
- * own Auth password policy (Dashboard → Authentication → Policies), since a
- * mismatch between client-side and server-side rules just means confusing
+ * `MIN_PASSWORD_LENGTH` below is kept at 8, stricter than the confirmed
+ * server floor of **6** (measured live against `bluesmoke-dev`, 2026-08-11 —
+ * Dashboard → Authentication → Policies). Stricter-than-server is safe: it
+ * only ever rejects client-side something the server would also reject, and
+ * never accepts something the server won't. Do not lower this to 6 without a
+ * deliberate product call — the gap between the two is what stops confusing
  * server rejections after client-side validation already passed.
  */
 const MIN_PASSWORD_LENGTH = 8;
@@ -25,6 +29,36 @@ export const emailSchema = z.email({ message: 'Enter a valid email address.' });
 export const passwordSchema = z
   .string()
   .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+
+/**
+ * PR 2 — "Set a password" in Settings. No current-password field: Supabase's
+ * "Secure password change" is confirmed OFF on `bluesmoke-dev` (measured
+ * live, 2026-08-11), so `updateUser({ password })` only needs a live
+ * session, not reauthentication. `confirmPassword` exists purely to catch a
+ * fat-fingered retype client-side — the server never sees it.
+ */
+export const setPasswordSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match.',
+    path: ['confirmPassword'],
+  });
+export type SetPasswordInput = z.infer<typeof setPasswordSchema>;
+
+/**
+ * PR 2 — "Use password instead" sign-in. Deliberately not `emailCodeRequestSchema`
+ * plus a bolted-on password field: this is its own schema because it serves a
+ * different call (`signInWithEmail`, not `requestEmailCode`) even though the
+ * email half is identical.
+ */
+export const passwordSignInSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, 'Enter your password.'),
+});
+export type PasswordSignInInput = z.infer<typeof passwordSignInSchema>;
 
 /**
  * The email a 6-digit code is sent to — signup and sign-in alike. Named for
