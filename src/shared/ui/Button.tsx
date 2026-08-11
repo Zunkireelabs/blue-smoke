@@ -2,18 +2,28 @@ import { ActivityIndicator, Pressable, StyleSheet, type PressableProps } from 'r
 import { Text, type TextProps } from './Text';
 import { tokens } from './tokens';
 
-type Variant = 'primary' | 'secondary' | 'destructive';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'onBrand' | 'textLink';
+type Shape = 'default' | 'pill';
 
 export interface ButtonProps extends Omit<PressableProps, 'style' | 'children'> {
   label: string;
   loading?: boolean;
   variant?: Variant;
+  /**
+   * `'pill'` — full-width, for use on `BrandGround` (`onBrand`/`textLink` variants). `'default'`
+   * (unchanged) leaves width to the caller's layout, as every existing call site already relies
+   * on.
+   */
+  shape?: Shape;
 }
 
 const TONE_BY_VARIANT: Record<Variant, TextProps['tone']> = {
   primary: 'inverse',
   secondary: 'link',
   destructive: 'danger',
+  // Brand-coloured label on a white pill — `link`'s token value is the same approved brand blue.
+  onBrand: 'link',
+  textLink: 'inverse',
 };
 
 // `ActivityIndicator`'s `color` is a component prop, not a style key, so its value is read
@@ -24,6 +34,8 @@ const spinnerColor = StyleSheet.create({
   primary: { color: tokens.color.interactivePrimaryText },
   secondary: { color: tokens.color.link },
   destructive: { color: tokens.color.dangerText },
+  onBrand: { color: tokens.color.link },
+  textLink: { color: tokens.color.textInverse },
 });
 
 /**
@@ -39,7 +51,14 @@ const spinnerColor = StyleSheet.create({
  * Hit area is fixed at `tokens.touchTarget` regardless of label length or variant —
  * `__tests__/touchTarget.test.ts` resolves this style and asserts it.
  */
-export function Button({ label, loading = false, variant = 'primary', disabled, ...rest }: ButtonProps) {
+export function Button({
+  label,
+  loading = false,
+  variant = 'primary',
+  shape = 'default',
+  disabled,
+  ...rest
+}: ButtonProps) {
   const isDisabled = disabled || loading;
   return (
     <Pressable
@@ -48,6 +67,7 @@ export function Button({ label, loading = false, variant = 'primary', disabled, 
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.base,
+        shape === 'pill' && styles.pill,
         variantStyles[variant],
         isDisabled && styles.disabled,
         pressed && !isDisabled && pressedStyles[variant],
@@ -77,6 +97,9 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.6,
   },
+  pill: {
+    width: '100%',
+  },
 });
 
 const variantStyles = StyleSheet.create({
@@ -93,6 +116,13 @@ const variantStyles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: tokens.color.dangerBorder,
   },
+  onBrand: {
+    backgroundColor: tokens.color.surface,
+  },
+  // No fill, no border — a text-only secondary action on `BrandGround`.
+  textLink: {
+    backgroundColor: 'transparent',
+  },
 });
 
 // Pressed state darkens the fill (primary) or deepens the tint (secondary/destructive) rather
@@ -108,5 +138,11 @@ const pressedStyles = StyleSheet.create({
   },
   destructive: {
     backgroundColor: tokens.color.dangerBackground,
+  },
+  onBrand: {
+    backgroundColor: tokens.color.brandTint,
+  },
+  textLink: {
+    opacity: 0.7,
   },
 });
