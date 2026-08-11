@@ -25,6 +25,7 @@ import {
   buildCreateInquiryRequest,
   buildIdempotencyKey,
   buildResumeInquiryRequest,
+  hashRequestFingerprint,
   isConcurrentInquiryInsertRace,
   parseCreateInquiryResponse,
   parseResumeInquiryResponse,
@@ -131,6 +132,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
               ? { retryAfterSeconds: resumeOutcome.retryAfterSeconds }
               : {}),
           });
+        case 'idempotency_conflict':
+          // Resume never sends an Idempotency-Key (personaInquiry.ts doc), so Persona has no
+          // basis to raise this here — kept only for exhaustiveness over the shared union
+          // (§5 of the brief: tsc excludes this file, so a missing case falls through to a
+          // 200 with no token, the exact stranding this switch exists to prevent).
+          return json(502, { error: 'PERSONA_BAD_RESPONSE' });
         case 'missing_session_token':
         case 'malformed_response':
         case 'unexpected':
@@ -169,10 +176,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(500, { error: 'LOOKUP_FAILED' });
   }
 
+  // P2-8.0: the key must vary with the request body, or a body change (e.g. the
+  // auto-create-inquiry-session flag added earlier) permanently burns every key already used
+  // with the old body — see personaInquiry.ts's buildIdempotencyKey doc. The fingerprint is
+  // computed from the request builder itself, so nothing here needs updating when the body does.
+  const requestFingerprint = await hashRequestFingerprint({ templateId });
+
   const personaRequest = buildCreateInquiryRequest({
     apiKey: personaApiKey,
     templateId,
-    idempotencyKey: buildIdempotencyKey(userId, attemptNumber ?? 0),
+    idempotencyKey: buildIdempotencyKey(userId, attemptNumber ?? 0, requestFingerprint),
   });
 
   const personaResponse = await fetch(personaRequest.url, {
@@ -205,6 +218,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
             ? { retryAfterSeconds: outcome.retryAfterSeconds }
             : {}),
         });
+      case 'idempotency_conflict':
+        // P2-8.0 §2.2: given its own outward status rather than folded into
+        // PERSONA_BAD_RESPONSE, so this stops presenting as a vendor outage (brief §1). Should
+        // not recur now that the key varies with the request body, but a stale deploy or a
+        // manual retry against an already-burned key still needs a distinct, honest answer.
+        return json(409, { error: 'PERSONA_IDEMPOTENCY_CONFLICT' });
       case 'missing_session_token':
       case 'malformed_response':
       case 'unexpected':
