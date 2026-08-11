@@ -3,8 +3,9 @@ import {
   createNativeStackNavigator,
   type NativeStackNavigationProp,
 } from '@react-navigation/native-stack';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { BootSplashScreen } from '@/app/BootSplashScreen';
 import { AuthMethodChoiceScreen } from '@/features/auth/AuthMethodChoiceScreen';
 import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
 import { EmailCodeEntryScreen } from '@/features/auth/EmailCodeEntryScreen';
@@ -139,14 +140,6 @@ export function selectStack(
   return 'verify';
 }
 
-function BootSplash() {
-  return (
-    <View style={styles.centered}>
-      <ActivityIndicator size="large" />
-    </View>
-  );
-}
-
 /**
  * A header action rendered as text rather than an icon — OQ-7 (brand assets) is unanswered, so
  * there is no icon set to draw from and inventing one would be a brand decision. Sized to the
@@ -215,7 +208,7 @@ export function RootNavigator() {
         // Restoring a Keychain-backed session. Render nothing decisive: showing the auth
         // stack here would flash a login screen at an already-signed-in user on every launch.
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="VerificationPending" component={BootSplash} />
+          <Stack.Screen name="VerificationPending" component={BootSplashScreen} />
         </Stack.Navigator>
       ) : stack === 'onboarding' ? (
         // F1 — first launch, no session yet, onboarding flag unset. Its own single-screen
@@ -329,7 +322,6 @@ export function RootNavigator() {
 }
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerButton: {
     minHeight: tokens.touchTarget.minHeight,
     justifyContent: 'center',
