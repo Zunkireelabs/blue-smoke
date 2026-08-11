@@ -58,7 +58,7 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 | Firmware | **We author the BLE spec (§4); the client's firmware team implements it** | Firmware development is an add-on, quoted separately. |
 | Timeline | **30 days** | See `project-roadmap-todos/ROADMAP.md`. |
 | Push | **Supabase → FCM (Android) / APNs (iOS)** via Edge Function | Avoids adding Firebase as a second BaaS. |
-| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1 | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. |
+| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1. **Amended by §1.2.2:** email's front door is now a 6-digit code, not a password; password survives as a later, unrouted credential. | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. |
 
 > ### 1.2.1 Phone + OTP authentication — second auth method
 > **Status: confirmed in team meeting, 2026-08-05.** Raised during Phase 1 auth planning as a
@@ -91,6 +91,130 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 >
 > **Does not affect:** §2–§14 of this spec. This is additive to the account/auth layer only —
 > device trust model, verification pipeline, BLE spec, and crypto are all untouched.
+
+> ### 1.2.2 Email + Code (passwordless front door), password kept as a later credential
+> **Status: team-confirmed 2026-08-09 (Hardik), amended 2026-08-11 (P1-1.0 PR 1: "email + code
+> auth, keeping passwords").** Raised after §1.2.1 was locked in, as a proposal; confirmed on
+> 2026-08-09 together with the wider decision that **all email authentication in this product uses
+> 6-digit codes and never links**.
+>
+> 🔴 **Client confirmation is still outstanding.** Team-confirmed is not client-confirmed. Treat the
+> codes-not-links decision as provisional in exactly the way §1.2.1's phone-OTP addition was between
+> its proposal and its team meeting — this section records an internal decision, not a signed-off
+> one.
+>
+> Adds a **third** first-class auth capability alongside the two confirmed in §1.2.1, but — unlike
+> §1.2.1's "users choose either at signup/login" — only **two** of the three are front doors a user
+> can pick at signup/login. Password sign-in survives as a **later credential**, not a competing
+> entry point:
+>
+> | | |
+> |---|---|
+> | **Method A — Email + password** | 🔴 **Amended 2026-08-11 — retained, not removed.** Briefly removed entirely on 2026-08-10 (no signup screen, no login screen, no way to set a password on any account) because keeping two email methods side by side was unstable: one had a password field and one did not, and only one could be the front door. That instability is resolved by demoting password to a **later credential** instead of deleting it: `signInWithEmail` (sign-in) and `setPassword` (renamed from `confirmPasswordReset`, since the reset flow it served no longer exists) both survive on `AuthClient`, real and tested, but **unrouted** — no screen calls either one in this PR. PR 2 adds *Set a password* in Settings and *Use password instead* on sign-in. There is still no email/password **signup** screen and no plan to add one: every account is created via Method C below; a password is something you add afterward, from an already-authenticated session. |
+> | **Method B — Phone + OTP** | Existing, confirmed (§1.2.1). **Unchanged** — it uses Twilio, not SMTP, and was already code-based. |
+> | **Method C — Email + Code** *(new)* | **The single email front door.** User enters only their email; Supabase Auth (`signInWithOtp`, email) sends a 6-digit code through the **same SMTP path** Method A's emails already use, just a different template. User enters the code to authenticate — this one path serves both a brand-new address and a returning one. |
+>
+> **The email flows, all code-based:**
+>
+> | Flow | Send | Verify | Proven against real Supabase? |
+> |---|---|---|---|
+> | Sign-up confirmation | `requestEmailCode` (`signInWithOtp`, `shouldCreateUser: true`) | `verifyOtp({ type: 'signup' })` — kept, **unrouted**, see the verify-type table below | ✅ dev, 2026-08-09 |
+> | Sign in / sign up — Method C | `requestEmailCode` (`signInWithOtp({ email, shouldCreateUser: true })`) | `verifyOtp({ type: 'email' })` — the only verify type anything routes to | ✅ dev, 2026-08-09 · ✅ **through the app on Android, 2026-08-10** |
+> | ~~Password reset~~ | **removed** | **removed — the code is the recovery path.** A user who forgets their Method A password signs in with a code (Method C) and, once PR 2 lands, sets a new password from Settings. |
+>
+> ✅ **The two verify types are interchangeable for a sign-up code — measured, not inferred.** This
+> was first noticed by accident and recorded here as a discrepancy to test deliberately; that test
+> was then run. Results against dev, 2026-08-10:
+>
+> | Code issued by | Verified with | Result |
+> |---|---|---|
+> | *Confirm signup* template | `type: 'email'` | ✅ `200`, sets `email_confirmed_at` — twice, once **through the app on Android with a brand-new account** |
+> | *Confirm signup* template | `type: 'signup'` | ✅ `200` |
+> | *Magic link / OTP* template | `type: 'email'` | ✅ `200` |
+> | *Magic link / OTP* template | `type: 'signup'` | **untested — do not assume** |
+>
+> **Consequence:** the app needs only one verify type. `EmailCodeEntryScreen` always verifies with
+> `type: 'email'`, and a brand-new account signs up, confirms and signs in through that single path
+> end to end. `confirmSignupWithCode` (`type: 'signup'`) still works but **nothing routes to it**;
+> it is kept rather than deleted because it costs nothing and the fourth cell above is still blank.
+>
+> 🔴 **The wider lesson, which outlives this table:** the false claim that the two verify types were
+> "not interchangeable" was enforced by `mockAuthClient`, so the whole suite stayed green while the
+> comment, the mock and the spec all agreed with each other and disagreed with the server. That is
+> the **same failure shape as the `Email OTP Length` defect** below — the mock used the app's own
+> constant, so no test could contradict it. **A mock is not evidence about a vendor; only a call to
+> the vendor is.**
+>
+> Both rows verified end to end on dev, over HTTP with no app involved: a 6-digit code delivered,
+> `verifyOtp` returned a session for the expected `user_id` with `role: authenticated`. The
+> sign-up row additionally set `email_confirmed_at`, confirming a real previously-stranded account
+> through the flow rather than by a database edit.
+>
+> **Codes are single-use, and every failure looks the same.** A replayed code and a wrong code both
+> return `403 otp_expired`, **identically** — the server does not distinguish them, which is what
+> makes one generic client-side error message (`toAuthUserMessage`, never the raw provider error)
+> correct rather than merely convenient.
+>
+> ⚠️ **Issuing a new code invalidates the previous one, silently.** This is a UX hazard, not just a
+> testing footnote: a user who taps *Resend* and then types the code from the **first** email gets
+> `403 otp_expired` with no explanation of why a code they are reading right now is refused. The
+> older email stays in the inbox looking perfectly valid. `EmailCodeEntryScreen` clears the input
+> on resend; copy should tell the user to use the newest email.
+>
+> **Password reset is removed, not converted.** There is no reset flow and no "check your email"
+> confirmation screen for it. A user who forgets their Method A password signs in with a code
+> instead — `requestEmailCode` / `verifyEmailCode` is the recovery path. Once PR 2 lands, they can
+> then set a new password from Settings via `setPassword`.
+>
+> **`shouldCreateUser` is deliberately `true`.** With `false`, `signInWithOtp` errors for an
+> unrecognised address, which **leaks account existence** and breaks the no-enumeration rule applied
+> to every other auth path in §1.2.1. `true` makes Method C signup and sign-in the same action and
+> keeps the response identical for known and unknown addresses.
+>
+> **Unified identity:** resolves to the same `auth.users.id` as Methods A and B. The same
+> account-linking policy from §1.2.1 applies unchanged: a first-time login via Method C with no
+> existing link creates a new account; linking to an existing identity is only ever a deliberate
+> already-authenticated action, never an automatic merge at verify time.
+>
+> **New dependency:** none beyond what Method A already requires. This is the same Supabase Auth
+> + SMTP path as Method A's emails, just a different template (OTP code instead of a
+> confirmation/magic link). Does **not** need Twilio or any other new service.
+>
+> **Delivery templates.** The Supabase dashboard email templates **Confirm sign up** and **Magic
+> link or OTP** must use `{{ .Token }}` rather than `{{ .ConfirmationURL }}`. These are dashboard
+> state, not repo state — see `supabase/README.md` for the full provisioning list.
+>
+> **Code length is 6, and that is a server setting, not a client one.** Supabase's *Email OTP
+> Length* (Authentication → Providers → Email) governs how many digits `{{ .Token }}` renders. It
+> must be **6**, matching Method B's Twilio codes and the app's code-entry screens.
+> ⚠️ **A longer value makes sign-in impossible, silently:** `EmailCodeEntryScreen` auto-submits at
+> six characters and caps input at six, so the remaining digits cannot be typed at all. Every unit
+> test still passes — they drive a mock that uses the app's own constant — and the failure presents
+> as the user mistyping. Observed on dev 2026-08-09, where the setting was 8. **Re-confirm this is
+> still 6 as part of P1-1.0's own definition of done.**
+>
+> 🔴 **Not enforced server-side: the 60 s email rate limit.** The dashboard exposes a minimum
+> interval between auth emails, but on dev **it was not enforced**: two `POST /auth/v1/otp` calls
+> seconds apart both returned `200` and both delivered, in the same minute (2026-08-09). The anon
+> key that hits this endpoint ships inside the app. Treat server-side rate limiting as **not
+> currently a control we have** — a cost/abuse decision, not a bug in this PR. The client keeps a
+> 60 s cooldown on email flows anyway — it is the honest UX for a code the user is waiting on, and
+> it costs nothing if the server limit is later switched on — but a client cooldown restrains only
+> the app, never a direct API caller. Method B's 30 s is a Twilio-side placeholder and does not
+> apply to email.
+>
+> **SMTP impact:** SMTP now blocks **2 of 3** auth methods (Methods A and C both depend on it;
+> Method B does not — it uses Twilio). Custom SMTP is configured and delivery-proven on dev as of
+> 2026-08-09; staging and prod are not.
+>
+> **Effort impact:** absorbed into `P1-1.0`'s existing ~4.5 person-day figure rather than re-opening
+> it. Removing the reset-link flow (screen, deep-link branch, linking config) roughly offsets adding
+> Method C, and the code-entry screen mirrors Method B's rather than being extracted into a forced
+> shared component (see the P1-1.0 execution brief on why extraction wasn't taken as a given here).
+>
+> **Does not affect:** §2–§14 of this spec, same as §1.2.1. Additive to the account/auth layer
+> only — device trust model, verification pipeline, BLE spec and crypto are untouched, and
+> `age_verified` enforcement (rule 3) is indifferent to which method produced the session.
 
 ### 1.3 Explicit non-goals (base scope)
 

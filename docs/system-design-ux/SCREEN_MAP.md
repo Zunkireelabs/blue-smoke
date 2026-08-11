@@ -32,7 +32,7 @@ a stale `navigate()`, or a deep link.
 
 ```
 sessionStatus = hydrating          → boot     SH-1
-sessionStatus = signedOut          → auth     AU-1 … AU-8
+sessionStatus = signedOut          → auth     AU-1 … AU-13 (AU-2/3/4/8/9/10/11 retired)
 verification  = verified           → home     DV-*, LK-*, PF-*
 verification  = loading | pending  → pending  VF-3
 verification  = none | declined    → verify   VF-2
@@ -41,7 +41,9 @@ verification  = none | declined    → verify   VF-2
 Ordering is load-bearing: unknown is **never** treated as verified. The gate is UX only — the real
 authority is `issue-device-session` re-reading the DB server-side (inviolable rule 3).
 
-**Deep links:** exactly one route is URL-reachable — `bluesmoke://reset-password` → `AU-8`.
+**Deep links:** none. P1-1.0 removed the password-reset flow this app's one deep link
+(`bluesmoke://reset-password` → the old `AU-8`) served — the 6-digit code is the recovery path
+now, and there is nothing left to link into. Every screen is URL-unreachable.
 
 ---
 
@@ -103,36 +105,38 @@ indefinite spinner over a state that was never going to change.
 
 ---
 
-## AU · Authentication — mostly `BUILT`, task **P1-1.0** (15/17)
+## AU · Authentication — `BUILT`, task **P1-1.0** (6/6)
 
 | ID | Screen | Route | Flow | Status |
 |---|---|---|---|---|
 | **AU-1** | Auth method choice | `AuthChoice` | F1.4 | `BUILT` |
-| **AU-2** | Sign up | `Signup` | F2 | `BUILT` |
-| **AU-3** | Check your email — signup | *(state of AU-2)* | F2.6 | `PARTIAL` |
-| **AU-4** | Log in | `Login` | F4 | `BUILT` |
 | **AU-5** | Phone number | `PhoneInput` | F3.1 | `BUILT` |
 | **AU-6** | Country picker | *(modal)* | F3.1 | `BUILT` |
 | **AU-7** | OTP entry | `OtpVerify` | F3.5 | `BUILT` |
-| **AU-8** | Forgot password | `PasswordReset` | F5.1 | `BUILT` |
-| **AU-9** | Check your email — reset | *(state of AU-8)* | F5.3 | `PARTIAL` |
-| **AU-10** | Set new password | `ResetPasswordConfirm` | F5.6 | `BUILT` |
-| **AU-11** | Password updated | *(state of AU-10)* | F5.7 | `PARTIAL` |
+| **AU-12** | Email entry | `EmailCodeRequest` | F1.4 → *(F2/F4 reconciliation pending, see below)* | `BUILT` |
+| **AU-13** | Email code entry | `EmailCodeEntry` | *(same flow, next node)* | `BUILT` |
 
-**CTAs as built:** AU-1 → *Continue with Email* → AU-4 · *Continue with Phone* → AU-5.
-AU-4 → *Log in* · *Forgot password?* → AU-8 · *New here? Create an account* → AU-2.
-AU-2 → *Sign up* · *Already have an account? Log in* → AU-4.
-AU-5 → country trigger → AU-6 · *Send code* → AU-7. AU-7 → *Resend code* (30s cooldown), auto-submits at 6 digits.
+🔴 **Retired ids — do not reuse: AU-2, AU-3, AU-4, AU-8, AU-9, AU-10, AU-11.** P1-1.0 replaced
+email + password with a single 6-digit-code front door (email + code, keeping passwords as a
+later, unrouted credential — see `docs/TECHNICAL_SPEC.md` §1.2.2). That deleted `Signup`,
+`Login`, `PasswordResetRequest` and `ResetPasswordConfirm` outright, taking seven of the eleven
+original AU rows with them. Per this doc's own ID scheme ("section prefixes exist so inserting a
+screen never renumbers the rest — design refs stay pinned"), those seven numbers are retired
+rather than reassigned: reusing, say, `AU-4` would silently repoint an existing design reference
+from "Log in" to something else. The jump from AU-7 to AU-12 is deliberate, not a gap to tidy
+away.
 
-**🔴 Three dead ends.** AU-3, AU-9 and AU-11 each render a success message with **no button and no
-navigation import** — the only exit is the native header back arrow. AU-11 is the worst: a user who
-just reset their password is told "Password updated" and left there.
-Required: AU-3 → *Resend* · *Change email address* · *Use phone instead*; AU-9 → *Back to log in*;
-AU-11 → *Continue* → AU-4.
+**CTAs as built:** AU-1 → *Continue with Email* → AU-12 · *Continue with Phone* → AU-5.
+AU-12 → *Send code* → AU-13 (one path serves both a brand-new address and a returning one — there
+is no separate signup/login choice to make). AU-13 auto-submits at 6 digits, *Resend code*
+(60s cooldown). AU-5 → country trigger → AU-6 · *Send code* → AU-7. AU-7 → *Resend code*
+(30s cooldown), auto-submits at 6 digits.
 
-**Also:** AU-7 has no *change number* CTA, and AU-10 is unreachable for a signed-in user — it lives
-in the auth stack, which isn't mounted once you have a session, so tapping a reset link while
-signed in goes nowhere.
+**⚠️ `USER_FLOWS.md` needs reconciliation, flagged not fixed here.** Deleting AU-2 (signup) and
+AU-4 (login) orphans `USER_FLOWS.md`'s **F2** and **F4** — with codes, those two flows collapse
+into one. AU-12/AU-13 point at the nearest existing node (F1.4) as a placeholder; reconciling
+`USER_FLOWS.md` and `flows.html` for the collapsed flow is its own docs task, out of scope for
+P1-1.0 (folding it in would balloon that diff and is how doc updates get half-done).
 
 ---
 
@@ -278,13 +282,17 @@ started even with a design, because a named input is missing.
 |---|---|---|---|---|---|
 | SH Shell | 1 | 1 | — | — | — |
 | ON Onboarding | 10 | 10 | — | — | — |
-| AU Auth | 11 | 8 | 3 | — | — |
+| AU Auth | 6 | 6 | — | — | — |
 | VF Verification | 12 | 1 | 4 | 1 | 6 |
 | DV Devices | 11 | 5 | — | 2 | 4 |
 | LK Lock | 8 | — | — | 4 | 4 |
 | PF Profile | 7 | — | 1 | 4 | 2 |
 | SY System | 3 | — | — | — | 3 |
-| **Total** | **63** | **25** | **8** | **11** | **19** |
+| **Total** | **58** | **23** | **5** | **11** | **19** |
+
+*AU dropped from 11 to 6 screens in P1-1.0 (email + code auth, keeping passwords): seven rows
+were retired with the deleted password screens, two were added (`AU-12`, `AU-13`), and the four
+survivors were already `BUILT` — so the section is now fully `BUILT` with no `PARTIAL` count.*
 
 ---
 
