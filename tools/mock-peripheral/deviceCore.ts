@@ -84,9 +84,10 @@ import {
   SECONDS_SINCE_STATE_CHANGE_SATURATION,
   SESSION_EXPIRY_MAX_DAYS,
 } from '../../src/features/ble/protocol';
-import { aesCmac, constantTimeEqual, hkdfSha256 } from './crypto';
 import type { Clock } from './clock';
 import {
+  asciiToBytes,
+  concatBytes,
   readBytes,
   readUint16LE,
   readUint24LE,
@@ -97,9 +98,22 @@ import {
   writeUint24LE,
   writeUint8,
 } from './byteLayout';
-import { randomBytes } from 'node:crypto';
 
 export type CharacteristicKey = keyof typeof BLE_CHARACTERISTIC_UUIDS;
+
+/**
+ * P1-3.0 §2.1 — the crypto this core needs, declared as an interface rather than imported
+ * directly. `crypto.ts` (this package's Node-side AES-CMAC/HKDF, RFC 4493-verified) is one
+ * implementation of it, supplied by the caller — never imported here. That is what keeps
+ * `node:crypto` out of this file, and therefore out of any Metro bundle that reaches it: a
+ * top-level `import ... from 'node:crypto'` breaks bundling even on a code path that never
+ * runs, so the import itself cannot exist anywhere reachable from `src/`.
+ */
+export interface DeviceCoreCrypto {
+  aesCmac(key: Uint8Array, message: Uint8Array): Uint8Array;
+  hkdfSha256(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, lengthBytes: number): Uint8Array;
+  constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean;
+}
 
 export type NotificationListener = (value: Uint8Array) => void;
 
@@ -120,33 +134,49 @@ export interface DeviceCoreConfig {
   /** Percent drained per hour of clock time. Default 0 — battery is static unless a test asks for drain. */
   batteryDrainPercentPerHour?: number;
   clock: Clock;
-  /** §4.8 F8 — hardware RNG source for nonces. Default node:crypto.randomBytes; inject for deterministic tests. */
-  nonceSource?: () => Uint8Array;
+  /**
+   * §4.8 F8 — hardware RNG source for nonces. Required, no default — see `DeviceCoreCrypto`
+   * above for why this core takes no implicit dependency on `node:crypto`. The Node test
+   * harness passes `crypto.ts`'s node-backed source; a deterministic test passes a fixed one;
+   * the app passes its own (a §4.5 handshake never needs to complete for scan/connect/discover,
+   * so cryptographic quality isn't required for that path — see `DeviceCoreConfig.crypto`).
+   */
+  nonceSource: () => Uint8Array;
+  /**
+   * §4.5/§4.6 — AES-CMAC + HKDF-SHA256 for the handshake proof and command tags. Required, no
+   * default. The Node test harness passes `crypto.ts`. A caller with no real implementation
+   * (e.g. the in-app dev mock, which only needs scan/connect/discover to work — the §4.5
+   * handshake running in-app is out of scope, see brief §3) must still supply something: a
+   * stub that throws is correct here, not a fake that returns plausible-looking bytes. A silent
+   * fake would make an unauthenticated dev build of the handshake look like it works.
+   */
+  crypto: DeviceCoreCrypto;
 }
 
 type ForcedHandshakeResult = 'AUTH_FAILED' | 'RATE_LIMITED';
 
 interface PendingFrame1 {
-  sessionId: Buffer;
+  sessionId: Uint8Array;
   keyGeneration: number;
 }
 
 interface AuthenticatedSession {
-  kSess: Buffer;
+  kSess: Uint8Array;
   sessionExpiryUptimeMs: number;
   lastAcceptedCounter: number;
 }
 
 export class DeviceCore {
-  private readonly kDev: Buffer;
+  private readonly kDev: Uint8Array;
   private keyGeneration: number;
-  private readonly deviceUid: Buffer;
+  private readonly deviceUid: Uint8Array;
   private readonly hwRevision: number;
   private readonly fwVersion: { major: number; minor: number };
   private provisioningState: (typeof ProvisioningState)[keyof typeof ProvisioningState];
   private autoLockGraceMs: number;
   private readonly clock: Clock;
   private readonly nonceSource: () => Uint8Array;
+  private readonly crypto: DeviceCoreCrypto;
 
   // §4.4 lockState
   private state: (typeof LockState)[keyof typeof LockState] = LockState.LOCKED;
@@ -163,7 +193,7 @@ export class DeviceCore {
 
   // Per-connection handshake state
   private connected = false;
-  private currentNonce: Buffer | null = null;
+  private currentNonce: Uint8Array | null = null;
   private nonceIssuedAtMs = 0;
   private nonceConsumed = false;
   /** §4.5 (v1.4) F12 — the frameIndex expected next; never a position/order cursor. */
@@ -190,15 +220,16 @@ export class DeviceCore {
     if (config.kDev.length !== 16) {
       throw new Error('DeviceCore: kDev must be 16 bytes (AES-128)');
     }
-    this.kDev = Buffer.from(config.kDev);
+    this.kDev = new Uint8Array(config.kDev);
     this.keyGeneration = config.keyGeneration ?? 1;
-    this.deviceUid = Buffer.from(config.deviceUid ?? Buffer.alloc(12, 0xab));
+    this.deviceUid = new Uint8Array(config.deviceUid ?? new Uint8Array(12).fill(0xab));
     this.hwRevision = config.hwRevision ?? 1;
     this.fwVersion = config.fwVersion ?? { major: 0, minor: 1 };
     this.provisioningState = config.provisioningState ?? ProvisioningState.PROVISIONED;
     this.autoLockGraceMs = config.autoLockGraceMs ?? AUTOLOCK_GRACE_MS_DEFAULT;
     this.clock = config.clock;
-    this.nonceSource = config.nonceSource ?? (() => randomBytes(AUTH_NONCE_LENGTH_BYTES));
+    this.nonceSource = config.nonceSource;
+    this.crypto = config.crypto;
     this.batteryPercentAtEpoch = config.initialBatteryPercent ?? 100;
     this.batteryDrainPercentPerHour = config.batteryDrainPercentPerHour ?? 0;
     this.stateChangedAtMs = this.clock.nowMs();
@@ -211,7 +242,7 @@ export class DeviceCore {
   connect(): void {
     this.applyTimeDrivenTransitions();
     this.connected = true;
-    this.currentNonce = Buffer.from(this.nonceSource().slice(0, AUTH_NONCE_LENGTH_BYTES));
+    this.currentNonce = this.nonceSource().slice(0, AUTH_NONCE_LENGTH_BYTES);
     this.nonceIssuedAtMs = this.clock.nowMs();
     this.nonceConsumed = false;
     this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_1;
@@ -340,11 +371,11 @@ export class DeviceCore {
       case 'deviceInfo':
         return this.encodeDeviceInfo();
       case 'authChallenge':
-        return this.currentNonce ?? Buffer.alloc(AUTH_NONCE_LENGTH_BYTES, 0);
+        return this.currentNonce ?? new Uint8Array(AUTH_NONCE_LENGTH_BYTES);
       case 'lockState':
         return this.encodeLockState();
       case 'commandResult':
-        return this.lastCommandResult ?? Buffer.alloc(CHARACTERISTIC_LENGTH_BYTES.commandResult, 0);
+        return this.lastCommandResult ?? new Uint8Array(CHARACTERISTIC_LENGTH_BYTES.commandResult);
       case 'authResponse':
       case 'lockCommand':
         throw new Error(`DeviceCore: ${characteristic} is write-only`);
@@ -389,8 +420,8 @@ export class DeviceCore {
 
   // ── §4.3 deviceInfo ─────────────────────────────────────────────────────
 
-  private encodeDeviceInfo(): Buffer {
-    const buffer = Buffer.alloc(CHARACTERISTIC_LENGTH_BYTES.deviceInfo, 0);
+  private encodeDeviceInfo(): Uint8Array {
+    const buffer = new Uint8Array(CHARACTERISTIC_LENGTH_BYTES.deviceInfo);
     writeUint8(buffer, DEVICE_INFO_LAYOUT.protocolVersion.offset, PROTOCOL_VERSION);
     writeUint8(buffer, DEVICE_INFO_LAYOUT.hwRevision.offset, this.hwRevision);
     writeUint8(buffer, DEVICE_INFO_LAYOUT.fwVersion.offset, this.fwVersion.major);
@@ -403,8 +434,8 @@ export class DeviceCore {
 
   // ── §4.4 lockState ──────────────────────────────────────────────────────
 
-  private encodeLockState(): Buffer {
-    const buffer = Buffer.alloc(CHARACTERISTIC_LENGTH_BYTES.lockState, 0);
+  private encodeLockState(): Uint8Array {
+    const buffer = new Uint8Array(CHARACTERISTIC_LENGTH_BYTES.lockState);
     writeUint8(buffer, LOCK_STATE_LAYOUT.state.offset, this.state);
 
     let flags = 0;
@@ -457,7 +488,7 @@ export class DeviceCore {
         AUTH_RESPONSE_FRAME_1_LAYOUT.sessionId.length,
       );
       const keyGeneration = readUint8(bytes, AUTH_RESPONSE_FRAME_1_LAYOUT.keyGeneration.offset);
-      this.pendingFrame1 = { sessionId: Buffer.from(sessionId), keyGeneration };
+      this.pendingFrame1 = { sessionId: new Uint8Array(sessionId), keyGeneration };
       this.expectedFrameIndex = AuthResponseFrameIndex.FRAME_2;
       return;
     }
@@ -521,28 +552,28 @@ export class DeviceCore {
     const forced = this.forcedHandshakeResult === 'AUTH_FAILED';
     if (forced) this.forcedHandshakeResult = null;
 
-    const kSess = hkdfSha256(
+    const kSess = this.crypto.hkdfSha256(
       this.kDev,
       frame1.sessionId,
-      Buffer.concat([Buffer.from(AUTH_HKDF_INFO, 'utf8'), Buffer.from([frame1.keyGeneration])]),
+      concatBytes(asciiToBytes(AUTH_HKDF_INFO), Uint8Array.from([frame1.keyGeneration])),
       16,
     );
 
     // §4.5 (v1.4) proof = CMAC(K_sess, 0x01 ‖ protocolVersion ‖ N ‖ session_id[0..3] ‖ expiresAtDelta),
     // expiresAtDelta now 3 bytes (uint24 LE) — total input 25B, not 26B. frameIndex is
     // deliberately excluded (§4.5 (v1.4), §4.1 of the addendum): it is framing, not security.
-    const expiresAtDeltaBytes = Buffer.alloc(3);
+    const expiresAtDeltaBytes = new Uint8Array(3);
     writeUint24LE(expiresAtDeltaBytes, 0, expiresAtDeltaSeconds);
-    const proofInput = Buffer.concat([
-      Buffer.from([AUTH_PROOF_FIXED_PREFIX]),
-      Buffer.from([PROTOCOL_VERSION]),
+    const proofInput = concatBytes(
+      Uint8Array.from([AUTH_PROOF_FIXED_PREFIX]),
+      Uint8Array.from([PROTOCOL_VERSION]),
       nonce,
       frame1.sessionId.subarray(0, 4),
       expiresAtDeltaBytes,
-    ]);
-    const expectedProof = aesCmac(kSess, proofInput).subarray(0, AUTH_PROOF_LENGTH_BYTES);
+    );
+    const expectedProof = this.crypto.aesCmac(kSess, proofInput).subarray(0, AUTH_PROOF_LENGTH_BYTES);
 
-    const proofMatches = !forced && constantTimeEqual(proof, expectedProof);
+    const proofMatches = !forced && this.crypto.constantTimeEqual(proof, expectedProof);
 
     if (!proofMatches) {
       this.recordAuthFailure(now);
@@ -577,7 +608,7 @@ export class DeviceCore {
     }
   }
 
-  private lastCommandResult: Buffer | null = null;
+  private lastCommandResult: Uint8Array | null = null;
 
   private writeHandshakeCommandResult(code: (typeof ResultCode)[keyof typeof ResultCode]): void {
     this.writeCommandResult(HANDSHAKE_COMMAND_ID_SENTINEL, code, 0);
@@ -588,7 +619,7 @@ export class DeviceCore {
     code: (typeof ResultCode)[keyof typeof ResultCode],
     counter: number,
   ): void {
-    const buffer = Buffer.alloc(CHARACTERISTIC_LENGTH_BYTES.commandResult, 0);
+    const buffer = new Uint8Array(CHARACTERISTIC_LENGTH_BYTES.commandResult);
     writeUint8(buffer, COMMAND_RESULT_LAYOUT.commandId.offset, commandId);
     writeUint8(buffer, COMMAND_RESULT_LAYOUT.resultCode.offset, code);
     writeUint16LE(buffer, COMMAND_RESULT_LAYOUT.counterLow16.offset, counter & 0xffff);
@@ -636,9 +667,11 @@ export class DeviceCore {
     // §4.6 — tag is checked against THIS connection's nonce, even though the
     // nonce itself was already consumed by the handshake (F11: connection
     // scoping, not single-use-of-N-for-commands).
-    const tagInput = Buffer.concat([this.sessionNonceForTagging(), bytes.subarray(0, 12)]);
-    const expectedTag = aesCmac(this.session.kSess, tagInput).subarray(0, LOCK_COMMAND_LAYOUT.tag.length);
-    if (!constantTimeEqual(tag, expectedTag)) {
+    const tagInput = concatBytes(this.sessionNonceForTagging(), bytes.subarray(0, 12));
+    const expectedTag = this.crypto
+      .aesCmac(this.session.kSess, tagInput)
+      .subarray(0, LOCK_COMMAND_LAYOUT.tag.length);
+    if (!this.crypto.constantTimeEqual(tag, expectedTag)) {
       this.recordAuthFailure(now);
       this.writeCommandResult(commandId, ResultCode.AUTH_FAILED, counter);
       return;
@@ -661,9 +694,9 @@ export class DeviceCore {
   }
 
   /** The nonce bound into command tags for this connection (§4.6, §4.8 F11). Frozen at handshake success. */
-  private connectionNonceForTagging: Buffer | null = null;
+  private connectionNonceForTagging: Uint8Array | null = null;
 
-  private sessionNonceForTagging(): Buffer {
+  private sessionNonceForTagging(): Uint8Array {
     if (!this.connectionNonceForTagging) {
       throw new Error('DeviceCore: no authenticated session — command tag has no nonce to check against');
     }

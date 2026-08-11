@@ -5,7 +5,7 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
-import { hkdfSha256 } from '../../../../tools/mock-peripheral/crypto';
+import { hkdfSha256, nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { createAuthHandshake, type AuthResponseInput } from '../auth';
 import {
   AUTH_BACKOFF,
@@ -55,7 +55,7 @@ function buildInput(overrides: Partial<AuthResponseInput> = {}): AuthResponseInp
 describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
   test('a valid handshake opens an authenticated session', async () => {
     const clock = new FakeClock(0);
-    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
     const handshake = createAuthHandshake(manager);
 
     const outcome = await handshake.authenticate(DEVICE_ID, buildInput());
@@ -69,7 +69,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
   test('wrong K_sess produces a typed AUTH_FAILED outcome, not a thrown error', async () => {
     const clock = new FakeClock(0);
-    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
     const handshake = createAuthHandshake(manager);
 
     const wrongKSess = Uint8Array.from({ length: 16 }, (_, i) => 0x90 + i); // does not match kDev-derived K_sess
@@ -81,7 +81,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
   test('5th consecutive failure triggers RATE_LIMITED on the next attempt', async () => {
     const clock = new FakeClock(0);
-    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
     const handshake = createAuthHandshake(manager);
     const wrongKSess = Uint8Array.from({ length: 16 }, (_, i) => 0x90 + i);
 
@@ -97,7 +97,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
   test('a frame-1 retransmit (F12a) does not dead-end a subsequent real attempt', async () => {
     const clock = new FakeClock(0);
-    const { manager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+    const { manager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
     const handshake = createAuthHandshake(manager);
 
     // Connect once, outside authenticate(), and write a stray retransmit-style
@@ -126,7 +126,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
   test('a stale nonce (past the 30s TTL) fails the handshake cleanly', async () => {
     const clock = new FakeClock(0);
-    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+    const { manager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
 
     // Connect first (issues the nonce the handshake will use), then let it
     // go stale before the handshake writes land.
@@ -157,7 +157,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
     jest.useFakeTimers();
     try {
       const clock = new FakeClock(0);
-      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
 
       // A manager double whose device behaves normally except it never
       // notifies on commandResult — models a lost/undelivered notification.
@@ -298,7 +298,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
     test('authChallenge returning no value resolves to a typed transport outcome', async () => {
       const clock = new FakeClock(0);
-      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
       const manager: BleManagerLike = {
         state: () => realManager.state(),
         startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
@@ -330,7 +330,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
 
     test('a wrong-length authChallenge resolves to a typed transport outcome', async () => {
       const clock = new FakeClock(0);
-      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
       const manager: BleManagerLike = {
         state: () => realManager.state(),
         startDeviceScan: (u, o, l) => realManager.startDeviceScan(u, o, l),
@@ -364,7 +364,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
   describe('finding 5 — a non-OK, non-AUTH_FAILED/RATE_LIMITED result code is a typed outcome, not a timeout', () => {
     test('an unexpected result code (FAULT) does not present as a timeout', async () => {
       const clock = new FakeClock(0);
-      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
 
       // A manager double whose device behaves normally except its
       // commandResult notification carries a code the handshake never
@@ -416,7 +416,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
   describe('finding 6 — a stray commandResult for a different commandId is ignored', () => {
     test('a stray notification carrying a foreign commandId does not pre-empt the real result', async () => {
       const clock = new FakeClock(0);
-      const { manager: realManager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager, core } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
 
       // The real listener is subscribed via realDevice.monitorCharacteristicForService
       // (so the genuine commandResult notification arrives normally, in order),
@@ -466,7 +466,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
   describe('finding 7 — the first commandResult notification wins, a second is ignored', () => {
     test('two notifications with different result codes resolve to the first', async () => {
       const clock = new FakeClock(0);
-      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
       let lastListener:
         | ((error: Error | null, characteristic: { value: string | null } | null) => void)
         | undefined;
@@ -516,7 +516,7 @@ describe('createAuthHandshake — §4.5, against the mock peripheral', () => {
   describe('finding 8 — the commandResult subscription is always released', () => {
     function spyManager(): { manager: BleManagerLike; remove: jest.Mock } {
       const clock = new FakeClock(0);
-      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+      const { manager: realManager } = createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
       const remove = jest.fn();
       const manager: BleManagerLike = {
         state: () => realManager.state(),

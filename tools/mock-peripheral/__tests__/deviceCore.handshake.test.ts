@@ -12,13 +12,13 @@ import {
   SESSION_EXPIRY_MAX_DAYS,
 } from '../../../src/features/ble/protocol';
 import { readUint24LE, writeUint24LE } from '../byteLayout';
-import { buildHandshakeFrames } from './harness';
+import { buildHandshakeFrames, NODE_DEPS } from './harness';
 
 const K_DEV = Buffer.alloc(16, 0x11);
 const SESSION_ID = Buffer.alloc(16, 0x22);
 
 function makeCore(clock: FakeClock) {
-  return new DeviceCore({ kDev: K_DEV, clock });
+  return new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
 }
 
 function readResultCode(bytes: Uint8Array): number {
@@ -94,7 +94,7 @@ describe('DeviceCore — §4.5 handshake', () => {
     core.writeAuthResponseFrame(frame2);
     // No commandResult should have been written for the bogus frame 2 — a framing
     // reset is silent, not an evaluated (and failed) handshake attempt.
-    expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+    expect(core.read('commandResult')).toEqual(new Uint8Array(4));
     expect(core.isAuthenticated()).toBe(false);
 
     // FW-19(c) — the reset leaves the core ready for a clean attempt, no reconnect needed.
@@ -133,7 +133,7 @@ describe('DeviceCore — §4.5 handshake', () => {
     // buffered session_id/keyGeneration and the device keeps awaiting FRAME_2. No
     // commandResult is written for the replace itself.
     core.write('authResponse', second.frame1);
-    expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+    expect(core.read('commandResult')).toEqual(new Uint8Array(4));
     expect(core.isAuthenticated()).toBe(false);
 
     // Completing with the FIRST session's frame 2 must fail — the device is holding
@@ -191,7 +191,7 @@ describe('DeviceCore — §4.5 handshake', () => {
 
     // Case (a): a frame 2 arriving with nothing buffered resets.
     core.writeAuthResponseFrame(frame2);
-    expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+    expect(core.read('commandResult')).toEqual(new Uint8Array(4));
 
     // No reconnect — same connection, same nonce, a clean attempt still succeeds.
     core.write('authResponse', frame1);
@@ -362,7 +362,7 @@ describe('DeviceCore — §4.5 handshake', () => {
   test('an injected nonce source is honoured (determinism for tests)', () => {
     const clock = new FakeClock(0);
     const fixedNonce = Buffer.alloc(AUTH_NONCE_LENGTH_BYTES, 0x42);
-    const core = new DeviceCore({ kDev: K_DEV, clock, nonceSource: () => fixedNonce });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS, nonceSource: () => fixedNonce });
     core.connect();
     expect(Buffer.from(core.read('authChallenge')).equals(fixedNonce)).toBe(true);
   });

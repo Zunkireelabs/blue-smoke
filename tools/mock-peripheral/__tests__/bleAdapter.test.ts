@@ -13,7 +13,7 @@ import {
   ProvisioningState,
   ResultCode,
 } from '../../../src/features/ble/protocol';
-import { buildHandshakeFrames, buildLockCommandFrame } from './harness';
+import { buildHandshakeFrames, buildLockCommandFrame, NODE_DEPS } from './harness';
 
 const K_DEV = Buffer.alloc(16, 0x88);
 const SESSION_ID = Buffer.alloc(16, 0x99);
@@ -25,7 +25,7 @@ function decode(base64: string): Buffer {
 describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
   test('full sequence: connect → handshake → activate → unlock → walk away → auto-lock', async () => {
     const clock = new FakeClock(0);
-    const { manager, device, core } = createMockPeripheral({ kDev: K_DEV, clock });
+    const { manager, device, core } = createMockPeripheral({ kDev: K_DEV, clock, ...NODE_DEPS });
 
     expect(await manager.state()).toBe('PoweredOn');
 
@@ -111,7 +111,7 @@ describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
   });
 
   test('rejects a scan filtered on the correct service UUID for an unrelated one', () => {
-    const { manager } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0) });
+    const { manager } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), ...NODE_DEPS });
     const found: unknown[] = [];
     manager.startDeviceScan(['0000dead-0000-0000-0000-000000000000'], null, (_error, device) => {
       found.push(device);
@@ -121,7 +121,7 @@ describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
 
   test('scripted RSSI series is consumed in order via readRSSI(), then holds the last value', async () => {
     const series = [-55, -60, -65, -80, -86, -87];
-    const { device } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), rssiSeries: series });
+    const { device } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), rssiSeries: series, ...NODE_DEPS });
 
     const observed: number[] = [];
     for (let i = 0; i < series.length + 2; i += 1) {
@@ -176,6 +176,7 @@ describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
       kDev: K_DEV,
       clock: new FakeClock(0),
       rssiSeries: boundaryHovering,
+      ...NODE_DEPS,
     });
 
     const observed: number[] = [];
@@ -193,7 +194,7 @@ describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
   });
 
   test('an unauthenticated command write over the adapter returns UNAUTHENTICATED', async () => {
-    const { manager, device } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0) });
+    const { manager, device } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), ...NODE_DEPS });
     const connected = await manager.connectToDevice(device.id);
     const frame = buildLockCommandFrame({
       kSess: Buffer.alloc(16, 0),
@@ -213,7 +214,7 @@ describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
   });
 
   test('reading/writing an unknown service UUID throws (defends against un-filtered scan misuse)', async () => {
-    const { manager, device } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0) });
+    const { manager, device } = createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), ...NODE_DEPS });
     const connected = await manager.connectToDevice(device.id);
     await expect(
       connected.readCharacteristicForService('0000dead-0000-0000-0000-000000000000', BLE_CHARACTERISTIC_UUIDS.deviceInfo),
@@ -226,6 +227,7 @@ describe('bleAdapter — Layer 2 in-process ble-plx-shaped adapter', () => {
       kDev: K_DEV,
       clock,
       provisioningState: ProvisioningState.PROVISIONED,
+      ...NODE_DEPS,
     });
     const connected = await manager.connectToDevice(device.id);
     const nonceBytes = decode(
