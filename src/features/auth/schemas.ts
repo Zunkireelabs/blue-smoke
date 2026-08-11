@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
 /**
- * P1-1.0 — Zod schemas for Method A (email + password) and the client-side
- * shape of Method B (phone + OTP). Spec §1.2 / §1.2.1.
+ * P1-1.0 — Zod schemas for email (a 6-digit code, spec §1.2.2) and the
+ * client-side shape of Method B (phone + OTP, spec §1.2.1). Email is the
+ * only front door: there is no separate signup/login schema, and no reset
+ * schema — the code is the recovery path.
+ *
+ * `passwordSchema` survives, **unrouted**, for PR 2's "Set a password" in
+ * Settings — password sign-in itself is a later credential, not a competing
+ * front door (see `client.ts`). `signupSchema`, `loginSchema` and
+ * `passwordResetRequestSchema` do not: they validated forms this PR deletes.
  *
  * Password strength: no policy is specified anywhere in TECHNICAL_SPEC.md.
  * `MIN_PASSWORD_LENGTH` below is a placeholder floor, not a spec value — it
@@ -19,28 +26,16 @@ export const passwordSchema = z
   .string()
   .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
 
-export const signupSchema = z
-  .object({
-    email: emailSchema,
-    password: passwordSchema,
-    confirmPassword: z.string(),
-  })
-  .refine(data => data.password === data.confirmPassword, {
-    message: 'Passwords do not match.',
-    path: ['confirmPassword'],
-  });
-export type SignupInput = z.infer<typeof signupSchema>;
-
-export const loginSchema = z.object({
-  email: emailSchema,
-  password: z.string().min(1, 'Enter your password.'),
-});
-export type LoginInput = z.infer<typeof loginSchema>;
-
-export const passwordResetRequestSchema = z.object({
+/**
+ * The email a 6-digit code is sent to — signup and sign-in alike. Named for
+ * the flow it serves rather than "email form" so the one place that
+ * validates an auth email stays obviously tied to the code path that owns
+ * it.
+ */
+export const emailCodeRequestSchema = z.object({
   email: emailSchema,
 });
-export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;
+export type EmailCodeRequestInput = z.infer<typeof emailCodeRequestSchema>;
 
 /**
  * Method B (§1.2.1) phone shape. This is a permissive E.164 check only — the

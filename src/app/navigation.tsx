@@ -1,18 +1,15 @@
-import { NavigationContainer, useNavigation, type LinkingOptions } from '@react-navigation/native';
+import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import {
   createNativeStackNavigator,
   type NativeStackNavigationProp,
 } from '@react-navigation/native-stack';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { SignupScreen } from '@/features/auth/SignupScreen';
-import { LoginScreen } from '@/features/auth/LoginScreen';
 import { AuthMethodChoiceScreen } from '@/features/auth/AuthMethodChoiceScreen';
+import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
+import { EmailCodeEntryScreen } from '@/features/auth/EmailCodeEntryScreen';
 import { PhoneInputScreen } from '@/features/auth/PhoneInputScreen';
 import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
-import { PasswordResetRequestScreen } from '@/features/auth/PasswordResetRequestScreen';
-import { ResetPasswordConfirmScreen } from '@/features/auth/ResetPasswordConfirmScreen';
-import { RESET_PASSWORD_URL_HOST, RESET_PASSWORD_URL_SCHEME } from '@/features/auth/deepLink';
 import { OnboardingCarouselScreen } from '@/features/onboarding/OnboardingCarouselScreen';
 import { VerifyIntroScreen } from '@/features/verification/VerifyIntroScreen';
 import { CameraPrimingScreen } from '@/features/verification/CameraPrimingScreen';
@@ -43,12 +40,10 @@ export type RootStackParamList = {
   Onboarding: undefined;
   // Unauthenticated
   AuthChoice: undefined;
-  Signup: undefined;
-  Login: undefined;
+  EmailCodeRequest: undefined;
+  EmailCodeEntry: { email: string };
   PhoneInput: undefined;
   OtpVerify: { phone: string };
-  PasswordReset: undefined;
-  ResetPasswordConfirm: undefined;
   // Authenticated, pre-verification
   VerifyIntro: undefined;
   CameraPriming: undefined;
@@ -69,23 +64,13 @@ export type RootStackParamList = {
 };
 
 /**
- * P1-1.0 §3.2 — deep-link config for the reset-password link (`deepLink.ts`). Maps
- * `bluesmoke://reset-password` to the confirm screen. Native registration (URL scheme in
- * Info.plist / intent-filter in AndroidManifest.xml) is separate — see those files — this is
- * the RN side that turns an opened URL into a navigation action.
+ * P1-1.0 — no `linking` config. The reset-password deep link this used to register
+ * (`bluesmoke://reset-password` → the confirm screen) is gone with the reset subsystem it
+ * served: the 6-digit code is the recovery path now, and there is nothing left to deep-link
+ * into. That leaves the app with **no URL-reachable route at all** — every screen is
+ * unreachable by URL, which matters more now the stack is gated: a deep link that could reach
+ * Home would be a way around the age gate's UI.
  */
-const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: [`${RESET_PASSWORD_URL_SCHEME}://`],
-  config: {
-    screens: {
-      // Every other screen is unreachable by URL — only the one path the reset flow needs is
-      // registered. That matters more now the stack is gated: a deep link that could reach
-      // Home would be a way around the age gate's UI.
-      ResetPasswordConfirm: RESET_PASSWORD_URL_HOST,
-    },
-  },
-};
-
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 /** Which of the mutually exclusive stacks should be mounted. */
@@ -221,7 +206,7 @@ export function RootNavigator() {
   const stack = selectStack(sessionStatus, verification, onboardingStatus);
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer>
       {stack === 'boot' ? (
         // Restoring a Keychain-backed session. Render nothing decisive: showing the auth
         // stack here would flash a login screen at an already-signed-in user on every launch.
@@ -243,12 +228,10 @@ export function RootNavigator() {
             component={AuthMethodChoiceScreen}
             options={{ title: 'Welcome' }}
           />
-          <Stack.Screen name="Signup" component={SignupScreen} options={{ title: 'Create account' }} />
-          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Log in' }} />
+          <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} options={{ title: 'Continue with email' }} />
+          <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
           <Stack.Screen name="PhoneInput" component={PhoneInputScreen} options={{ title: 'Your number' }} />
           <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
-          <Stack.Screen name="PasswordReset" component={PasswordResetRequestScreen} options={{ title: 'Reset password' }} />
-          <Stack.Screen name="ResetPasswordConfirm" component={ResetPasswordConfirmScreen} options={{ title: 'New password' }} />
         </Stack.Navigator>
       ) : stack === 'home' ? (
         <Stack.Navigator>

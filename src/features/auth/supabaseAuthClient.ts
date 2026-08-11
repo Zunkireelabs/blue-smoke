@@ -1,16 +1,24 @@
 import { getSupabaseClient } from '@/shared/lib/supabaseClient';
 import type { AuthClient, AuthOutcome, AuthResult } from './client';
 import { toAuthUserMessage } from './authErrors';
-import { RESET_PASSWORD_REDIRECT_URL } from './deepLink';
 
 /**
- * P1-1.0 §3.5 — the real `AuthClient`, backed by `supabase.auth` for both
- * confirmed methods (spec §1.2, §1.2.1). Nothing here touches Keychain or
- * app state — that's `useSessionStore` (src/app/stores), which subscribes to
- * `supabase.auth.onAuthStateChange` separately from any call made here.
+ * P1-1.0 §3.5 — the real `AuthClient`, backed by `supabase.auth`. Nothing
+ * here touches Keychain or app state — that's `useSessionStore`
+ * (src/app/stores), which subscribes to `supabase.auth.onAuthStateChange`
+ * separately from any call made here.
  *
- * Method C (email + code, spec §1.2.2) is NOT implemented here — it is a
- * proposed, unconfirmed addition. Do not add it until confirmed.
+ * Method C (email + code, spec §1.2.2) is implemented here as of 2026-08-09 —
+ * team-confirmed, client confirmation still outstanding. It is the **only**
+ * email front door: `requestEmailCode` / `verifyEmailCode` serve both signup
+ * and sign-in, so no method here sends `emailRedirectTo` — under the old
+ * link flow that omission stranded accounts against Site URL, and codes
+ * remove the link rather than repairing it. Adding a redirect back would
+ * reintroduce what removing the link fixed.
+ *
+ * Password sign-in (`signInWithEmail`) and password-setting (`setPassword`)
+ * are kept as a **later credential**, not a competing front door — see
+ * `client.ts` for why. Both are real, tested and **unrouted** in this PR.
  *
  * **Why this is a real implementation, not the brief's suggested
  * `throw new Error('P0-3.0')` stub:** `getSupabaseClient()` (P0-4.0 scaffold)
@@ -45,6 +53,16 @@ const GENERIC_LOGIN_ERROR = 'Incorrect email or password.';
  */
 const UNEXPECTED_ERROR = "We couldn't reach the server. Check your connection and try again.";
 
+/**
+ * One string for every code failure, across both `type: 'signup'` and
+ * `type: 'email'`. Wrong code, expired code, already-used code and unknown
+ * address must be indistinguishable to the caller — distinguishing them would
+ * turn the code screen into the enumeration vector the login screen carefully
+ * isn't. Identical to `verifyPhoneOtp`'s copy, so one assertion covers all
+ * three verify paths.
+ */
+const INVALID_CODE_ERROR = 'Incorrect or expired code.';
+
 async function runSafely<T>(fn: () => Promise<AuthResult<T>>): Promise<AuthResult<T>> {
   try {
     return await fn();
@@ -75,28 +93,6 @@ async function ensureProfileRow(userId: string): Promise<void> {
 }
 
 export const supabaseAuthClient: AuthClient = {
-  async signUpWithEmail(email, password): Promise<AuthResult<AuthOutcome>> {
-    return runSafely(async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase.auth.signUp({ email, password });
-
-      if (error || !data.user) {
-        return { ok: false, error: toAuthUserMessage(error) };
-      }
-
-      await ensureProfileRow(data.user.id);
-
-      // supabase-js returns session: null when email confirmation is
-      // required, and a live session when it isn't — this project hasn't
-      // decided/configured that yet (P0-3.0's auth-config box is still open),
-      // so both outcomes are handled rather than assuming one.
-      return {
-        ok: true,
-        data: { userId: data.user.id, sessionEstablished: data.session != null },
-      };
-    });
-  },
-
   async signInWithEmail(email, password): Promise<AuthResult<AuthOutcome>> {
     return runSafely(async () => {
       const supabase = getSupabaseClient();
@@ -111,42 +107,13 @@ export const supabaseAuthClient: AuthClient = {
   },
 
   /**
-   * Requires custom SMTP configured on the Supabase project
-   * (supabase/README.md) — without it, delivery is limited to the project's
-   * own org members and rate-limits almost immediately. That's an
-   * operational blocker, not a code one; this call is correct either way.
+   * Renamed from `confirmPasswordReset` (P1-1.0) — the reset-link deep-link
+   * this used to be reached from is gone with the reset subsystem. The call
+   * itself (`updateUser({ password })`) is unchanged and already correct;
+   * only its purpose changed, from "confirm a reset" to "set a password on
+   * an already-signed-in account" (PR 2's Settings screen).
    */
-  async requestPasswordReset(email): Promise<AuthResult> {
-    return runSafely(async () => {
-      const supabase = getSupabaseClient();
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: RESET_PASSWORD_REDIRECT_URL,
-      });
-
-      if (error) {
-        // Password-reset requests are themselves an enumeration vector (does
-        // this email have an account?). Supabase's own behavior here does not
-        // error on an unknown email, so this branch should only fire for real
-        // failures (rate limit, network, SMTP misconfiguration).
-        //
-        // It used to say those were "safe to surface as-is" and returned
-        // `error.message`. They are not: SMTP misconfiguration is exactly the
-        // class of failure whose vendor text names our mail provider, the same
-        // way the SMS path named Twilio (see `authErrors.ts`).
-        return { ok: false, error: toAuthUserMessage(error) };
-      }
-
-      return { ok: true, data: undefined };
-    });
-  },
-
-  /**
-   * Called from ResetPasswordConfirmScreen after the deep-link (§3.2)
-   * lands the user back in the app with a live recovery session —
-   * Supabase establishes that session itself from the link's token before
-   * this screen ever renders; nothing here re-parses the URL.
-   */
-  async confirmPasswordReset(newPassword): Promise<AuthResult> {
+  async setPassword(newPassword): Promise<AuthResult> {
     return runSafely(async () => {
       const supabase = getSupabaseClient();
       const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -160,20 +127,82 @@ export const supabaseAuthClient: AuthClient = {
   },
 
   /**
-   * `AU-3`'s Resend action. `supabase.auth.resend` is the SDK's dedicated
-   * method for this — a second `signUp` call would return "account already
-   * exists" for the very account whose confirmation email this resends.
+   * Sign-up confirmation (§1.2.2). `type: 'signup'` verifies the code from
+   * the "Confirm sign up" template.
+   *
+   * **Kept but unrouted.** Measured against dev 2026-08-10: a sign-up code
+   * verifies under `type: 'email'` too (both return 200; the `'email'` case
+   * was independently confirmed through the app on Android with a brand-new
+   * account), so `verifyEmailCode` below handles every case a screen needs
+   * and nothing routes here. Kept because it costs nothing and one cell of
+   * the type matrix (a *sign-in* code presented as `type: 'signup'`) is
+   * still untested — do not delete on the assumption it's provably dead.
    */
-  async resendSignupConfirmation(email): Promise<AuthResult> {
+  async confirmSignupWithCode(email, code): Promise<AuthResult<AuthOutcome>> {
     return runSafely(async () => {
       const supabase = getSupabaseClient();
-      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'signup',
+      });
+
+      if (error || !data.session || !data.user) {
+        return { ok: false, error: INVALID_CODE_ERROR };
+      }
+
+      await ensureProfileRow(data.user.id);
+
+      return { ok: true, data: { userId: data.user.id, sessionEstablished: true } };
+    });
+  },
+
+  /**
+   * The single front door for email — sends a 6-digit code that serves
+   * signup and sign-in identically.
+   *
+   * `shouldCreateUser: true` is deliberate and load-bearing — see `client.ts`.
+   * With `false` this call errors for an unrecognised address, which leaks
+   * account existence and breaks the no-enumeration rule. Do not "tighten" it.
+   *
+   * No `emailRedirectTo`, on purpose — there are no links in this flow.
+   */
+  async requestEmailCode(email): Promise<AuthResult> {
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
 
       if (error) {
         return { ok: false, error: toAuthUserMessage(error) };
       }
 
       return { ok: true, data: undefined };
+    });
+  },
+
+  /**
+   * Verifies the sign-in code and establishes the session. `type: 'email'` —
+   * proven end to end for both a brand-new address and a returning one.
+   */
+  async verifyEmailCode(email, code): Promise<AuthResult<AuthOutcome>> {
+    return runSafely(async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'email',
+      });
+
+      if (error || !data.session || !data.user) {
+        return { ok: false, error: INVALID_CODE_ERROR };
+      }
+
+      await ensureProfileRow(data.user.id);
+
+      return { ok: true, data: { userId: data.user.id, sessionEstablished: true } };
     });
   },
 

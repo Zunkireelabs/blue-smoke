@@ -6,34 +6,35 @@ import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 
 /**
- * P1-1.0 Method B, step 2 (spec §1.2.1) — segmented 6-digit OTP entry with
- * a resend cooldown. `verifyPhoneOtp`'s "Incorrect or expired code." is
- * rendered verbatim, no branching on cause — the same non-enumeration
- * discipline every P1-1.0 auth form follows (see `EmailCodeEntryScreen`).
+ * AU-13 — P1-1.0, step 2 of the single email front door (spec §1.2.2):
+ * 6-digit code entry with auto-submit, verified with `type: 'email'`
+ * (proven end to end on dev, including a brand-new account, and through the
+ * app on Android). One route serves both signup and sign-in, so there is no
+ * `purpose` param the way Hardik's version had one.
  *
- * `RESEND_COOLDOWN_SECONDS` is not specified anywhere in the spec (Twilio
- * Verify's own resend policy isn't configured yet — that's P0-3.0). 30s is
- * a placeholder, flagged rather than silently chosen, same pattern as
- * `schemas.ts`'s password-length floor and `PhoneInputScreen`'s default
- * country.
+ * Deliberately mirrors `OtpEntryScreen`'s already-solved 6-digit
+ * auto-submit behaviour (segmented display over one hidden `TextInput`)
+ * rather than re-implementing Hardik's `CodeEntryForm` or extracting a
+ * shared component out of `OtpEntryScreen` — the brief asks to reuse the
+ * behaviour, not to force a refactor of a screen that already ships and is
+ * tested. `OtpEntryScreen` itself is untouched by this task.
  *
- * The 6 visible boxes are a display layer only; a single off-screen
- * `TextInput` captures real input (the standard RN pattern for segmented
- * OTP entry without a dedicated library — another package.json addition
- * this task doesn't need). Can't be verified on a device from this machine
- * (brief §2); the boxes are a straightforward text render, so the risk is
- * low, but it's an honest gap, not a tested one.
+ * `RESEND_COOLDOWN_SECONDS` is 60, not Method B's 30 — Supabase's dashboard
+ * documents a 60s minimum interval per user on auth emails. Measured on dev
+ * 2026-08-09 that limit is **not enforced** (two sends seconds apart both
+ * delivered) — flagged in the PR body, not fixed here; the cooldown is UI
+ * pacing regardless of whether the server currently backs it up.
  */
 
 const CODE_LENGTH = 6;
-const RESEND_COOLDOWN_SECONDS = 30;
+const RESEND_COOLDOWN_SECONDS = 60;
 
 type Status = 'idle' | 'submitting' | 'signedIn';
 
-export function OtpEntryScreen() {
+export function EmailCodeEntryScreen() {
   const authClient = useAuthClient();
-  const { params } = useRoute<RouteProp<RootStackParamList, 'OtpVerify'>>();
-  const { phone } = params;
+  const { params } = useRoute<RouteProp<RootStackParamList, 'EmailCodeEntry'>>();
+  const { email } = params;
 
   const [code, setCode] = useState('');
   const [status, setStatus] = useState<Status>('idle');
@@ -45,7 +46,7 @@ export function OtpEntryScreen() {
     setFormError(null);
     setStatus('submitting');
     try {
-      const result = await authClient.verifyPhoneOtp(phone, digits);
+      const result = await authClient.verifyEmailCode(email, digits);
 
       if (!result.ok) {
         setStatus('idle');
@@ -58,7 +59,7 @@ export function OtpEntryScreen() {
     } catch {
       // supabaseAuthClient's contract is that no method throws — this is
       // defence in depth, so a screen can never strand itself even if that
-      // contract is ever violated (see execution brief).
+      // contract is ever violated.
       setStatus('idle');
       setFormError('Something went wrong. Please try again.');
       setCode('');
@@ -76,8 +77,11 @@ export function OtpEntryScreen() {
   async function handleResend() {
     setFormError(null);
     try {
-      const result = await authClient.requestPhoneOtp(phone);
+      const result = await authClient.requestEmailCode(email);
       if (!result.ok) {
+        // A failed resend deliberately does not restart the cooldown —
+        // restarting it would lock the user out for another 60s over a
+        // request that never went.
         setFormError(result.error);
         return;
       }
@@ -106,7 +110,7 @@ export function OtpEntryScreen() {
         Enter the code
       </Text>
       <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
-        We sent a 6-digit code to {phone}.
+        We sent a 6-digit code to {email}.
       </Text>
 
       <Pressable

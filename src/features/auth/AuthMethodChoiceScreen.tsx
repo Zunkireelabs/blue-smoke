@@ -10,12 +10,13 @@ import type { RootStackParamList } from '@/app/navigation';
  * auth.users.id"). No default pre-selected, equal visual weight — this
  * screen does not decide which method is "primary."
  *
- * "Continue with Email" goes to Login, not Signup: email/password already
- * distinguishes new vs. returning users, and login is the more common case
- * at this entry point. Signup is one tap away via the link that screen
- * adds. "Continue with Phone" goes straight to phone input — OTP is
- * unified for new and existing numbers (spec §1.2.1), there's no separate
- * signup/login split to choose between.
+ * "Continue with Email" goes to `EmailCodeRequest`, not a Login screen —
+ * P1-1.0 (email + code, keeping passwords) replaced the email/password split
+ * with a single 6-digit-code front door, so there is no signup/login
+ * distinction left to route on. "Continue with Phone" goes straight to
+ * phone input for the same reason: OTP is unified for new and existing
+ * numbers (spec §1.2.1), there's no separate signup/login split there
+ * either.
  */
 export function AuthMethodChoiceScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -27,7 +28,10 @@ export function AuthMethodChoiceScreen() {
       </Text>
 
       <View style={styles.actions}>
-        <Button label="Continue with Email" onPress={() => navigation.navigate('Login')} />
+        <Button
+          label="Continue with Email"
+          onPress={() => navigation.navigate('EmailCodeRequest')}
+        />
         <Button
           label="Continue with Phone"
           variant="secondary"
