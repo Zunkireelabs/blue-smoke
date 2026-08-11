@@ -58,21 +58,25 @@ the auth stack here would flash a login screen at an already-signed-in user on e
 
 ---
 
-## ON · Onboarding & permissions — `ABSENT`, task **P1-2.0** (1/9)
+## ON · Onboarding & permissions — `BUILT`, task **P1-2.0** (10/10)
 
-Nothing in this section exists in code. Whole section is greenfield.
+Every screen in this section exists in code. All but ON-6 are reachable through a real trigger:
+ON-1…3 via the `Onboarding` route, ON-4/7/8/9/10 via `Home` → "Pair a device" (P1-3.0), ON-5 via
+the verification flow. **ON-6 is built but has no real trigger yet** — notification priming is
+F7.9, past P1-3.0's pairing boundary — so it is the one ON screen still carrying a `screenSpecs.ts`
+gallery placeholder.
 
 | ID | Screen | Flow | Status | CTAs |
 |---|---|---|---|---|
-| **ON-1** | Welcome | F1.1 | `ABSENT` | Continue |
-| **ON-2** | How it keeps you safe | F1.2 | `ABSENT` | Continue · Skip |
-| **ON-3** | What we do and don't hold | F1.3 | `ABSENT` | Get started → AU-1 |
-| **ON-4** | Bluetooth priming | F7.2 | `ABSENT` | Turn on Bluetooth · Not now |
-| **ON-5** | Camera priming | F6.2 | `ABSENT` | Continue · Why do you need this? |
-| **ON-6** | Notification priming | — | `ABSENT` | Enable · Not now |
-| **ON-7** | Denied once | F1.D1 | `ABSENT` | Try again |
-| **ON-8** | Permanently denied | F1.D2 | `ABSENT` | Open Settings |
-| **ON-9** | Bluetooth off | F1.D5 | `ABSENT` | Turn on Bluetooth |
+| **ON-1** | Welcome | F1.1 | `BUILT` | Continue |
+| **ON-2** | How it keeps you safe | F1.2 | `BUILT` | Continue · Skip |
+| **ON-3** | What we do and don't hold | F1.3 | `BUILT` | Get started → AU-1 |
+| **ON-4** | Bluetooth priming | F7.2 | `BUILT` | Continue · Not now |
+| **ON-5** | Camera priming | F6.2 | `BUILT` | Continue · Why do you need this? |
+| **ON-6** | Notification priming | — | `BUILT` *(no trigger)* | Enable notifications · Not now |
+| **ON-7** | Denied once | F1.D1 | `BUILT` | Try again |
+| **ON-8** | Permanently denied | F1.D2 | `BUILT` | Open Settings |
+| **ON-9** | Bluetooth off | F1.D5 | `BUILT` | Open Settings |
 | **ON-10** | No Bluetooth hardware | — | `BUILT` | *(none — header back only)* |
 
 **ON-1…3** is a three-card carousel. **ON-2/ON-3** carry the product's core privacy promise —
@@ -83,8 +87,11 @@ camera at verification start, notifications after the first successful pair.
 
 **ON-7 vs ON-8 must be different screens.** "Denied once" can re-prompt; "permanently denied"
 cannot and must deep-link to OS Settings. Rendering one for the other is a dead end.
-**ON-9 is distinct again** — Bluetooth *off* is not Bluetooth *denied*, and offering "Open
-Settings" to someone who just needs to flip a toggle is wrong.
+**ON-9 is distinct again** — Bluetooth *off* is not Bluetooth *denied*. Its CTA is a *secondary*
+"Open Settings", not the "Turn on Bluetooth" this table used to claim: neither the app nor
+`Linking.openSettings()` can flip the OS radio on iOS, so that button was a lie and was deleted
+(see `BluetoothOffScreen.tsx`'s header comment). What actually resolves ON-9 is the gate's
+`AppState` foreground re-check noticing the user flipped the toggle themselves.
 
 **ON-10 is distinct from all of the above, and from the gate's own bare spinner** (P1-2.0
 defect fix). CoreBluetooth's `Unsupported` means this phone has no BLE radio at all — a fact
@@ -270,14 +277,14 @@ started even with a design, because a named input is missing.
 | Section | Screens | Built | Partial/Stub | Blocked | Absent |
 |---|---|---|---|---|---|
 | SH Shell | 1 | 1 | — | — | — |
-| ON Onboarding | 10 | 1 | — | — | 9 |
+| ON Onboarding | 10 | 10 | — | — | — |
 | AU Auth | 11 | 8 | 3 | — | — |
 | VF Verification | 12 | 1 | 4 | 1 | 6 |
 | DV Devices | 11 | 5 | — | 2 | 4 |
 | LK Lock | 8 | — | — | 4 | 4 |
 | PF Profile | 7 | — | 1 | 4 | 2 |
 | SY System | 3 | — | — | — | 3 |
-| **Total** | **63** | **16** | **8** | **11** | **28** |
+| **Total** | **63** | **25** | **8** | **11** | **19** |
 
 ---
 
