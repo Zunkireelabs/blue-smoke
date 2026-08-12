@@ -14,26 +14,28 @@ import {
 } from '@/app/stores/useOnboardingStore';
 import { renderedText } from '@/features/auth/testUtils';
 import { tokens } from '@/shared/ui';
+import { renderSettled, flushSettled } from '@/shared/testing/renderWithEffects';
 
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 
 let renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
-function renderCarousel() {
-  let renderer!: ReactTestRenderer.ReactTestRenderer;
-  act(() => {
-    renderer = ReactTestRenderer.create(<OnboardingCarouselScreen />);
-  });
+async function renderCarousel() {
+  const renderer = await renderSettled(<OnboardingCarouselScreen />);
   renderers.push(renderer);
   return renderer;
 }
 
+// Continue/Skip swap in a new card, and each card's illustration is its own BrandMark instance
+// (`CARDS[index].Illustration`) — mounting it re-fires the same reduce-motion probe, so this
+// needs the same flush as the initial render.
 async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: string) {
   await act(async () => {
     const matches = renderer.root
       .findAllByProps({ accessibilityLabel: label })
       .filter((instance) => typeof instance.props.onPress === 'function');
     await matches[matches.length - 1].props.onPress();
+    await flushSettled();
   });
 }
 
@@ -54,26 +56,18 @@ function getRenderedPageWidth(renderer: ReactTestRenderer.ReactTestRenderer): nu
   return StyleSheet.flatten(first.props.style).width as number;
 }
 
-function fireScrollEnd(renderer: ReactTestRenderer.ReactTestRenderer, x: number) {
+// A swipe changes the active card the same way `press` does, so it mounts a new illustration
+// too and needs the same flush.
+async function fireScrollEnd(renderer: ReactTestRenderer.ReactTestRenderer, x: number) {
   const scrollView = renderer.root.findByType(ScrollView);
-  act(() => {
+  await act(async () => {
     scrollView.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x } } });
+    await flushSettled();
   });
 }
 
 function pageLabelCount(renderer: ReactTestRenderer.ReactTestRenderer, label: string): number {
   return renderer.root.findAllByProps({ accessibilityLabel: label }).length;
-}
-
-/** Lets each illustration's pending `AccessibilityInfo.isReduceMotionEnabled()` promise settle
- * before a synchronous test finishes and `afterEach` unmounts — same two-tick pattern as
- * `BrandMark.test.tsx`. Without it, the state update can land after unmount and print an act()
- * warning. */
-async function flushReduceMotionCheck() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
 }
 
 describe('ON-1..3 — the onboarding carousel', () => {
@@ -96,7 +90,7 @@ describe('ON-1..3 — the onboarding carousel', () => {
   });
 
   it('Continue advances through all three cards in order', async () => {
-    const renderer = renderCarousel();
+    const renderer = await renderCarousel();
     expect(renderedText(renderer)).toContain('Welcome to BlueSmoke');
 
     await press(renderer, 'Continue');
@@ -107,13 +101,13 @@ describe('ON-1..3 — the onboarding carousel', () => {
   });
 
   it('does not imply the app itself does the locking on card 2', async () => {
-    const renderer = renderCarousel();
+    const renderer = await renderCarousel();
     await press(renderer, 'Continue');
     expect(renderedText(renderer)).toContain('even if BlueSmoke is closed');
   });
 
   it('Get started on the final card marks onboarding seen', async () => {
-    const renderer = renderCarousel();
+    const renderer = await renderCarousel();
     await press(renderer, 'Continue');
     await press(renderer, 'Continue');
 
@@ -124,7 +118,7 @@ describe('ON-1..3 — the onboarding carousel', () => {
   });
 
   it('Skip on card 2 marks onboarding seen without visiting card 3', async () => {
-    const renderer = renderCarousel();
+    const renderer = await renderCarousel();
     await press(renderer, 'Continue');
     expect(renderedText(renderer)).toContain('It locks itself');
 
@@ -133,29 +127,28 @@ describe('ON-1..3 — the onboarding carousel', () => {
     expect(useOnboardingStore.getState().status).toBe('seen');
   });
 
-  it('card 1 has no Skip affordance', () => {
-    const renderer = renderCarousel();
+  it('card 1 has no Skip affordance', async () => {
+    const renderer = await renderCarousel();
     const matches = renderer.root.findAllByProps({ accessibilityLabel: 'Skip' });
     expect(matches.length).toBe(0);
   });
 
   it("swipe (onMomentumScrollEnd) drives PageDots' label and the CTA off the same index", async () => {
-    const renderer = renderCarousel();
-    await flushReduceMotionCheck();
+    const renderer = await renderCarousel();
     const pageWidth = getRenderedPageWidth(renderer);
 
-    fireScrollEnd(renderer, pageWidth * 2);
+    await fireScrollEnd(renderer, pageWidth * 2);
     expect(pageLabelCount(renderer, 'Page 3 of 3')).toBeGreaterThan(0);
     expect(pageLabelCount(renderer, 'Get started')).toBeGreaterThan(0);
     expect(pageLabelCount(renderer, 'Continue')).toBe(0);
 
-    fireScrollEnd(renderer, 0);
+    await fireScrollEnd(renderer, 0);
     expect(pageLabelCount(renderer, 'Page 1 of 3')).toBeGreaterThan(0);
     expect(pageLabelCount(renderer, 'Continue')).toBeGreaterThan(0);
   });
 
   it("Continue also advances PageDots' label, not just the card text", async () => {
-    const renderer = renderCarousel();
+    const renderer = await renderCarousel();
     expect(pageLabelCount(renderer, 'Page 1 of 3')).toBeGreaterThan(0);
 
     await press(renderer, 'Continue');
@@ -173,8 +166,7 @@ describe('ON-1..3 — the onboarding carousel', () => {
       right: 59,
     });
 
-    const renderer = renderCarousel();
-    await flushReduceMotionCheck();
+    const renderer = await renderCarousel();
     const windowWidth = Dimensions.get('window').width;
     const expectedWidth = windowWidth - 59 - 59 - tokens.spacing.xl * 2;
 
