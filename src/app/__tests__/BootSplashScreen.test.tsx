@@ -3,6 +3,7 @@ import ReactTestRenderer, { act } from 'react-test-renderer';
 import { Dimensions, Pressable, Text as RNText } from 'react-native';
 import { BootSplashScreen } from '../BootSplashScreen';
 import { BrandMark } from '@/shared/ui';
+import { renderSettled } from '@/shared/testing/renderWithEffects';
 
 /**
  * SH-1 (execution brief P0-7.0). Renders no text and no controls, deliberately — the boot
@@ -25,22 +26,18 @@ describe('BootSplashScreen (SH-1)', () => {
     renderer = undefined;
   });
 
-  it('renders the mark, and no text and no controls', () => {
-    act(() => {
-      renderer = ReactTestRenderer.create(<BootSplashScreen />);
-    });
+  it('renders the mark, and no text and no controls', async () => {
+    renderer = await renderSettled(<BootSplashScreen />);
 
     expect(renderer!.root.findAllByType(RNText)).toHaveLength(0);
     expect(renderer!.root.findAllByType(Pressable)).toHaveLength(0);
     expect(renderer!.root.findAllByType(BrandMark)).toHaveLength(1);
   });
 
-  it('sizes the mark to 22% of screen width — same placement as LaunchScreen.storyboard', () => {
+  it('sizes the mark to 22% of screen width — same placement as LaunchScreen.storyboard', async () => {
     const { width } = Dimensions.get('window');
 
-    act(() => {
-      renderer = ReactTestRenderer.create(<BootSplashScreen />);
-    });
+    renderer = await renderSettled(<BootSplashScreen />);
 
     const mark = renderer!.root.findByType(BrandMark);
     expect(mark.props.size).toBeCloseTo(width * 0.22);
