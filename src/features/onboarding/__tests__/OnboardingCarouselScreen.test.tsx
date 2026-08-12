@@ -4,6 +4,7 @@
  * not just that the label renders.
  */
 import React from 'react';
+import { AccessibilityInfo } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { OnboardingCarouselScreen } from '../OnboardingCarouselScreen';
@@ -13,11 +14,16 @@ import {
 } from '@/app/stores/useOnboardingStore';
 import { renderedText } from '@/features/auth/testUtils';
 
+jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
+
+let renderers: ReactTestRenderer.ReactTestRenderer[] = [];
+
 function renderCarousel() {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(<OnboardingCarouselScreen />);
   });
+  renderers.push(renderer);
   return renderer;
 }
 
@@ -34,6 +40,19 @@ describe('ON-1..3 — the onboarding carousel', () => {
   beforeEach(() => {
     (AsyncStorage as unknown as { __resetMockStorage: () => void }).__resetMockStorage();
     __resetOnboardingListenerForTests();
+    // ON-2's ProximityIllustration animates its arcs unless reduced motion is on — same reasoning
+    // as `BrandMark.test.tsx`: without this, a real `useNativeDriver: true` loop can start and
+    // outlive the test (nothing here unmounts synchronously enough to race it), leaking a timer
+    // into whichever suite runs next.
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    act(() => {
+      renderers.forEach((renderer) => renderer.unmount());
+    });
+    renderers = [];
+    jest.restoreAllMocks();
   });
 
   it('Continue advances through all three cards in order', async () => {
