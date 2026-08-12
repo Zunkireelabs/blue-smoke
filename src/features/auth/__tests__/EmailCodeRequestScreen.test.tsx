@@ -14,8 +14,12 @@ import { findInput, findByLabel, renderedText } from '../testUtils';
 import type { RootStackParamList } from '@/app/navigation';
 
 const Stack = createNativeStackNavigator<
-  Pick<RootStackParamList, 'EmailCodeRequest' | 'EmailCodeEntry' | 'PasswordSignIn'>
+  Pick<RootStackParamList, 'EmailCodeRequest' | 'EmailCodeEntry' | 'PasswordSignIn' | 'PhoneInput'>
 >();
+
+function PhoneInputPlaceholder({ route }: { route: RouteProp<RootStackParamList, 'PhoneInput'> }) {
+  return <Text>{`PHONE SCREEN ${route.params?.mode ?? 'none'}`}</Text>;
+}
 
 function EmailCodeEntryPlaceholder({
   route,
@@ -39,6 +43,7 @@ function renderEmailCodeRequest(client = createMockAuthClient()) {
             <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} />
             <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryPlaceholder} />
             <Stack.Screen name="PasswordSignIn" component={PasswordSignInPlaceholder} />
+            <Stack.Screen name="PhoneInput" component={PhoneInputPlaceholder} />
           </Stack.Navigator>
         </AuthClientProvider>
       </NavigationContainer>,
@@ -56,7 +61,7 @@ describe('EmailCodeRequestScreen', () => {
       findInput(renderer, 'Email').props.onChangeText('not-an-email');
     });
     await act(async () => {
-      await findByLabel(renderer, 'Send code').props.onPress();
+      await findByLabel(renderer, 'Get verification code').props.onPress();
     });
 
     expect(spy).not.toHaveBeenCalled();
@@ -70,7 +75,7 @@ describe('EmailCodeRequestScreen', () => {
       findInput(renderer, 'Email').props.onChangeText('new@example.com');
     });
     await act(async () => {
-      await findByLabel(renderer, 'Send code').props.onPress();
+      await findByLabel(renderer, 'Get verification code').props.onPress();
     });
 
     expect(renderedText(renderer)).toContain('CODE SCREEN new@example.com');
@@ -85,7 +90,7 @@ describe('EmailCodeRequestScreen', () => {
       findInput(renderer, 'Email').props.onChangeText('new@example.com');
     });
     await act(async () => {
-      await findByLabel(renderer, 'Send code').props.onPress();
+      await findByLabel(renderer, 'Get verification code').props.onPress();
     });
 
     expect(renderedText(renderer)).toContain('Rate limited.');
@@ -100,24 +105,56 @@ describe('EmailCodeRequestScreen', () => {
       findInput(renderer, 'Email').props.onChangeText('new@example.com');
     });
     await act(async () => {
-      await findByLabel(renderer, 'Send code').props.onPress();
+      await findByLabel(renderer, 'Get verification code').props.onPress();
     });
 
     expect(renderedText(renderer)).toContain('Something went wrong. Please try again.');
     // The bug this guards against: a rejected await skips the status reset,
     // leaving the button permanently disabled/loading with no way back.
-    expect(findByLabel(renderer, 'Send code').props.disabled).toBe(false);
+    expect(findByLabel(renderer, 'Get verification code').props.disabled).toBe(false);
   });
 
-  it('navigates to PasswordSignIn via the subordinate "Use password instead" action', async () => {
+  it('navigates to PasswordSignIn via the inline "Use password" link', async () => {
     const { renderer, client } = renderEmailCodeRequest();
     const spy = jest.spyOn(client, 'requestEmailCode');
 
     await act(async () => {
-      await findByLabel(renderer, 'Use password instead').props.onPress();
+      await findByLabel(renderer, 'Use password').props.onPress();
     });
 
     expect(spy).not.toHaveBeenCalled();
     expect(renderedText(renderer)).toContain('PASSWORD SIGN IN SCREEN');
+  });
+
+  /** Mirrors `PhoneInputScreen`'s own front-door tests — the two screens are each other's only
+   *  route to the other channel, so a dead switch on either strands half the auth surface. */
+  describe('mode and channel switching', () => {
+    it('opens in signup copy and switches to login copy in place', async () => {
+      const { renderer } = renderEmailCodeRequest();
+
+      expect(renderedText(renderer)).toContain("Let's create your account");
+      expect(renderedText(renderer)).toContain('By signing up');
+
+      await act(async () => {
+        findByLabel(renderer, 'Already a user?').props.onPress();
+      });
+
+      expect(renderedText(renderer)).toContain('Welcome back, log in to continue');
+      expect(renderedText(renderer)).toContain('By signing in');
+      expect(findByLabel(renderer, 'New user?')).toBeTruthy();
+    });
+
+    it('hands the phone path the mode it was showing', async () => {
+      const { renderer } = renderEmailCodeRequest();
+
+      await act(async () => {
+        findByLabel(renderer, 'Already a user?').props.onPress();
+      });
+      await act(async () => {
+        findByLabel(renderer, 'Phone number').props.onPress();
+      });
+
+      expect(renderedText(renderer)).toContain('PHONE SCREEN signin');
+    });
   });
 });

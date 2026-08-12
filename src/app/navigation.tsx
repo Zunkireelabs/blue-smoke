@@ -250,7 +250,11 @@ export function RootNavigator() {
             component={PhoneInputScreen}
             options={{ headerShown: false }}
           />
-          <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} options={{ title: 'Continue with email' }} />
+          <Stack.Screen
+            name="EmailCodeRequest"
+            component={EmailCodeRequestScreen}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
           <Stack.Screen
             name="OtpVerify"
