@@ -11,7 +11,6 @@ import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
 import { EmailCodeEntryScreen } from '@/features/auth/EmailCodeEntryScreen';
 import { PhoneInputScreen } from '@/features/auth/PhoneInputScreen';
 import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
-import { PasswordSignInScreen } from '@/features/auth/PasswordSignInScreen';
 import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import { OnboardingCarouselScreen } from '@/features/onboarding/OnboardingCarouselScreen';
 import { VerifyIntroScreen } from '@/features/verification/VerifyIntroScreen';
@@ -64,6 +63,13 @@ export type RootStackParamList = {
   /** `mode` is carried through so the "or continue with → Email" escape keeps the copy the user
    *  arrived in; see `EmailCodeRequest`. Copy only, same as everywhere else it appears. */
   OtpVerify: { phone: string; mode?: AuthMode };
+  /**
+   * ⚠️ Registered nowhere, as of the reference auth restyle (Sadin, 2026-08-12). Password
+   * sign-in is a *state* of `EmailCodeRequest` now, on the same sheet under the same chrome —
+   * the reference puts both credentials on one screen. `PasswordSignInScreen.tsx` is kept on
+   * disk, same treatment as `AuthChoice`, and this entry exists only so it and its test still
+   * typecheck. A `navigate('PasswordSignIn')` compiles and then fails at runtime.
+   */
   PasswordSignIn: undefined;
   // Authenticated, pre-verification
   VerifyIntro: undefined;
@@ -266,7 +272,6 @@ export function RootNavigator() {
             component={OtpEntryScreen}
             options={{ headerShown: false }}
           />
-          <Stack.Screen name="PasswordSignIn" component={PasswordSignInScreen} options={{ title: 'Sign in with password' }} />
         </Stack.Navigator>
       ) : stack === 'home' ? (
         <Stack.Navigator>

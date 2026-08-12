@@ -114,16 +114,81 @@ describe('EmailCodeRequestScreen', () => {
     expect(findByLabel(renderer, 'Get verification code').props.disabled).toBe(false);
   });
 
-  it('navigates to PasswordSignIn via the inline "Use password" link', async () => {
-    const { renderer, client } = renderEmailCodeRequest();
-    const spy = jest.spyOn(client, 'requestEmailCode');
+  /**
+   * AU-14 stopped being its own screen on 2026-08-12 — password sign-in is a state of this one.
+   * These replace the old "navigates to PasswordSignIn" test.
+   */
+  describe('password state', () => {
+    it('swaps the credential in place, keeping the email already typed', async () => {
+      const { renderer, client } = renderEmailCodeRequest();
+      const spy = jest.spyOn(client, 'requestEmailCode');
 
-    await act(async () => {
-      await findByLabel(renderer, 'Use password').props.onPress();
+      await act(async () => {
+        findInput(renderer, 'Email').props.onChangeText('user@example.com');
+      });
+      await act(async () => {
+        await findByLabel(renderer, 'Use password').props.onPress();
+      });
+
+      // Same screen, not a navigation — and the address survives the swap, which is the whole
+      // point of the reference putting both credentials on one sheet.
+      expect(spy).not.toHaveBeenCalled();
+      expect(findInput(renderer, 'Email').props.value).toBe('user@example.com');
+      expect(findInput(renderer, 'Password')).toBeTruthy();
+      expect(findByLabel(renderer, 'Continue')).toBeTruthy();
     });
 
-    expect(spy).not.toHaveBeenCalled();
-    expect(renderedText(renderer)).toContain('PASSWORD SIGN IN SCREEN');
+    it('signs in with the password and never requests a code', async () => {
+      const { renderer, client } = renderEmailCodeRequest();
+      const codeSpy = jest.spyOn(client, 'requestEmailCode');
+      const passwordSpy = jest.spyOn(client, 'signInWithEmail');
+
+      await act(async () => {
+        findInput(renderer, 'Email').props.onChangeText('user@example.com');
+      });
+      await act(async () => {
+        await findByLabel(renderer, 'Use password').props.onPress();
+      });
+      await act(async () => {
+        findInput(renderer, 'Password').props.onChangeText('SimWalk!2026aug');
+      });
+      await act(async () => {
+        await findByLabel(renderer, 'Continue').props.onPress();
+      });
+
+      expect(passwordSpy).toHaveBeenCalledWith('user@example.com', 'SimWalk!2026aug');
+      expect(codeSpy).not.toHaveBeenCalled();
+    });
+
+    it('goes back to the code state via "Get code"', async () => {
+      const { renderer } = renderEmailCodeRequest();
+
+      await act(async () => {
+        await findByLabel(renderer, 'Use password').props.onPress();
+      });
+      await act(async () => {
+        await findByLabel(renderer, 'Get code').props.onPress();
+      });
+
+      // Without a way back, choosing password by mistake would strand the user on a credential
+      // they may never have set.
+      expect(findByLabel(renderer, 'Get verification code')).toBeTruthy();
+      expect(renderer.root.findAllByProps({ accessibilityLabel: 'Password' })).toHaveLength(0);
+    });
+
+    it('masks the password until Show is pressed', async () => {
+      const { renderer } = renderEmailCodeRequest();
+
+      await act(async () => {
+        await findByLabel(renderer, 'Use password').props.onPress();
+      });
+      expect(findInput(renderer, 'Password').props.secureTextEntry).toBe(true);
+
+      await act(async () => {
+        await findByLabel(renderer, 'Show password').props.onPress();
+      });
+      expect(findInput(renderer, 'Password').props.secureTextEntry).toBe(false);
+    });
   });
 
   /** Mirrors `PhoneInputScreen`'s own front-door tests — the two screens are each other's only
