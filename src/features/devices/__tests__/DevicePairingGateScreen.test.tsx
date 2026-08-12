@@ -34,6 +34,10 @@ function fakeManager(scanCalls: { count: number }): BleManagerLike {
     cancelDeviceConnection: async () => {
       throw new Error('not used by this test');
     },
+    // Required by BleManagerLike since P1-7.0. This screen never connects, so it never
+    // subscribes — a no-op subscription rather than a throw, so the fake stays inert
+    // instead of turning an unrelated future change into a failure here.
+    onDeviceDisconnected: () => ({ remove() {} }),
   };
 }
 

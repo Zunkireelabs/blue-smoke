@@ -7,6 +7,10 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+// P1-3.0 made the mock's crypto and nonce source injected rather than imported, so the mock no
+// longer reaches for `node:crypto` (absent in Hermes). These are the mock's OWN independent
+// implementations — deliberately not the app's, so a bug shared by both can still be caught.
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { createConnectionManager, ConnectionAttemptError, type ConnectionState } from '../connection';
 import type { BleManagerLike } from '../BleClientContext';
 
@@ -15,7 +19,13 @@ const DEVICE_ID = 'mock-device-0001';
 
 function makePeripheral() {
   const clock = new FakeClock(0);
-  return createMockPeripheral({ kDev: K_DEV, clock, deviceId: DEVICE_ID });
+  return createMockPeripheral({
+    kDev: K_DEV,
+    clock,
+    deviceId: DEVICE_ID,
+    crypto: nodeDeviceCoreCrypto,
+    nonceSource: nodeNonceSource,
+  });
 }
 
 /** A no-delay stand-in for the backoff scheduler seam, recording every call. */
@@ -59,6 +69,11 @@ describe('createConnectionManager — P1-7.0, against the mock peripheral', () =
     try {
       const hungManager: BleManagerLike = {
         state: async () => 'PoweredOn',
+        // Required by BleManagerLike since P1-3.0 put scanning on it; these tests never scan.
+        startDeviceScan: () => {
+          throw new Error('not used by this test');
+        },
+        stopDeviceScan: () => {},
         isDeviceConnected: async () => false,
         cancelDeviceConnection: async () => {
           throw new Error('not used by this test');
@@ -90,6 +105,11 @@ describe('createConnectionManager — P1-7.0, against the mock peripheral', () =
   test('connect() rejection (transport failure) resolves to disconnected, not a raw thrown error', async () => {
     const rejectingManager: BleManagerLike = {
       state: async () => 'PoweredOn',
+      // Required by BleManagerLike since P1-3.0 put scanning on it; these tests never scan.
+      startDeviceScan: () => {
+        throw new Error('not used by this test');
+      },
+      stopDeviceScan: () => {},
       isDeviceConnected: async () => false,
       cancelDeviceConnection: async () => {
         throw new Error('not used by this test');

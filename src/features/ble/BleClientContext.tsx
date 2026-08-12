@@ -82,11 +82,15 @@ export interface ScannedDevice {
 }
 
 /**
- * Scanning is a SEPARATE interface from `BleManagerLike`, deliberately.
- * Adding two more required members to `BleManagerLike` would break every
- * hand-rolled fake manager literal that implements it (11 in auth.test.ts
- * alone — the exact ripple adding `onDeviceDisconnected` already caused).
- * Only `scan.ts` needs these, so only `scan.ts` depends on them. The real
+ * A narrow, scan-only view of a manager. This was originally introduced to
+ * keep `startDeviceScan`/`stopDeviceScan` OFF `BleManagerLike`, because
+ * adding required members there breaks every hand-rolled fake manager
+ * literal that implements it (11 in auth.test.ts alone — the exact ripple
+ * `onDeviceDisconnected` caused). P1-3.0 added them to `BleManagerLike`
+ * anyway, so that argument is settled and the interface now carries both;
+ * this one survives as the narrower dependency `scan.ts` actually needs —
+ * a module that only scans should not be handed a connect/disconnect
+ * capability it has no business calling. The real
  * `BleManager`, `MockBleManager`, and the dev fake all satisfy this
  * structurally without any of them changing shape.
  */
@@ -119,6 +123,9 @@ export interface BleScannerLike {
 function wrapRealManager(real: BleManager): BleManagerLike {
   return {
     state: () => real.state(),
+    startDeviceScan: (serviceUUIDs, options, listener) =>
+      real.startDeviceScan(serviceUUIDs, options as Parameters<BleManager['startDeviceScan']>[1], listener),
+    stopDeviceScan: () => real.stopDeviceScan(),
     connectToDevice: (deviceId) => real.connectToDevice(deviceId),
     isDeviceConnected: (deviceId) => real.isDeviceConnected(deviceId),
     cancelDeviceConnection: (deviceId) => real.cancelDeviceConnection(deviceId),

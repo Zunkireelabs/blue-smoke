@@ -128,6 +128,9 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
       cancelDeviceConnection: async () => {
         throw new Error('not used by this test');
       },
+      // Required by BleManagerLike since P1-7.0; this flow never connects. See
+      // DevicePairingGateScreen.test.tsx for why this is inert rather than a throw.
+      onDeviceDisconnected: () => ({ remove() {} }),
     };
     const renderer = renderFlow(offManager);
 
@@ -155,6 +158,9 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
         cancelDeviceConnection: async () => {
           throw new Error('not used by this test');
         },
+        // Required by BleManagerLike since P1-7.0; this flow never connects. See
+        // DevicePairingGateScreen.test.tsx for why this is inert rather than a throw.
+        onDeviceDisconnected: () => ({ remove() {} }),
       };
       const renderer = renderFlow(deniedManager);
 

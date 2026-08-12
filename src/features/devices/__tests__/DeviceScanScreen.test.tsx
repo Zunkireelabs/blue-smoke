@@ -51,6 +51,9 @@ function fakeManager(devices: BleDeviceLike[]): BleManagerLike & { stopCalls: nu
     cancelDeviceConnection: async () => {
       throw new Error('not used by this test');
     },
+    // Required by BleManagerLike since P1-7.0; this screen only scans. See
+    // DevicePairingGateScreen.test.tsx for why this is inert rather than a throw.
+    onDeviceDisconnected: () => ({ remove() {} }),
     get stopCalls() {
       return state.stopCalls;
     },

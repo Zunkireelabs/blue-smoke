@@ -205,6 +205,30 @@ export function createDevFakeManager(): {
       return 'PoweredOn';
     },
 
+    // P1-3.0 landed scanning on `BleManagerLike` itself while this branch was building
+    // `BleScannerLike` alongside it, so the interface now carries both. These delegate to the
+    // same staggered fixtures as `scanner` below rather than duplicating the schedule — the
+    // difference is only the emitted shape: `BleManagerLike` hands back a full `BleDeviceLike`
+    // (connectable), `BleScannerLike` the `ScannedDevice` subset (`id`/`name`/`rssi`).
+    startDeviceScan(serviceUUIDs, _options, listener) {
+      if (
+        serviceUUIDs &&
+        !serviceUUIDs.some((uuid) => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase())
+      ) {
+        return;
+      }
+      scanTimers = PERIPHERALS.map((peripheral, index) =>
+        setTimeout(() => listener(null, createFakeDevice(peripheral)), 400 * (index + 1)),
+      );
+    },
+
+    stopDeviceScan() {
+      for (const timer of scanTimers) {
+        clearTimeout(timer);
+      }
+      scanTimers = [];
+    },
+
     async connectToDevice(deviceId: string) {
       connectAttempts += 1;
       const spec = findSpec(deviceId);
