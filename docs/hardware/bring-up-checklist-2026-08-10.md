@@ -33,6 +33,10 @@ This needs **no** app build, no toolchain, no USB cable. It works the moment the
 
 ## 3.0 Bench attempt 1 — 2026-08-10 — 🔴 **the board does not advertise**
 
+> **Read §3.0b below before acting on this section.** Its conclusion — that non-advertising is a
+> fault — did not survive Day 13. There are now three explanations, two of which were unknown when
+> this was written, and the board tested here is probably not the Bluetooth board at all.
+
 Board, PW200 and an Android phone (nRF Connect) all present. **No GATT dump was obtained**, because
 the device never appeared in a scan. Everything below §3.0 remains unfilled for that reason.
 
@@ -98,6 +102,58 @@ cannot be answered by observation, because there is nothing to observe until it 
 
 ---
 
+## 3.0b Bench attempt 2 — 2026-08-12 — the board was photographed and identified
+
+No scan was run. This attempt was diagnostic: the board was photographed on both sides and read
+against the schematic, which changed what attempt 1's silence means.
+
+### What was observed
+
+| | |
+|---|---|
+| Board identity | Silkscreen **`AC-H158-V1.01`**, `20260702` |
+| Pad labels | `B−` `/B−` **`T`** `B+`, plus a separate `5V` / `GND` header and USB-C |
+| Microphone | **Can type, on flying red/blue leads** — not the schematic's on-board `S087A` |
+| Crystal | **None visible**, either side |
+| Trace antenna | **None visible** — no edge meander, no ground keep-out |
+| Battery | **Still not connected.** The `B+`/`B−` wires terminate in **bare, stripped ends** |
+
+**Reading:** a charge/protection + microphone board, not the BLE board. Full analysis and the
+caveats in `hqd-device-architecture.md` §5.1 — held as a hypothesis, since these are hand-held
+photographs and a 2 × 2 mm QFN could hide in them.
+
+### 🔴 The correction this forces to §3.0
+
+Attempt 1 concluded "the board does not advertise" and treated that as a fault. **There are now
+three live explanations, and non-advertising is not evidence of a fault:**
+
+1. **Wrong board** — this one may carry no radio at all (above).
+2. **Never powered as a device** — everything so far has been laptop USB with **no cell attached**,
+   which the §3.0 notes already flagged as the most likely explanation and which is *still* untrue
+   of every test run to date.
+3. 🔴 **Silent by design** — the module spec documents **`AT+ADVEN=0`**, which disables advertising
+   outright (`hqd-device-architecture.md` §3.2.2). HQD's firmware is free to hold the radio silent
+   until some trigger. **This explanation did not exist when §3.0 was written** and cannot be ruled
+   out by scanning harder.
+
+Do not escalate "the board is broken" until at least (2) is eliminated.
+
+### Wire colours — use the silkscreen
+
+The manufacturer's reply calls the blue wire "output positive". **The board says `T`** — a pack
+thermistor. For bench power: red → `B+`, black → `B−`, and **leave blue / `T` unconnected**. See
+`hqd-device-architecture.md` §10.1.
+
+### Add to the visual search — look for a 5-pin module
+
+The BLE part is documented as **`YP65`, a 5-pin module** (`VIN`, `GND`, BLE-TX, BLE-RX, wake/mode),
+not only as the bare `QFN2*2_12L` SoC the schematic draws — the two sources disagree and it is
+unresolved. This matters at the bench because **a castellated 5-pin module carrying its own antenna
+is conspicuous**, where a 2 × 2 mm QFN is not. On any candidate board, look for the module first;
+its absence is a much safer negative than the absence of a bare SoC.
+
+---
+
 ## 3. The capture — fill this in
 
 Power the board. In nRF Connect: **Scanner** tab → pull to refresh → find the device → **CONNECT** →
@@ -107,17 +163,24 @@ it auto-discovers services. Tap each service to expand its characteristics.
 
 Tap the device row's **RAW** / details view in the scanner list.
 
-| What | Spec §4.1 expects | Actual |
-|---|---|---|
-| Advertised local name | prefix `BlueSmoke-` | |
-| MAC address | — (Android only; see OQ-14) | |
-| Service UUID in advertisement? | yes, AD type `0x07` | |
-| Manufacturer data | 4 bytes `[ver｜stateHint｜battery｜flags]` | |
-| RSSI at ~1 m | — (feeds P3-3.0 thresholds) | |
+| What | Spec §4.1 expects | Module spec says (Day 13) | Actual |
+|---|---|---|---|
+| Advertised local name | prefix `BlueSmoke-` | `YP65-AT` + MAC suffix, **in the scan response** | |
+| MAC address | — (Android only; see OQ-14) | settable via `AT+ADDR=` | |
+| Service UUID in advertisement? | yes, AD type `0x07` | 🔴 **no** — default ADV data is `02 01 06`, Flags only | |
+| Manufacturer data | 4 bytes `[ver｜stateHint｜battery｜flags]` | configurable via `AT+ADVDA=`; not present by default | |
+| ADV interval | — | default 320 × 0.625 ms = **200 ms** (`AT+ADVINT=`) | |
+| RSSI at ~1 m | — (feeds P3-3.0 thresholds) | — | |
 
-> If **no service UUID is advertised at all**, that is a finding, not a failure — it means our
-> scanner can never filter on one and `scanner.ts:320` needs a different strategy (name prefix, or
-> filter-by-MAC as the Itron SDK does). Record it and stop; don't improvise a fix at the bench.
+> **✅ Settled Day 13 — this is no longer an open question at the bench.** The module's default
+> advertising data is `02 01 06`: the Flags AD structure and nothing else. **No service UUID is
+> advertised**, and the device name is carried in the *scan response* rather than the advertisement
+> (`hqd-device-architecture.md` §3.2.2).
+>
+> So **`scanner.ts` cannot filter on `0xFFF0`** — it must match on the **name prefix `YP65-AT`**.
+> Filter-by-MAC, the Itron SDK's approach, remains unavailable on iOS (OQ-14). Confirm the above at
+> the bench when a board finally advertises, but plan the scanner on it now rather than treating it
+> as unknown.
 
 ### 3.2 Pairing
 
@@ -172,13 +235,18 @@ comes back on the notify characteristic.
 
 ## 4. What each answer unblocks
 
-| Captured | Changes |
-|---|---|
-| Real service UUID | `BLE_SERVICE_UUID` in `protocol.ts` — one line, plus `scanner.ts:320`'s filter starts matching |
-| Real characteristic UUIDs + properties | `BLE_CHARACTERISTIC_UUIDS` — **expect a shape change, not a swap.** §4.2 assumes six typed characteristics; two commands over a write+notify pair is far more likely, which is a different design, not a different constant |
-| MTU | §4.5's two-frame `authResponse` split exists only to fit a 23-byte ATT MTU. A larger real MTU may make it unnecessary |
-| PIN behaviour | The §4.5 CMAC handshake vs. OS-level bonding — these may be redundant or may compose; can't tell until observed |
-| No advertised service UUID | Scanner strategy, and OQ-14 (the Itron SDK is MAC-keyed, which iOS cannot do) |
+**Most of this table was answered on paper before the bench could answer it.** The module spec
+(Day 12–13) supplied the profile, the MTU and the advertising behaviour, so what remains for the
+bench is confirmation plus the one thing no document states — *which* of the five pipes HQD's
+firmware uses.
+
+| Captured | Changes | Status |
+|---|---|---|
+| Real service UUID | `BLE_SERVICE_UUID` in `protocol.ts` — one line. **But `scanner.ts:320`'s filter must not use it**, see the last row | ✅ `0xFFF0`, from the profile PDF |
+| Real characteristic UUIDs + properties | `BLE_CHARACTERISTIC_UUIDS` — the shape change this row predicted **did happen**: not six typed characteristics but **five identical notify + write-no-response pipes**, `0xFFF1`–`0xFFF5`, with no per-characteristic meaning | ✅ from the profile PDF; **which pipe HQD uses is still unknown** — the one thing the bench must still answer |
+| MTU | §4.5's two-frame `authResponse` split exists only to fit a 23-byte ATT MTU. A larger real MTU may make it unnecessary | ✅ **185 B** — so the split is unnecessary on this hardware |
+| PIN behaviour | The §4.5 CMAC handshake vs. OS-level bonding — these may be redundant or may compose; can't tell until observed | 🔴 Still open. The profile PDF documents **no PIN/pairing/bonding command at all** (confirmed by search), while the `itronlib` doc describes a 6-digit PIN. The two sources disagree; only the bench can settle it |
+| No advertised service UUID | Scanner strategy, and OQ-14 (the Itron SDK is MAC-keyed, which iOS cannot do) | ✅ **Confirmed on paper: none is advertised.** Filter on the name prefix `YP65-AT`. See §3.1 |
 
 **Then, and only then**, update `protocol.ts` — it is an append-only contested shared file per
 CLAUDE.md, so announce before rewriting the §4.2 block, and cite this document in the commit.
@@ -191,3 +259,8 @@ CLAUDE.md, so announce before rewriting the §4.2 block, and cite this document 
   bench relaxes the inviolable rules.
 - The **firmware dead-man timer** remains the safety authority. If the board turns out to have no
   such timer, that is a 🔴 finding to escalate, not a design to work around in the app.
+  **🔴 Day 12–13: this is no longer hypothetical.** The manufacturer states there is **no auto-lock
+  timer in firmware at all** — only connection state. It is escalated in
+  `../client-messages/architecture-escalation-2026-08-12.md` (drafted, **not sent**), not designed
+  around. The module does have a real-time clock, so a timer is feasible; that makes it a scoping
+  decision, not a closed door. See `hqd-device-architecture.md` §6.4.

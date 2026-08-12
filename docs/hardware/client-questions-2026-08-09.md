@@ -1,6 +1,16 @@
 # Draft message to the client — hardware documents, 2026-08-09
 
-**Status: DRAFT — not sent.** Reasoning behind every question is in
+> 🔴 **Superseded as the outgoing text, 2026-08-10.** The client has said they will forward our asks
+> to the manufacturer directly, so the hardware questions were rewritten as a standalone,
+> manufacturer-facing document:
+> [`manufacturer-requirements-2026-08-10.md`](manufacturer-requirements-2026-08-10.md), with a
+> covering note at [`../client-messages/hardware-forward-2026-08-10.md`](../client-messages/hardware-forward-2026-08-10.md).
+>
+> **Send those, not this.** This file is kept as the working source: the item-by-item reasoning below
+> — especially the notes block on why item 9b does not mention a salt — did not survive the rewrite
+> and is not recorded anywhere else. Edit both if an item changes.
+
+**Status: DRAFT — not sent, and now superseded (see above).** Reasoning behind every question is in
 [`hqd-device-architecture.md`](hqd-device-architecture.md); this file is only the text to send.
 
 **Updated 2026-08-10 (Day 11): a board arrived and we tried to bring it up. It never advertises.**
@@ -9,11 +19,28 @@ if you are diffing against the 08-09 draft, that renumbering is the bulk of the 
 a disclosure we owe the client about the PW200. Full account in
 [`bring-up-checklist-2026-08-10.md`](bring-up-checklist-2026-08-10.md) §3.0.
 
+**Updated 2026-08-11 (Day 12): added items 9 and 10** — the manufacturing questions behind **OQ-4**
+(who writes `K_dev`, and how the key manifest reaches us) and **OQ-12** (what identifies a device,
+and whether the client already hashes it), plus a request for a second board and battery operation.
+OQ-4 and OQ-12 were absent from this message entirely while being two of the four 🔴 blockers, and
+they go to the same factory people as items 1 and 2 — asking them separately would have cost a
+round trip.
+
 Notes before sending:
 
 - **Item 1 now outranks everything**, including the service UUID: a UUID is no use while there is
   nothing on the air to find. Item 2 is the next blocker, and if the reply answers only one *sub*-item
   of it, **2h** is the one that reroutes everything else. The message is ordered accordingly.
+- **Item 9 is last in the list but not last in urgency** — it is placed there because it bites at
+  integration rather than today, and a reader who stops early should still have hit items 1 and 2.
+  It is a factory-process question, which is the slowest kind, so it must not slip further.
+- **Item 9b deliberately does not mention a salt.** OQ-12's unresolved half is whether the salt is
+  ours to choose or something we must match; asking "do you already hash the serial?" resolves that
+  without handing the client an internal design decision to make on our behalf. If the answer is
+  "we don't", the salt becomes ours and OQ-12 closes without needing anything further from them.
+- **This message covers hardware only.** The commercial asks (Persona sign-off, DPA, per-verification
+  cost, store accounts) and the product-policy asks (fallback SLA, markets, brand assets) go to
+  different people — see [`../client-messages/`](../client-messages/).
 - **Do not edit out the PW200 disclosure** near the end. It costs the client a licence credit and
   they should hear it from us before they find it in their own logs.
 - Item 4 (iOS) is a **contract-scope** question, not a technical one. Consider whether it goes in
@@ -132,6 +159,35 @@ that comes before all of the below.
    you decide — we'd just want the longer duration confirmed in writing, so it's recorded as a
    deliberate product decision rather than our default.
 
+9. **Two questions for whoever runs manufacturing.** These are the slowest kind of question to
+   answer — they involve a factory process, not a document — so we are asking now even though they
+   only bite at integration.
+
+   a. **The per-device key.** Age-gated unlock needs each device to carry its own secret, written
+      once at manufacture and never changed. **Who writes it, at what point in the line, and how
+      does the resulting key list reach us securely?** It cannot travel by email or live in a
+      spreadsheet — we would want to agree a delivery method. One note that may help: the YC1012
+      datasheet lists 8 KB of OTP memory and hardware AES-128, so the key could live on the
+      Bluetooth chip itself rather than needing new storage elsewhere on the board.
+
+   b. **The device serial number.** Our app needs to recognise a device it has paired with before,
+      and it does that from a unique per-device identifier rather than the Bluetooth address (which
+      iOS does not expose to apps, and which some devices randomise). So: **what uniquely
+      identifies one of your devices, where does that value live, and can the app read it over
+      Bluetooth?** Also — **is it guaranteed unique across production**, or does it repeat across
+      batches? And **does anything on your side already hash or transform that serial** before it
+      appears in your own systems? If it does, we need to match exactly what you do; if it doesn't,
+      we will choose our own scheme and tell you what it is. Either way this is not something we
+      can safely assume, because a mismatch produces no error — every device would simply look
+      brand new to the app, forever.
+
+10. **A second board, and how to run one off the charger.** We have one unit and can currently only
+    power it over USB, which is also our leading theory for item 1. Three wires (red, blue, black)
+    leave the PCBA to a component we can't identify from the schematic sheet we have — **is that a
+    battery, and is it safe for us to run the board from it?** A second unit would also let us test
+    the phone-walks-away behaviour, which needs one device and one moving phone at minimum, and is
+    hard to do with a board tethered to a laptop.
+
 **One thing to flag from our side.** While trying to get the board talking, we pressed the button on
 the PowerWriter once, with it connected to the board. It showed the green light your PW200 guide
 describes on slide 9 as indicating a successful upgrade — so we take it a firmware flash completed.
@@ -146,11 +202,11 @@ flash either.** So its silence does not look like an unprogrammed or half-config
 appears to be what your firmware is meant to do until something we don't know about happens.
 
 **One thing we can confirm back to you:** the age-gated unlock you asked about is understood as
-required. That does put some work on your firmware side — the device needs a per-device key written
-at manufacture, and a check before it will unlock. One note that may help: the YC1012 datasheet
-lists 8 KB of OTP memory and hardware AES-128, so the key could live on the Bluetooth chip itself
-rather than needing new storage elsewhere on the board. The sooner we can get our two firmware teams
-talking directly, the better — who's the right person for that?
+required, and we are building for it. It does put work on your side — the device needs a per-device
+key written at manufacture and a check before it will unlock, which is what item 9 is about. The
+sooner we can get our two firmware teams talking directly, the better — **who's the right person for
+that?** Several of the questions above are ten minutes of conversation between engineers and weeks
+of guessing otherwise.
 
 ---
 
@@ -177,3 +233,13 @@ talking directly, the better — who's the right person for that?
       every §4-adjacent claim derived from the schematic** before writing more BLE code
 - [ ] Record the PW200 credit in `docs/session-log/anish.md` alongside the send date, so the count is
       traceable if the client ever queries it
+- [ ] **Item 9a closes OQ-4; item 9b closes OQ-12** — register both answers in `TECHNICAL_SPEC.md`
+      §13. If 9b comes back "we don't hash it", record that the salt is ours to choose and close
+      OQ-12 with the chosen value written into §5.2.3, which currently defines the formula and gives
+      no value
+- [ ] Item 10's answer unblocks the battery retry in
+      [`bring-up-checklist-2026-08-10.md`](bring-up-checklist-2026-08-10.md) — but do not wait on it
+      if the wires can be identified from sheet 2 (item 6) first
+- [ ] The two sibling messages in [`../client-messages/`](../client-messages/) should go out the same
+      day. They have different recipients, so one reply does not imply the others are coming —
+      **track the three separately**

@@ -14,6 +14,19 @@ printed in those documents; conclusions marked **inferred** are mine and need cl
 > Companion record: [`client-supplied-hardware.md`](client-supplied-hardware.md) covers the PW200
 > burner and the PCB itself *(that file currently lives only on the unmerged
 > `docs/hardware-record-client-supplied` branch — merge it and these two sit side by side)*.
+>
+> **Day 12 update:** the manufacturer answered most of §7's questions —
+> [`manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md`](manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md)
+> — and, later the same day, **the actual BLE profile PDF surfaced** (§3.2.1), closing most of OQ-13:
+> the real service is `0xFFF0` with five generic characteristics `0xFFF1`–`0xFFF5`, not the invented
+> 128-bit UUID in `protocol.ts` today. Two other answers are more urgent than the ones they closed:
+> **no per-device key is written at manufacture**, and **no firmware auto-lock timer exists**. Both
+> are recorded in §6.3/§6.4 below and escalated in
+> [`../client-messages/architecture-escalation-2026-08-12.md`](../client-messages/architecture-escalation-2026-08-12.md) —
+> read that section before assuming §4.5 or §4.6 can be implemented against real hardware as
+> currently specified. Also: the Bluetooth chip on this board is now marketed as **YC8612** — same
+> YC1012 silicon, different silkscreen only, confirmed by its own datasheet (§4.1). Treat "YC8612"
+> anywhere below or elsewhere as the same part, not a second unresolved chip.
 
 ---
 
@@ -123,6 +136,151 @@ an unverified hypothesis and it is question 6 in §7 below.
 Note what `DeviceInfo` *does* return: **SN and lock status**. Those are the two fields our pairing
 flow most needs, which is mildly encouraging about the middle path in §6.
 
+**Day 12 addition — do not conflate with the above.** The manufacturer's reply to §7 question 6
+supplied three frames directly, described as the lock/unlock/read-status commands, each carrying an
+XOR checksum:
+
+| Command | Frame | Checksum |
+|---|---|---|
+| Lock | `02 02 A1 78 D9 01` | `0x02 ^ 0x02 ^ 0xA1 ^ 0x78 = 0xD9` ✅ |
+| Unlock | `02 02 A1 87 26 01` | `0x02 ^ 0x02 ^ 0xA1 ^ 0x87 = 0x26` ✅ |
+| Read Status | `02 01 A2 A1 01` | `0x02 ^ 0x01 ^ 0xA2 = 0xA1` ✅ |
+
+These are **not** the `itronlib` SDK's `0x01`/`0x02` calls above — they were supplied directly by
+the manufacturer, not read from the protocol document, and their relationship to `readDeviceInfo()`
+/ `setRecordState()` is not yet established. **The profile PDF (§3.2.1 below) confirms the container
+but not the placement**: these bytes travel as the payload of a write to one of the module's five
+generic `0xFFF1`–`0xFFF5` characteristics, opaque to the module itself — but *which* of the five
+HQD's PY32 firmware actually uses for this traffic is not stated anywhere received so far. **Not yet
+promoted into `protocol.ts`** for that reason — treat as manufacturer-supplied data pending
+verification, not as confirmed wire format.
+
+### 3.2.1 The real profile, Day 12 — this is what closes most of OQ-13
+
+`YP65-AT-BLE-module-spec-v1.3-release.pdf` (v1.3, 壹原理科技/YIPRINCIPLE, built on a YiChip BLE SoC)
+arrived later the same day as the manufacturer's text reply, in
+[`manufacturer-supplied-2026-08-12/`](manufacturer-supplied-2026-08-12/). **This is the document §7
+question 1 has been asking for since Day 9.** It is a real GATT profile, not a usage guide like
+`HQD_BLE_Protocol_Commands_Android_EN.md` — and it describes a module, the **YP65AT**, that is
+narrower and more generic than anything either prior document implied.
+
+**The service.** Private service **`0xFFF0`** (a standard 16-bit Bluetooth SIG-style short UUID,
+not the invented 128-bit `42530001-…` in `protocol.ts`), with five identical-shaped characteristics:
+
+| UUID | Properties | Handle |
+|---|---|---|
+| `0xFFF1` | Notify + Write No Response | `0x002a` |
+| `0xFFF2` | Notify + Write No Response | `0x002d` |
+| `0xFFF3` | Notify + Write No Response | `0x0030` |
+| `0xFFF4` | Notify + Write No Response | `0x0033` |
+| `0xFFF5` | Notify + Write No Response | `0x0036` |
+
+There is **no per-characteristic function split** — the module is a generic multi-pipe serial
+transport, exactly as §6.2's "middle path" recommendation assumed. Our six purpose-built C1–C6
+characteristics never existed on this hardware; §4's message types would become payload bytes inside
+whichever of these five pipes HQD's firmware picked, framed however HQD's firmware frames them (the
+lock/unlock/read-status bytes in §3.2 above are a first, unconfirmed data point on that framing).
+
+**Also present, and unrelated to lock/unlock: a standard HID service `0x1812`** (`0x2A4D` Report,
+`0x2A4C` HID Control Point, etc.), used for volume/screen-off/media-navigation keys via a documented
+HID-over-GATT report format. **Do not confuse this with the security design** — it's a consumer
+remote-control feature the module supports independently, sharing the radio but nothing else with
+whatever channel carries HQD's lock commands.
+
+**What this closes:**
+- **§7 question 1a/1b (service + characteristic UUIDs):** ✅ answered — `0xFFF0` / `0xFFF1`–`0xFFF5`.
+- **§7 question 1c (max message size):** ✅ answered — default local MTU is 185 B (§12.1.3's notes),
+  comfortably larger than §4.5's two 20-byte frames.
+- **§7 question 1g (disconnect reporting):** ✅ answered — explicit `AT+CONNECT` / `AT+DISCONN` UART
+  events to the host MCU, not something the app needs to infer from GATT alone.
+- **§7 question 1h (which chip runs the stack):** ✅ confirmed — the module owns the full BLE stack;
+  the PY32 talks to it over UART as a black box, matching the AT-command reading over the HCI-H5
+  reading.
+- **§7 question 1e (configurability):** ✅ partially — `AT+NAME=` and `AT+ADVDA=` exist, so name and
+  advertising data are configurable; the *service* UUID itself is not shown as configurable (no
+  `AT+` command sets it), so `0xFFF0` reads as fixed by the module's firmware.
+
+**What is still not closed:**
+- **§7 question 1d (can the 6-digit PIN be disabled):** the profile document has **no PIN, pairing,
+  or bonding AT command anywhere in it.** Re-checked 2026-08-12 by searching the full text
+  extraction for `PIN`, `pair` and `bond` — **no hit anywhere in the document**, so this is confirmed
+  absent by search rather than missed on a skim. Either this module doesn't implement the PIN pairing
+  the `itronlib` protocol document described, or it's handled at a layer this document doesn't cover.
+  Unresolved — the two documents don't agree and neither says so explicitly.
+- **Which of `0xFFF1`–`0xFFF5` HQD's firmware actually uses**, and the exact framing of the
+  lock/unlock/read-status bytes within it — not stated by this document, since it documents the
+  generic module, not HQD's application firmware built on top of it.
+- **Who wrote HQD's firmware that decides all of the above** is still, strictly, the same open
+  question as before — this PDF documents the *module* IPRINCIPLE/YiChip supply, not HQD's own
+  firmware layered on it.
+
+### 3.2.2 The same PDF, read properly — the module as hardware (Day 13)
+
+**Why this section exists.** §3.2.1 was written from a first pass that took the GATT table and
+stopped. `pdftotext` **drops this document's Chinese body text entirely** — only Latin tokens,
+tables and command literals survive — so the hardware and AT-command sections looked empty and were
+skipped. A second pass recovered what follows. **Do not assume even this exhausts the document:**
+the prose around every table below is still unread, and §8 (the mechanical drawing) is an image that
+neither `pdftotext` nor `pdfimages` could reach on this machine.
+
+**🔴 The headline: `YP65` is a 5-pin module, not the bare QFN12.** §4's pin table:
+
+| Pin | Name | Type | Function |
+|---|---|---|---|
+| 1 | *(name did not extract)* | | |
+| 2 | `GND` | — | |
+| 3 | `IO4` / `IO6` | DIO | BLE-TX / BLE-RX |
+| 4 | `IO5/ICE` | DIO | Wakeup IO; selects **AT vs DATA** mode |
+| 5 | `VIN` | PWR | 1.8–4.3 V |
+
+That is a precise match for the schematic's three annotations — the 2-wire UART, the net labelled
+"AT Command Mode", and the "BLE Module Wake-up MCU" interrupt (§2). **But the schematic draws a bare
+`YC1012` QFN12, and this document describes a module.** Both cannot be literally true of the same
+board. This is now the live form of the remaining OQ-13 question and it is **not resolved here** —
+it decides what to physically look for on a board (a 5-pin castellated module with its own antenna
+is far more findable than a 2 × 2 mm QFN, see §5.1) and whether §4.1's chip-level facts apply
+directly or through a module wrapper.
+
+**Electrical and RF** (§5–§7): `VIN` 1.8–4.3 V, `VIN/HVIN` to 5.5 V, ambient −15…+85 °C. Current:
+sleep **1.5 µA**; sniff @110 ms interval **135 µA**; discoverable **356 µA** @100 ms ADV interval,
+**40 µA** @1000 ms. TX **+5 dBm**, RX sensitivity **−97 dBm** @1 Mbps. Note these differ from the
+YC8612 datasheet's +8 dBm / −96.5 dBm (§4.1) — consistent with module-versus-bare-silicon, and
+another small pointer at the discrepancy above.
+
+**Boot timing** (§10): after `VIN`, the module boots ~**50 ms** then loads a UART patch ~**100 ms**;
+the host MCU must not talk to it before that completes. Worth knowing at bring-up before concluding
+a module is dead.
+
+**UART framing** (§12.1.3, §12.2.2): host→module is `handle_lo handle_hi` + payload, little-endian —
+`2a 00 01 01 02 03` writes payload `01 01 02 03` to handle `0x002a` (= `0xFFF1`). Events return the
+same shape. **The consequence worth stating plainly: the handle prefix is UART-side only.** HQD's
+`02 02 A1 78 D9 01` lock frame (§3.2) therefore appears on the BLE side **unchanged** — what a
+sniffer or `nRF Connect` sees is the manufacturer's bytes exactly as supplied, with no module
+wrapper around them. Also confirmed here: **MTU 185**.
+
+**AT command surface.** Commands: `AT`, `AT+RX`, `AT+RESET`, `AT+STATE`, `AT+VERSION`, `AT+NAME=`
+(≤29 bytes; the name is carried in the **scan response**), `AT+ADDR=`, `AT+TXPWR=`
+(`0`→+5 dBm, `1`→0, `2`→−5, `3`→−10 dBm), `AT+BAUD=`, `AT+ADVDA=`, `AT+ADVINT=` (32–16000 ×
+0.625 ms; default 320 = 200 ms), `AT+ADVEN=0|1`, `AT+RTCEN=0|1`, `AT+RTCDA=`, `AT+SLEEP=0|1|2`,
+`AT+HIDEN=0|1`. Events: `AT+CONNECT`, `AT+DISCONN`, `AT+POWERDWN`, `AT+IAMREADY`.
+
+Three of those change something we are actively tracking:
+
+1. **`AT+ADVEN=0` disables advertising outright.** So a board that never advertises is not
+   necessarily broken or unpowered — HQD's firmware may hold the radio silent by design until some
+   trigger. This is a **third** explanation for the bench silence, independent of wrong-board and
+   no-battery; recorded in `bring-up-checklist-2026-08-10.md` §3.0b.
+2. **Default advertising data is `02 01 06` — Flags only, no service UUID** — and the name lives in
+   the scan response. **The scanner cannot filter on `0xFFF0`**; it must match on the name prefix
+   `YP65-AT`. This settles the open worry in the bring-up checklist's §3.1 note and is the input
+   `scanner.ts` needs.
+3. **`AT+ADDR=334455667788` sets the Bluetooth MAC** — see §6.4, where this matters a great deal
+   more than it does here.
+
+**And a real-time clock.** `AT+RTCEN=0|1` enables it; `AT+RTCDA=6955F140` sets it, annotated in the
+document itself as `1,767,240,000` = `2026-01-01 12:00:00` — a standard Unix epoch (arithmetic
+checked: `0x6955F140` is exactly 1,767,240,000). Also see §6.4.
+
 ### 3.3 The platform problem
 
 The SDK is **Android-only**, and it connects by **MAC address** (`connectDevice(mac: String)`).
@@ -143,6 +301,16 @@ a **physical** device"). This is a scope problem, not a porting inconvenience.
 ### 4.1 YC1012_JD — read properly, 2026-08-09
 
 `YC1012_JD_Datasheet_V1.0.pdf`, 13 pages, Yichip Microelectronics. Page numbers are the PDF's own.
+
+**Day 12 — same chip, new name, confirmed by its own datasheet.** The manufacturer stated the
+Bluetooth stack runs on this part, now marketed as **YC8612**; `YC8612_Datasheet_V1.0.pdf` (received
+the same day, in
+[`manufacturer-supplied-2026-08-12/`](manufacturer-supplied-2026-08-12/)) confirms it byte-for-byte
+against the YC1012 datasheet above — identical `QFN2*2_12L` package, 8 KB OTP, AES-128 HW, HCI-H5
+UART, 24 MHz core. Same silicon, different silkscreen marking, with future board revisions switching
+to the YC8612 label. This also answers §4.2's open question below in favour of the AT-command
+reading, now doubly confirmed by the module profile in §3.2.1 — the module owns the full BLE stack;
+the PY32 is a UART client, not a host running its own Bluetooth stack.
 
 | Fact | Page | Why it matters |
 |---|---|---|
@@ -235,6 +403,35 @@ A caution on the evidence: an earlier pass read the silkscreen as `AC-H1388` fro
 crop and built a different conclusion on it. The reading above comes from a sharper photograph and
 is corroborated by the firmware filename, but it is still text read off a photograph.
 
+#### Day 13 — the physical board, photographed
+
+The board actually in our hands was photographed on 2026-08-12, both sides. What it shows:
+
+| Observation | Reading |
+|---|---|
+| Silkscreen `AC-H158-V1.01`, `20260702` | Matches the PW200 guide's board exactly — row 3 of the table above |
+| Pads labelled `B−` `/B−` `T` `B+`, plus a separate `5V` / `GND` header and a USB-C connector | Battery positive/negative, pack **thermistor**, and a 5 V input rail — the standard labelling of a **charge-and-protection board** |
+| Microphone is a **can type on flying red/blue leads** | The schematic's `S087A` MEMS mic is an **on-board** part (§2) |
+| **No crystal** on either side | The BLE SoC needs one on pins 5/6; BLE timing tolerance rules out the internal RC (§4.1) |
+| **No trace antenna** — no edge meander, no ground keep-out | The SoC has no internal antenna (§4.1, pin 7), so the host PCB must carry one |
+
+**Reading: this is a separate charge/protection + microphone board, not the Bluetooth board.** That
+supports the **two-board** interpretation of the three names above, over "one product, three internal
+codes."
+
+**Two things make that more than a guess.** The schematic's title block reads **"Sheet 1 of 2"** and
+only sheet 1 was supplied (§5). And requirements **item 6 — sheet 2, plus this very `H040`/`H158`
+question — is the single item the manufacturer did not answer at all** (§7 row 5). A product built
+on two boards, with the charge board separately numbered, explains the missing sheet and the name
+mismatch with one fact.
+
+**Held as a hypothesis, not a conclusion**, for two reasons. These are hand-held photographs, not
+macro: a 2 × 2 mm QFN12 could still hide in them, and the absent crystal and antenna are doing most
+of the work. And §3.2.2's finding that `YP65` is documented as a **5-pin module** cuts the other way
+on what to look for — a castellated module with its own antenna would be conspicuous, and its
+absence here is easier to be confident about than the absence of a bare SoC. Confirming needs either
+a macro shot of the IC cluster, or the second board.
+
 ---
 
 ## 6. What this costs us, and the way through
@@ -292,22 +489,87 @@ so 65,535 ms (~65 s) is the arithmetic ceiling and ten minutes (600,000 ms) cann
 without a protocol change. This is **OQ-9**. Recommendation: implement inside the spec range, measure on real hardware, and do not
 commit to 5–10 minutes without written risk acceptance from the client.
 
+### 6.4 🔴 Day 12 — two answers that need escalation, not just closing the OQ
+
+The manufacturer answered both of the above directly. Neither answer is a number to plug in — each
+one contradicts a premise the security design depends on.
+
+**Auto-lock (OQ-9): there is no firmware timer.** Their words: *"There is currently no auto-lock
+function in the firmware. Once a phone connects, the connection stays active unless the phone
+actively disconnects Bluetooth or moves out of range. If disconnected, Bluetooth will remain in an
+unconnected state; if no reconnection occurs within 10 minutes, it will shut down and enter sleep
+mode."* This is **connection state**, not a countdown. `TECHNICAL_SPEC.md`'s glossary defines the
+"dead-man timer" as *"the firmware countdown that locks the device after BLE disconnect, without
+the app's involvement"* — CLAUDE.md's authority model rests on that countdown existing. What exists
+instead is: the link drops on range loss (which *is* firmware-side and app-independent, so the
+core safety property — the app dying doesn't keep the device unlocked forever — plausibly still
+holds), but there is no timer to *configure*, so §4.6's `SET_AUTOLOCK_GRACE` has nothing in firmware
+to command. Whether "locks on disconnect, full stop" is an acceptable design on its own, or firmware
+needs a real timer added, is a decision for whoever owns the product/security architecture — not
+something to infer here.
+
+**Per-device key (OQ-4): none is written.** Their words, replying to who provisions a key and how
+it reaches us: *"As previously discussed with the Nepa team during their visit to China regarding
+the product definition, a unique MAC address is not required. This means that writing a key to each
+device is not involved."* Read plainly: **no per-device secret is written at manufacture at all.**
+§4.5's entire trust chain — `K_dev` in OTP → HKDF → `K_sess` → AES-128-CMAC proof — assumes exactly
+this secret exists. If it doesn't, there is nothing for `device_keys` to hold and no cryptographic
+device authentication as specified; only the Bluetooth MAC (§7 question 9b's answer) distinguishes
+one unit from another, and that value is openly broadcast to anyone scanning, not secret.
+
+#### Day 13 — two facts from the module spec that change both asks
+
+Found on the second pass through `YP65-AT-BLE-module-spec-v1.3-release.pdf` (§3.2.2). Neither
+overturns the analysis above; both make the escalation stronger and more specific.
+
+**1. The MAC address is writable in software — so it is not an identity anchor.** `AT+ADDR=?` reads
+it, and **`AT+ADDR=334455667788` sets it** to `33:44:55:66:77:88`, returning `OK`. The manufacturer's
+answer 9b offers the Bluetooth MAC as the per-unit unique identifier *in place of* a provisioned key
+(9a). It was already noted above that the MAC is **broadcast, not secret**; it is now also
+**mutable by anything with UART access to the module**, per the module vendor's own documentation.
+Two units can be given the same address; one unit can be given another's. That does not merely
+weaken 9b as a substitute for `K_dev` — it means the substitute on offer cannot carry per-device
+identity at all. Bears directly on **OQ-12**, where `serial_hash = SHA-256(deviceUid ‖ server_salt)`
+would take the MAC as `deviceUid`.
+
+**2. A real-time clock exists — so a timed auto-lock is a firmware gap, not a hardware limit.**
+`AT+RTCEN=0|1` and `AT+RTCDA=` with a Unix epoch (§3.2.2). The manufacturer's answer to OQ-9 was
+that no auto-lock function exists *in the firmware*; it did not say the hardware couldn't support
+one, and it can. This converts "please add a timer" from a request that might be refused on
+feasibility grounds into a scoping decision.
+
+**Keep the caveat attached to that second point wherever it is repeated.** The RTC sits on the
+**radio module**. The part that must actually inhibit the heater is the **PY32** (§2). A clock on the
+radio establishes that a timed lock is *implementable*; it does not implement it, and it does not by
+itself satisfy CLAUDE.md's dead-man-timer authority model — that still requires firmware behaviour on
+the application MCU. Do not let this finding be read as "the timer already exists."
+
+**Both original items are escalated in
+[`../client-messages/architecture-escalation-2026-08-12.md`](../client-messages/architecture-escalation-2026-08-12.md),
+drafted 2026-08-12, not yet sent.** Do not implement §4.5's key derivation or §4.6's
+`SET_AUTOLOCK_GRACE` against real hardware before that lands an answer — building against a trust
+chain that may not have a hardware anchor is exactly the kind of week of rework OQ-13's note in
+`TECHNICAL_SPEC.md` §13 already warned about for the transport layer.
+
 ---
 
 ## 7. Outstanding asks to the client
 
-Drafted as a message in [`client-questions-2026-08-09.md`](client-questions-2026-08-09.md).
-**Not yet sent.**
+This section's questions were superseded 2026-08-10 by
+[`manufacturer-requirements-2026-08-10.md`](manufacturer-requirements-2026-08-10.md) as the outgoing
+text (see that file's own history), and answered 2026-08-12 — see
+[`manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md`](manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md).
+Status below reflects the Day 12 reply, kept here since this table is what people read first.
 
-| # | Ask | Why it matters |
-|---|---|---|
-| 1 | 🔴 **Who programmed the YC1012, and its BLE profile / AT-command manual** | Contains the service UUID and the serial-over-BLE profile. **The single blocker on `BLE_SERVICE_UUID`.** Includes **1h** — whether the YC1012 runs its own stack or is an HCI controller (§4.2), which decides *which chip's* firmware we need. |
-| 2 | The actual **`itronlib`** library files | Referenced throughout the protocol doc; absent from the archive. |
-| 3 | **iOS equivalent, or written confirmation none exists** | We are contracted for both platforms (§3.3). |
-| 4 | **Correct MCU datasheet** — PY32C642F, not PY32F030 | §5. |
-| 5 | **Schematic identity and completeness** — sheet 2 of `H040-BT-SCH`, and `H040` vs `H158` | §5 and §5.1. |
-| 6 | **Which command locks/unlocks?** Is it `0x02`? | The overview promises it; nothing documents it (§3.2). |
-| 7 | **Confirm auto-lock behaviour and duration** | §6.3 — the 5 s vs 5–10 min conflict. |
+| # | Ask | Why it matters | Status (2026-08-12) |
+|---|---|---|---|
+| 1 | 🔴 **Who programmed the YC1012, and its BLE profile / AT-command manual** | Contains the service UUID and the serial-over-BLE profile. **The single blocker on `BLE_SERVICE_UUID`.** Includes **1h** — whether the YC1012 runs its own stack or is an HCI controller (§4.2), which decides *which chip's* firmware we need. | ✅ **Mostly answered.** The real profile PDF arrived Day 12 (§3.2.1): service `0xFFF0`, characteristics `0xFFF1`–`0xFFF5`, MTU, disconnect events, stack ownership all confirmed. **Still open:** which of the five characteristics HQD's firmware uses, PIN-pairing disable (1d), and who wrote HQD's own firmware layered on the module (distinct from who wrote the module's firmware, which is now known — YIPRINCIPLE/YiChip). |
+| 2 | The actual **`itronlib`** library files | Referenced throughout the protocol doc; absent from the archive. | ⏳ Promised for Friday, 2026-08-14. |
+| 3 | **iOS equivalent, or written confirmation none exists** | We are contracted for both platforms (§3.3). | 🔴 Still open — circular answer ("once Android SDK confirmed"). |
+| 4 | **Correct MCU datasheet** — PY32C642F, not PY32F030 | §5. | 🟡 Confirmed correct part will be used; updated datasheet referenced but not yet copied into the repo. |
+| 5 | **Schematic identity and completeness** — sheet 2 of `H040-BT-SCH`, and `H040` vs `H158` | §5 and §5.1. | 🔴 **Not answered at all** — dropped from the reply, needs a direct follow-up. **Day 13: now the most consequential unanswered item.** The board we physically hold photographs as a charge/mic board, not the BLE board (§5.1), which makes "two boards, sheet 2 is the other one" the leading reading — and means the follow-up should ask for sheet 2 **and** for the BLE board itself, not just a naming clarification. |
+| 6 | **Which command locks/unlocks?** Is it `0x02`? | The overview promises it; nothing documents it (§3.2). | ✅ Answered — three frames supplied (§3.2), container confirmed (§3.2.1: one of `0xFFF1`–`0xFFF5`), exact characteristic still unconfirmed. |
+| 7 | **Confirm auto-lock behaviour and duration** | §6.3 — the 5 s vs 5–10 min conflict. | ✅ Answered, but the answer is "no timer exists" — escalated, §6.4. |
 
 ---
 
@@ -318,17 +580,23 @@ two tasks "have not started" and left it there. That overstated the block and, l
 stalled a subsequent execution attempt that read it and stopped without writing any code. Corrected
 here — this revision is authoritative over the paragraphs it replaces.
 
-**What is blocked:** exactly one constant and the transport half of the connection handshake.
+**Revised again 2026-08-12 (Day 13).** `BLE_SERVICE_UUID` is no longer unknown — §3.2.1 above has the
+real value from the manufacturer's profile PDF. What remains blocked has narrowed accordingly.
 
-- `BLE_SERVICE_UUID` in `protocol.ts` (OQ-13) — invented at spec-writing time (commit `0bb8e80`,
-  2026-08-05), unconfirmed against this hardware, and per §2 above probably describes a GATT layout
-  the YC1012 doesn't present at all. **Inventing a replacement value fails silently**: the
-  scanner finds nothing, and "no devices found" is indistinguishable from "device is off", "out of
-  range", or "not advertising" — the same failure mode as OQ-12's guessed salt, and the same reason
-  the answer is to ask the client (§7), not to guess.
-- The **wire-level half** of §4.5's auth handshake — actually writing/reading characteristics C1–C6
-  against real hardware — inherits the same block, since it depends on the same UUID and on a GATT
-  profile this document's §6.2 middle path says may not exist in that shape at all.
+- `BLE_SERVICE_UUID` in `protocol.ts` (OQ-13) — the value currently in `protocol.ts` was invented at
+  spec-writing time (commit `0bb8e80`, 2026-08-05) and is now **known to be wrong**: the real service
+  is `0xFFF0` (16-bit), not a 128-bit `42530001-…` UUID, per §3.2.1. **Promoting the real value into
+  `protocol.ts` is deliberately out of scope for this doc-update pass** (see the manufacturer-supplied
+  MANIFEST §4) — it should land as its own reviewed commit, not bundled with documentation, and it
+  should also decide which of `0xFFF1`–`0xFFF5` carries HQD's traffic first, since scanning on the
+  right service UUID alone doesn't get you to a working connection if the write goes to the wrong
+  characteristic.
+- The **wire-level half** of §4.5's auth handshake — actually writing/reading against real hardware —
+  is **partially unblocked**: the transport container (`0xFFF0`/`0xFFF1`–`5`, notify + write-no-
+  response, 185 B MTU) is now known, so C1–C6 can be redesigned as payload bytes inside it per §6.2's
+  middle path. **Still blocked:** which specific characteristic HQD's firmware uses, and the exact
+  framing (the lock/unlock/read-status bytes in §3.2 are a manufacturer-supplied data point, not yet
+  independently confirmed or reconciled with this transport).
 
 **What is not blocked**, and was built against `tools/mock-peripheral` in this pass, because none of
 it depends on the value of that one constant or on which transport eventually carries §4.5's bytes:
@@ -343,6 +611,12 @@ it depends on the value of that one constant or on which transport eventually ca
   it does not care whether that function's bytes eventually travel over GATT characteristics or over
   HQD's serial pipe (§6.2) — that decision is still open, tracked separately, and does not gate
   anything built this pass.
+
+**Day 12 addition.** The discoverability trigger is now known (re-solder the battery, or a single
+button press; default name `YP65-AT` + MAC suffix; 10-minute idle sleep; USB power does not
+suppress advertising) — useful for the bench and for `scanner.ts`'s user-facing copy, but it doesn't
+change what's blocked above: the scan still filters on `BLE_SERVICE_UUID`, which is still pending
+the profile PDF.
 
 So: the constant and the wire-transport work stay blocked on the client's answer to §7 question 1.
 Everything else in `P1-3.0`/`P1-7.0` does not, and is why this document no longer says "not started."
@@ -383,3 +657,38 @@ programmer. That is two clicks away from "let's just plug it in and see what the
 is exactly the instinct to head off: **do not connect the PW200 to a device or press that button out
 of curiosity.** If firmware flashing is ever actually needed for this project, treat it as a
 deliberate, client-coordinated action, not an exploratory one.
+
+---
+
+## 10. Bench power — the three wires, confirmed (Day 12)
+
+**Closes the "battery retry" item** carried in prior session notes: the board's three unidentified
+wires (§10 in `manufacturer-requirements-2026-08-10.md` item 10) leave a component the schematic
+sheet we have doesn't label. The manufacturer confirmed:
+
+| Wire | Function (per the manufacturer's reply) |
+|---|---|
+| Red | Battery positive |
+| Black | Battery negative **and** output negative (shared return) |
+| Blue | Output positive |
+
+Whether a second board was sent alongside this answer (also asked in item 10) was not addressed —
+check physically before assuming one arrived.
+
+### 10.1 🔴 Correction, Day 13 — the blue wire is `T`, not "output positive"
+
+**The board's own silkscreen contradicts the third row above.** Photographed 2026-08-12 (§5.1): the
+three pads the wires land on are labelled **`B+`**, **`B−`** and **`T`** — red to `B+`, black to
+`B−`, **blue to `T`**. `T` is the conventional designator for a battery-pack **thermistor**, which is
+a sense input, not a power output.
+
+**Use the silkscreen, not the reply.** Concretely, for bench power:
+
+- Red → `B+`, black → `B−`. That pair is confirmed by both sources and is all that is needed.
+- **Leave blue / `T` unconnected.** Driving a thermistor sense pin from a supply rail is not what it
+  is for, and the manufacturer's description gives no reason to think otherwise once the silkscreen
+  is legible.
+
+The wider lesson for anything else in that reply: **item 10's wire-colour text is demonstrably loose
+about this board.** It was a prose answer about wire colours, not a document — treat the rest of it
+as indicative rather than authoritative, and prefer the board or the schematic wherever they speak.
