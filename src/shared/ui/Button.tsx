@@ -3,16 +3,22 @@ import { Text, type TextProps } from './Text';
 import { tokens } from './tokens';
 
 type Variant = 'primary' | 'secondary' | 'destructive' | 'onBrand' | 'textLink';
-type Shape = 'default' | 'pill';
+type Shape = 'default' | 'pill' | 'block';
 
 export interface ButtonProps extends Omit<PressableProps, 'style' | 'children'> {
   label: string;
   loading?: boolean;
   variant?: Variant;
   /**
-   * `'pill'` — full-width, for use on `BrandGround` (`onBrand`/`textLink` variants). `'default'`
+   * `'pill'` — full-width and fully rounded, for use on `BrandGround` (`onBrand`/`textLink`
+   * variants). `'block'` — full-width with the sheet's own corner radius, which is what the
+   * reference auth design uses: its buttons are rounded rectangles, not capsules. `'default'`
    * (unchanged) leaves width to the caller's layout, as every existing call site already relies
    * on.
+   *
+   * Added rather than changing `base`'s radius: `radii.full` is what every button already
+   * shipped on this branch renders as, and quietly squaring them off would restyle the
+   * onboarding carousel and every device screen as a side effect of an auth change.
    */
   shape?: Shape;
 }
@@ -68,6 +74,7 @@ export function Button({
       style={({ pressed }) => [
         styles.base,
         shape === 'pill' && styles.pill,
+        shape === 'block' && styles.block,
         variantStyles[variant],
         isDisabled && styles.disabled,
         pressed && !isDisabled && pressedStyles[variant],
@@ -99,6 +106,13 @@ const styles = StyleSheet.create({
   },
   pill: {
     width: '100%',
+  },
+  block: {
+    width: '100%',
+    borderRadius: tokens.radii.lg,
+    // The reference's buttons are taller than a minimum hit target — they read as the sheet's
+    // main mass, not as controls squeezed to the smallest legal size.
+    paddingVertical: tokens.spacing.md,
   },
 });
 

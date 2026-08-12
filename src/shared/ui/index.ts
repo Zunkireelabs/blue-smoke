@@ -37,6 +37,8 @@ export { BackButton } from './BackButton';
 export type { BackButtonProps } from './BackButton';
 export { ScreenScaffold, useScaffoldContentWidth } from './ScreenScaffold';
 export type { ScreenScaffoldProps } from './ScreenScaffold';
+export { AuthScaffold } from './AuthScaffold';
+export type { AuthScaffoldProps } from './AuthScaffold';
 export { FlameIllustration } from './illustrations/FlameIllustration';
 export type { FlameIllustrationProps } from './illustrations/FlameIllustration';
 export { ProximityIllustration } from './illustrations/ProximityIllustration';

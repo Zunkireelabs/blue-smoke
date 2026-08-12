@@ -6,7 +6,7 @@ import {
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BootSplashScreen } from '@/app/BootSplashScreen';
-import { AuthMethodChoiceScreen } from '@/features/auth/AuthMethodChoiceScreen';
+import type { AuthMode } from '@/features/auth/authMode';
 import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
 import { EmailCodeEntryScreen } from '@/features/auth/EmailCodeEntryScreen';
 import { PhoneInputScreen } from '@/features/auth/PhoneInputScreen';
@@ -42,10 +42,24 @@ export type RootStackParamList = {
   // Pre-auth, first launch only (P1-2.0)
   Onboarding: undefined;
   // Unauthenticated
+  /**
+   * ⚠️ Registered nowhere. AU-1 was retired when the reference auth design landed: the channel
+   * choice now lives *on* the phone screen, as its "or continue with → Email" button, so a
+   * separate chooser has nothing left to do. `AuthMethodChoiceScreen.tsx` is kept on disk
+   * (Sadin, 2026-08-12) but is unreachable — this entry exists only so that orphaned file and
+   * its test still typecheck. A `navigate('AuthChoice')` compiles and then fails at runtime;
+   * there is no screen to land on.
+   */
   AuthChoice: undefined;
-  EmailCodeRequest: undefined;
+  /**
+   * `mode` selects copy only — headline and legal line. Both modes run the identical 6-digit
+   * code path, because there is no separate signup vs login in this backend (P1-1.0 retired
+   * AU-2/3/4). Defaults to signup: that is where a user arrives from onboarding.
+   */
+  EmailCodeRequest: { mode?: AuthMode } | undefined;
   EmailCodeEntry: { email: string };
-  PhoneInput: undefined;
+  /** See `EmailCodeRequest` — `mode` is copy-only here too. */
+  PhoneInput: { mode?: AuthMode } | undefined;
   OtpVerify: { phone: string };
   PasswordSignIn: undefined;
   // Authenticated, pre-verification
@@ -219,15 +233,23 @@ export function RootNavigator() {
           <Stack.Screen name="Onboarding" component={OnboardingCarouselScreen} />
         </Stack.Navigator>
       ) : stack === 'auth' ? (
-        <Stack.Navigator initialRouteName="AuthChoice">
+        // Phone entry is the front door now — AU-1's chooser was retired with the reference
+        // design (see `AuthChoice` in RootStackParamList). Only the restyled screens set
+        // `headerShown: false`; the rest still rely on the native header for their back button
+        // until they are restyled in turn.
+        <Stack.Navigator initialRouteName="PhoneInput">
+          {/* Listed first as well as named in `initialRouteName`. React Navigation falls back to
+              the first registered screen whenever the named initial route doesn't take, and this
+              screen being the front door is not something to leave resting on one mechanism —
+              getting it wrong drops the user onto the email form with no back button and no way
+              to reach the phone path at all. */}
           <Stack.Screen
-            name="AuthChoice"
-            component={AuthMethodChoiceScreen}
-            options={{ title: 'Welcome' }}
+            name="PhoneInput"
+            component={PhoneInputScreen}
+            options={{ headerShown: false }}
           />
           <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} options={{ title: 'Continue with email' }} />
           <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
-          <Stack.Screen name="PhoneInput" component={PhoneInputScreen} options={{ title: 'Your number' }} />
           <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
           <Stack.Screen name="PasswordSignIn" component={PasswordSignInScreen} options={{ title: 'Sign in with password' }} />
         </Stack.Navigator>
