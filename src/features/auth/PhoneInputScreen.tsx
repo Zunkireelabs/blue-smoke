@@ -98,7 +98,7 @@ export function PhoneInputScreen() {
         return;
       }
 
-      navigation.navigate('OtpVerify', { phone: e164.data });
+      navigation.navigate('OtpVerify', { phone: e164.data, mode });
     } catch {
       // supabaseAuthClient's contract is that no method throws — this is
       // defence in depth, so the screen can never strand itself even if

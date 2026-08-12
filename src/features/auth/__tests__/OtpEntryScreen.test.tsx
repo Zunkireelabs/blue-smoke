@@ -1,6 +1,11 @@
 /**
- * P1-1.0 §3.3 — proves the OTP screen auto-submits on the 6th digit, mirrors
- * Method A's generic error handling, and gates + drives the resend cooldown.
+ * P1-1.0 §3.3 — proves the OTP screen submits via Verify, mirrors Method A's generic error
+ * handling, and gates + drives the resend cooldown.
+ *
+ * These tests asserted auto-submit-on-the-sixth-digit until 2026-08-12, when the reference auth
+ * design replaced it with an explicit Verify button (Sadin's call). They are rewritten to the new
+ * intended behaviour rather than deleted, and `does not submit on the sixth digit alone` below
+ * pins the removal so auto-submit cannot creep back in beside the button and fire twice.
  */
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
@@ -38,28 +43,68 @@ describe('OtpEntryScreen', () => {
     jest.useRealTimers();
   });
 
+  /** Type the code, then press Verify — the only submit path this screen has. */
+  async function enterAndVerify(renderer: ReactTestRenderer.ReactTestRenderer, digits: string) {
+    await act(async () => {
+      await findInput(renderer, 'Verification code').props.onChangeText(digits);
+    });
+    await act(async () => {
+      await findByLabel(renderer, 'Verify').props.onPress();
+    });
+  }
+
   it('shows the incorrect-code error and clears the input on a wrong code', async () => {
     const client = createMockAuthClient();
     await client.requestPhoneOtp(PHONE); // seed: OTP "sent" before this screen exists
     const renderer = renderOtp(client);
 
-    await act(async () => {
-      await findInput(renderer, 'Verification code').props.onChangeText('000000');
-    });
+    await enterAndVerify(renderer, '000000');
 
     expect(renderedText(renderer)).toContain('Incorrect or expired code.');
   });
 
-  it('auto-submits and shows signedIn on the correct code', async () => {
+  it('shows signedIn on the correct code', async () => {
     const client = createMockAuthClient();
     await client.requestPhoneOtp(PHONE);
+    const renderer = renderOtp(client);
+
+    await enterAndVerify(renderer, MOCK_OTP_CODE);
+
+    expect(renderedText(renderer)).toContain('Signed in');
+  });
+
+  it('does not submit on the sixth digit alone', async () => {
+    const client = createMockAuthClient();
+    await client.requestPhoneOtp(PHONE);
+    const spy = jest.spyOn(client, 'verifyPhoneOtp');
     const renderer = renderOtp(client);
 
     await act(async () => {
       await findInput(renderer, 'Verification code').props.onChangeText(MOCK_OTP_CODE);
     });
 
-    expect(renderedText(renderer)).toContain('Signed in');
+    // Auto-submit was removed with the restyle. If it comes back, the correct code would sign
+    // the user in here — and Verify would then be a second, duplicate request.
+    expect(spy).not.toHaveBeenCalled();
+    expect(renderedText(renderer)).not.toContain('Signed in');
+  });
+
+  it('keeps Verify disabled until all six digits are entered', async () => {
+    const client = createMockAuthClient();
+    await client.requestPhoneOtp(PHONE);
+    const renderer = renderOtp(client);
+
+    expect(findByLabel(renderer, 'Verify').props.disabled).toBe(true);
+
+    await act(async () => {
+      await findInput(renderer, 'Verification code').props.onChangeText('12345');
+    });
+    expect(findByLabel(renderer, 'Verify').props.disabled).toBe(true);
+
+    await act(async () => {
+      await findInput(renderer, 'Verification code').props.onChangeText('123456');
+    });
+    expect(findByLabel(renderer, 'Verify').props.disabled).toBe(false);
   });
 
   it('disables resend during the cooldown, then allows it and re-requests an OTP', async () => {
@@ -97,9 +142,7 @@ describe('OtpEntryScreen', () => {
     jest.spyOn(client, 'verifyPhoneOtp').mockRejectedValue(new Error('SUPABASE_URL is not set'));
     const renderer = renderOtp(client);
 
-    await act(async () => {
-      await findInput(renderer, 'Verification code').props.onChangeText(MOCK_OTP_CODE);
-    });
+    await enterAndVerify(renderer, MOCK_OTP_CODE);
 
     expect(renderedText(renderer)).toContain('Something went wrong. Please try again.');
     // The bug this guards against: a rejected await skips the status reset,

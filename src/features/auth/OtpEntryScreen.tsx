@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { useRoute, type RouteProp } from '@react-navigation/native';
-import { Screen, Text, tokens, useCountdown } from '@/shared/ui';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AuthScaffold, BackButton, Button, Screen, Text, tokens, useCountdown } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
+import { DEFAULT_AUTH_MODE } from './authMode';
 
 /**
  * P1-1.0 Method B, step 2 (spec §1.2.1) — segmented 6-digit OTP entry with
@@ -11,18 +13,23 @@ import { useAuthClient } from './AuthClientContext';
  * rendered verbatim, no branching on cause — the same non-enumeration
  * discipline every P1-1.0 auth form follows (see `EmailCodeEntryScreen`).
  *
+ * Restyled 2026-08-12 to the reference auth design. One behaviour changed with it, on purpose
+ * (Sadin's call, having been told it was a behaviour change and not paint): the screen no longer
+ * submits by itself the instant a sixth digit lands. The reference has an explicit Verify
+ * button, and two submit paths for one action would mean the button either fires a second
+ * request or is dead by the time it becomes tappable. Verify is now the only way to submit.
+ *
  * `RESEND_COOLDOWN_SECONDS` is not specified anywhere in the spec (Twilio
  * Verify's own resend policy isn't configured yet — that's P0-3.0). 30s is
  * a placeholder, flagged rather than silently chosen, same pattern as
  * `schemas.ts`'s password-length floor and `PhoneInputScreen`'s default
- * country.
+ * country. The reference's "Waiting for Code - 0:18 Min" is a restyle of this
+ * countdown, not a change to its duration.
  *
  * The 6 visible boxes are a display layer only; a single off-screen
  * `TextInput` captures real input (the standard RN pattern for segmented
  * OTP entry without a dedicated library — another package.json addition
- * this task doesn't need). Can't be verified on a device from this machine
- * (brief §2); the boxes are a straightforward text render, so the risk is
- * low, but it's an honest gap, not a tested one.
+ * this task doesn't need).
  */
 
 const CODE_LENGTH = 6;
@@ -30,14 +37,24 @@ const RESEND_COOLDOWN_SECONDS = 30;
 
 type Status = 'idle' | 'submitting' | 'signedIn';
 
+/** `95` → `1:35`. The reference renders its countdown as minutes and seconds, not raw seconds. */
+function formatCountdown(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 export function OtpEntryScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'OtpVerify'>>();
   const { phone } = params;
+  const mode = params.mode ?? DEFAULT_AUTH_MODE;
 
   const [code, setCode] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
   const { remaining: cooldown, restart: restartCooldown } = useCountdown(RESEND_COOLDOWN_SECONDS);
   const inputRef = useRef<TextInput>(null);
 
@@ -66,11 +83,7 @@ export function OtpEntryScreen() {
   }
 
   function handleChangeCode(text: string) {
-    const digits = text.replace(/\D/g, '').slice(0, CODE_LENGTH);
-    setCode(digits);
-    if (digits.length === CODE_LENGTH) {
-      verify(digits);
-    }
+    setCode(text.replace(/\D/g, '').slice(0, CODE_LENGTH));
   }
 
   async function handleResend() {
@@ -99,15 +112,21 @@ export function OtpEntryScreen() {
   }
 
   const isSubmitting = status === 'submitting';
+  const isComplete = code.length === CODE_LENGTH;
 
   return (
-    <Screen>
-      <Text variant="title" style={styles.centerText}>
-        Enter the code
-      </Text>
-      <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
-        We sent a 6-digit code to {phone}.
-      </Text>
+    <AuthScaffold>
+      <View style={styles.headingRow}>
+        <View style={styles.backSlot}>
+          <BackButton tone="plain" onPress={() => navigation.goBack()} disabled={isSubmitting} />
+        </View>
+        <View style={styles.headingText}>
+          <Text variant="body">Enter the {CODE_LENGTH}-digit code sent to</Text>
+          <Text variant="body" style={styles.destination}>
+            {phone}
+          </Text>
+        </View>
+      </View>
 
       <Pressable
         style={styles.segmentsRow}
@@ -116,7 +135,16 @@ export function OtpEntryScreen() {
         accessibilityLabel="Enter verification code"
       >
         {Array.from({ length: CODE_LENGTH }).map((_, i) => (
-          <View key={i} style={styles.segment}>
+          <View
+            key={i}
+            style={[
+              styles.segment,
+              // The reference outlines the box the next digit will land in. `code.length` is
+              // that index; once the code is complete there is no next box, so the highlight
+              // moves to the last one rather than off the end of the row.
+              focused && i === Math.min(code.length, CODE_LENGTH - 1) && styles.segmentActive,
+            ]}
+          >
             <Text variant="title" style={styles.centerText}>
               {code[i] ?? ''}
             </Text>
@@ -129,6 +157,8 @@ export function OtpEntryScreen() {
         style={styles.hiddenInput}
         value={code}
         onChangeText={handleChangeCode}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         keyboardType="number-pad"
         maxLength={CODE_LENGTH}
         editable={!isSubmitting}
@@ -137,24 +167,46 @@ export function OtpEntryScreen() {
       />
 
       {formError && (
-        <Text variant="caption" tone="danger" style={[styles.centerText, styles.formError]}>
+        <Text variant="caption" tone="danger" style={styles.formError}>
           {formError}
         </Text>
       )}
-      {isSubmitting && <ActivityIndicator style={styles.spinner} color={tokens.color.textPrimary} />}
+
+      <View style={styles.verify}>
+        <Button
+          label="Verify"
+          shape="block"
+          onPress={() => verify(code)}
+          // Disabled below six digits rather than hidden: a button that appears only when the
+          // form is already complete gives no hint that it is what submits.
+          disabled={!isComplete || isSubmitting}
+          loading={isSubmitting}
+        />
+      </View>
 
       <Pressable
         onPress={handleResend}
         disabled={cooldown > 0 || isSubmitting}
         accessibilityRole="button"
         accessibilityLabel={cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
-        style={styles.linkButton}
+        style={styles.resend}
       >
-        <Text variant="label" tone={cooldown > 0 ? 'secondary' : 'link'} style={styles.centerText}>
-          {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+        <Text variant="body" tone={cooldown > 0 ? 'secondary' : 'link'} style={styles.centerText}>
+          {cooldown > 0 ? `Waiting for code — ${formatCountdown(cooldown)}` : 'Resend code'}
         </Text>
       </Pressable>
-    </Screen>
+
+      <Text variant="body" tone="secondary" style={styles.divider}>
+        or continue with
+      </Text>
+
+      <Button
+        variant="onBrand"
+        shape="block"
+        label="Email"
+        onPress={() => navigation.navigate('EmailCodeRequest', { mode })}
+      />
+    </AuthScaffold>
   );
 }
 
@@ -162,23 +214,44 @@ const styles = StyleSheet.create({
   centerText: {
     textAlign: 'center',
   },
-  subtitle: {
-    marginTop: tokens.spacing.xs,
+  headingRow: {
+    justifyContent: 'center',
     marginBottom: tokens.spacing.xl,
+  },
+  backSlot: {
+    // Absolute so the heading centres on the screen, not on the space left over beside the back
+    // button — the reference's two heading lines sit dead centre with the arrow floating at the
+    // left margin.
+    position: 'absolute',
+    left: 0,
+    zIndex: 1,
+  },
+  headingText: {
+    alignItems: 'center',
+    paddingHorizontal: tokens.touchTarget.minWidth,
+  },
+  destination: {
+    fontWeight: tokens.typography.fontWeight.bold,
   },
   segmentsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     gap: tokens.spacing.sm,
   },
   segment: {
-    width: tokens.touchTarget.minWidth,
-    height: 52,
-    borderWidth: 1,
-    borderColor: tokens.color.border,
-    borderRadius: tokens.radii.md,
+    // `flex`, not the fixed 44pt the pre-restyle screen used: six fixed boxes at the reference's
+    // width overflow a phone screen, so they share the row instead. Height is fixed to keep
+    // them square-ish at any width.
+    flex: 1,
+    height: 56,
+    backgroundColor: tokens.color.surface,
+    borderRadius: tokens.radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  segmentActive: {
+    borderWidth: 1.5,
+    borderColor: tokens.color.brand,
   },
   hiddenInput: {
     position: 'absolute',
@@ -187,15 +260,20 @@ const styles = StyleSheet.create({
     width: 1,
   },
   formError: {
+    marginTop: tokens.spacing.sm,
+  },
+  verify: {
     marginTop: tokens.spacing.lg,
   },
-  spinner: {
+  resend: {
     marginTop: tokens.spacing.lg,
-  },
-  linkButton: {
-    marginTop: tokens.spacing.xl,
     alignItems: 'center',
     minHeight: tokens.touchTarget.minHeight,
     justifyContent: 'center',
+  },
+  divider: {
+    textAlign: 'center',
+    marginTop: tokens.spacing.xl,
+    marginBottom: tokens.spacing.md,
   },
 });

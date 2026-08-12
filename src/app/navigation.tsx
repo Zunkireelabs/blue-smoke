@@ -60,7 +60,9 @@ export type RootStackParamList = {
   EmailCodeEntry: { email: string };
   /** See `EmailCodeRequest` — `mode` is copy-only here too. */
   PhoneInput: { mode?: AuthMode } | undefined;
-  OtpVerify: { phone: string };
+  /** `mode` is carried through so the "or continue with → Email" escape keeps the copy the user
+   *  arrived in; see `EmailCodeRequest`. Copy only, same as everywhere else it appears. */
+  OtpVerify: { phone: string; mode?: AuthMode };
   PasswordSignIn: undefined;
   // Authenticated, pre-verification
   VerifyIntro: undefined;
@@ -250,7 +252,11 @@ export function RootNavigator() {
           />
           <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} options={{ title: 'Continue with email' }} />
           <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
-          <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
+          <Stack.Screen
+            name="OtpVerify"
+            component={OtpEntryScreen}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen name="PasswordSignIn" component={PasswordSignInScreen} options={{ title: 'Sign in with password' }} />
         </Stack.Navigator>
       ) : stack === 'home' ? (
