@@ -57,7 +57,8 @@ export type RootStackParamList = {
    * AU-2/3/4). Defaults to signup: that is where a user arrives from onboarding.
    */
   EmailCodeRequest: { mode?: AuthMode } | undefined;
-  EmailCodeEntry: { email: string };
+  /** See `OtpVerify` — `mode` rides along so the channel-switch escape keeps the arriving copy. */
+  EmailCodeEntry: { email: string; mode?: AuthMode };
   /** See `EmailCodeRequest` — `mode` is copy-only here too. */
   PhoneInput: { mode?: AuthMode } | undefined;
   /** `mode` is carried through so the "or continue with → Email" escape keeps the copy the user
@@ -255,7 +256,11 @@ export function RootNavigator() {
             component={EmailCodeRequestScreen}
             options={{ headerShown: false }}
           />
-          <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
+          <Stack.Screen
+            name="EmailCodeEntry"
+            component={EmailCodeEntryScreen}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen
             name="OtpVerify"
             component={OtpEntryScreen}

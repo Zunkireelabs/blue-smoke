@@ -55,7 +55,7 @@ export function EmailCodeRequestScreen() {
         return;
       }
 
-      navigation.navigate('EmailCodeEntry', { email: parsed.data.email });
+      navigation.navigate('EmailCodeEntry', { email: parsed.data.email, mode });
     } catch {
       // supabaseAuthClient's contract is that no method throws — this is
       // defence in depth, so the screen can never strand itself even if

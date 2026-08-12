@@ -2,10 +2,20 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AuthScaffold, BackButton, Button, Screen, Text, tokens, useCountdown } from '@/shared/ui';
+import {
+  AuthScaffold,
+  BackButton,
+  Button,
+  CodeSegments,
+  Screen,
+  Text,
+  tokens,
+  useCountdown,
+} from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { DEFAULT_AUTH_MODE } from './authMode';
+import { formatCountdown } from './formatCountdown';
 
 /**
  * P1-1.0 Method B, step 2 (spec §1.2.1) — segmented 6-digit OTP entry with
@@ -36,13 +46,6 @@ const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 30;
 
 type Status = 'idle' | 'submitting' | 'signedIn';
-
-/** `95` → `1:35`. The reference renders its countdown as minutes and seconds, not raw seconds. */
-function formatCountdown(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
 
 export function OtpEntryScreen() {
   const authClient = useAuthClient();
@@ -128,29 +131,12 @@ export function OtpEntryScreen() {
         </View>
       </View>
 
-      <Pressable
-        style={styles.segmentsRow}
+      <CodeSegments
+        length={CODE_LENGTH}
+        code={code}
+        focused={focused}
         onPress={() => inputRef.current?.focus()}
-        accessibilityRole="button"
-        accessibilityLabel="Enter verification code"
-      >
-        {Array.from({ length: CODE_LENGTH }).map((_, i) => (
-          <View
-            key={i}
-            style={[
-              styles.segment,
-              // The reference outlines the box the next digit will land in. `code.length` is
-              // that index; once the code is complete there is no next box, so the highlight
-              // moves to the last one rather than off the end of the row.
-              focused && i === Math.min(code.length, CODE_LENGTH - 1) && styles.segmentActive,
-            ]}
-          >
-            <Text variant="title" style={styles.centerText}>
-              {code[i] ?? ''}
-            </Text>
-          </View>
-        ))}
-      </Pressable>
+      />
 
       <TextInput
         ref={inputRef}
@@ -232,26 +218,6 @@ const styles = StyleSheet.create({
   },
   destination: {
     fontWeight: tokens.typography.fontWeight.bold,
-  },
-  segmentsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: tokens.spacing.sm,
-  },
-  segment: {
-    // `flex`, not the fixed 44pt the pre-restyle screen used: six fixed boxes at the reference's
-    // width overflow a phone screen, so they share the row instead. Height is fixed to keep
-    // them square-ish at any width.
-    flex: 1,
-    height: 56,
-    backgroundColor: tokens.color.surface,
-    borderRadius: tokens.radii.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentActive: {
-    borderWidth: 1.5,
-    borderColor: tokens.color.brand,
   },
   hiddenInput: {
     position: 'absolute',

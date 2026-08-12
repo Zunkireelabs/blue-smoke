@@ -39,6 +39,8 @@ export { ScreenScaffold, useScaffoldContentWidth } from './ScreenScaffold';
 export type { ScreenScaffoldProps } from './ScreenScaffold';
 export { AuthScaffold } from './AuthScaffold';
 export type { AuthScaffoldProps } from './AuthScaffold';
+export { CodeSegments } from './CodeSegments';
+export type { CodeSegmentsProps } from './CodeSegments';
 export { FlameIllustration } from './illustrations/FlameIllustration';
 export type { FlameIllustrationProps } from './illustrations/FlameIllustration';
 export { ProximityIllustration } from './illustrations/ProximityIllustration';
