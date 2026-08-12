@@ -63,18 +63,25 @@ const BG_KEYS = new Set(['backgroundColor']);
 const BORDER_KEYS = new Set(['borderColor', 'shadowColor']);
 
 /**
- * `fill`/`stroke`/`stopColor`/`groundColor` cover BrandMark's SVG flame (P0-7.0): a logo shape,
- * not text or a standalone icon, so it carries no WCAG text-contrast obligation *there*.
+ * `fill`/`stroke`/`stopColor`/`groundColor` cover BrandMark's SVG flame (P0-7.0) and, as of
+ * UI-BUILD-E part 3, the onboarding illustrations under `src/shared/ui/illustrations/`: logo/
+ * illustration shapes, not text or a standalone icon, so they carry no WCAG text-contrast
+ * obligation *there*.
  *
- * Deliberately scoped to `BrandMark.tsx` alone, not treated as globally decorative (review
- * finding, P0-7.0 geometry v3 rework): `react-native-svg` is now a project dependency, and a
- * future real icon (header actions are text-only today for want of one) could reach for
- * `fill: tokens.color.X` too. Exempting these keys everywhere would let that icon silently
- * escape its own contrast obligation instead of forcing a conscious classification the way this
- * guard is meant to.
+ * Deliberately scoped to `BrandMark.tsx` and `illustrations/`, not treated as globally
+ * decorative (review finding, P0-7.0 geometry v3 rework, extended for part 3): `react-native-svg`
+ * is now a project dependency, and a future real icon (header actions are text-only today for
+ * want of one) could reach for `fill: tokens.color.X` too. Exempting these keys everywhere would
+ * let that icon silently escape its own contrast obligation instead of forcing a conscious
+ * classification the way this guard is meant to.
  */
 const BRANDMARK_PATH = 'src/shared/ui/BrandMark.tsx';
-const BRANDMARK_DECORATIVE_KEYS = new Set(['fill', 'stroke', 'stopColor', 'groundColor']);
+const ILLUSTRATIONS_DIR = 'src/shared/ui/illustrations/';
+const DECORATIVE_SHAPE_KEYS = new Set(['fill', 'stroke', 'stopColor', 'groundColor']);
+
+function isDecorativeShapeFile(relativePath: string): boolean {
+  return relativePath === BRANDMARK_PATH || relativePath.startsWith(ILLUSTRATIONS_DIR);
+}
 
 /**
  * Named, reasoned exemption list for tokens that legitimately never render text or an icon —
@@ -119,8 +126,9 @@ function scan(files: SourceFile[]): ScanResult {
     if (DESTRUCTURED_COLOR_ACCESS.test(file.contents)) {
       destructured.push(file.relativePath);
     }
-    const borderKeysForFile =
-      file.relativePath === BRANDMARK_PATH ? new Set([...BORDER_KEYS, ...BRANDMARK_DECORATIVE_KEYS]) : BORDER_KEYS;
+    const borderKeysForFile = isDecorativeShapeFile(file.relativePath)
+      ? new Set([...BORDER_KEYS, ...DECORATIVE_SHAPE_KEYS])
+      : BORDER_KEYS;
     for (const match of file.contents.matchAll(COLOR_REFERENCE)) {
       const [, key, tokenName] = match;
       if (FG_KEYS.has(key)) {
