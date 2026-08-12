@@ -20,6 +20,7 @@ import { selectStack, RootNavigator, type GatedStack } from '../navigation';
 import { useSessionStore } from '../stores/useSessionStore';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import type { VerificationState } from '@/features/verification/useVerificationStatus';
+import { flushSettled } from '@/shared/testing/renderWithEffects';
 
 jest.mock('@/features/verification/useVerificationStatus');
 const { useVerificationStatus } = require('@/features/verification/useVerificationStatus');
@@ -140,8 +141,9 @@ describe('RootNavigator', () => {
       useOnboardingStore.setState({ status: 'seen' });
 
       let renderer!: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(() => {
+      await ReactTestRenderer.act(async () => {
         renderer = ReactTestRenderer.create(<RootNavigator />);
+        await flushSettled();
       });
       expect(renderer.toJSON()).toBeTruthy();
       await ReactTestRenderer.act(() => renderer.unmount());
@@ -153,8 +155,9 @@ describe('RootNavigator', () => {
     useOnboardingStore.setState({ status: 'unseen' });
 
     let renderer!: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(<RootNavigator />);
+      await flushSettled();
     });
     expect(renderer.toJSON()).toBeTruthy();
     await ReactTestRenderer.act(() => renderer.unmount());
