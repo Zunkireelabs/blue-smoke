@@ -64,6 +64,46 @@ fail with `Cannot read properties of undefined (reading 'errorCount')`, an ESLin
 mismatch. That guard enforces inviolable rule 1 in the verification subtree and is currently doing
 nothing. Not my area, not touched — **it needs an owner.**
 
+## 2026-08-12 — BLE connection questions sent direct to the manufacturer; the bench board is the wrong board
+
+**Branches:** `feature/ble-connectivity` (9 commits ahead of its remote, **not pushed**)
+
+**Sent:** `docs/hardware/manufacturer-questions-ble-connection-2026-08-12.md`, over **Teams, direct
+to the manufacturer** — the first time we have gone direct rather than via the client. 18 questions,
+ordered by the sequence the app hits them. Follow-through checklist is in that file.
+
+**Decided, and why:**
+
+- **Excluded the per-device key and auto-lock timer from the manufacturer message.** Both await a
+  client-side product decision (`client-messages/architecture-escalation-2026-08-12.md`). Asking the
+  factory to act before that decision exists would get an answer we then have to unpick.
+- **Asked for the device's exact advertised name as a first-class question.** It reads like trivia
+  and isn't: the module advertises **no service UUID**, so the scanner can only filter on name, and
+  all we have is the manufacturer's *"typically `YP65-AT`"* over a value `AT+NAME=` can change. A
+  wrong name gives an empty scan indistinguishable from a device that is off — the same silent
+  failure as a guessed `serial_hash` salt. I had originally left this out and it was caught in
+  review.
+- **Offered the command frame structure as a worked hypothesis** (header `02`, length, payload, XOR,
+  tail `01`) rather than asking "what is the format?" — a correction returns faster and more exactly
+  than an open question. XOR verified against all three supplied frames.
+
+**Gotcha worth stealing:** 🔴 **`pdftotext` silently drops CJK text.** The first pass over
+`YP65-AT-BLE-module-spec-v1.3-release.pdf` took the GATT table and stopped, because the Chinese body
+text extracted as nothing and the hardware sections *looked* empty. They were not. The second pass
+found the module pinout, the AT command set, a writable MAC (`AT+ADDR=`) and a real-time clock — two
+of which change open questions we were actively escalating. **If a supplied document looks
+suspiciously thin, suspect the extractor before the document.** Same lesson as Day 10's `pypdf`
+finding, now twice.
+
+**Blocked / needs someone else:**
+
+- 🔴 **The board we hold is almost certainly not the Bluetooth board.** `AC-H158-V1.01`, pads
+  `B+`/`B−`/`T`, off-board microphone, **no crystal and no antenna** — a charge/protection board.
+  Nothing can be brought up until a board with the PY32C642F and the BT chip arrives. Requested.
+- 🔴 **`architecture-escalation-2026-08-12.md` is still unsent.** It is the time-sensitive one and it
+  needs a product decision, not engineering.
+- **This branch is not pushed.** 9 commits of hardware findings invisible to Sadin and Hardik.
+
 ---
 
 Copy the template below, put your entry above this line, and delete any field

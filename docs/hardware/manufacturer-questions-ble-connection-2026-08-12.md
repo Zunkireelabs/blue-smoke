@@ -1,6 +1,15 @@
 # What we need in order to connect to the device over Bluetooth
 
-**Prepared by the app development team, 2026-08-12. For forwarding to the manufacturer.**
+**Prepared by the app development team, 2026-08-12.**
+
+> ✅ **SENT — 2026-08-12, by Anish, over Teams, directly to the manufacturer.** The plain-text version
+> at the end of this file is what was pasted. Awaiting reply.
+>
+> **Note the channel change.** Every previous hardware ask went to the client with a covering note,
+> for the client to forward (`../client-messages/hardware-forward-2026-08-10.md`, and rule 5 of
+> `../client-messages/README.md`). This one went **direct**. That is faster and it is why the reply
+> should be watched for here rather than in the client thread — but it also means the client has not
+> seen these questions, so do not assume they know what was asked.
 
 This document covers **one topic only**: what the mobile app needs in order to connect to the device
 and control it. It is a follow-up to
@@ -311,6 +320,34 @@ above.
 
 Thank you.
 ```
+
+---
+
+## Follow-through when the reply lands
+
+Per rule 1 of [`../client-messages/README.md`](../client-messages/README.md): **an answer that
+arrives and is not registered is an answer that gets asked for again.**
+
+- [ ] File the reply verbatim under `manufacturer-supplied-<date>/`, with a `MANIFEST.md` recording
+      what arrived versus what was referenced but missing — the Day-12 reply needed exactly this.
+- [ ] **Check which questions were silently skipped.** Item 6 of the Day-11 requirements was dropped
+      without comment and only surfaced because someone counted. Number the answers against 1–18
+      before reading them.
+- [ ] **3.1 answered** → the transport is finally pinned. Promote `0xFFF0` **and** the chosen
+      characteristic into `src/features/ble/protocol.ts` in one commit — it is an append-only
+      contested shared file, so announce first per CLAUDE.md.
+- [ ] **5.1/5.2 answered** → the lock-state UI becomes buildable for the first time. Until then
+      there is nothing to render, only fire-and-forget writes.
+- [ ] **1.1/1.2 answered** → `scanner.ts`'s filter strategy is settled; update it and the
+      `BLE_DEVICE_NAME_PREFIX` constant together.
+- [ ] **2.1 answered** → the pairing screen either keeps or drops its PIN step.
+- [ ] Update `../TECHNICAL_SPEC.md` §13 — OQ-13's remaining items (which characteristic, PIN
+      disable) and OQ-15, plus a changelog entry.
+- [ ] Update `hqd-device-architecture.md` §3.2.1's "still not closed" list and §7's status table.
+- [ ] Log the outcome in `../session-log/anish.md`.
+
+**If no reply within ~3 working days, chase.** Day 13 of 30, and questions 1, 2 and 4 block the
+critical path outright.
 
 ---
 

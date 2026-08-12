@@ -1,7 +1,19 @@
 # Client messages
 
-Drafted messages to the client, and what each one unblocks. **All three below are drafts and none
-has been sent.**
+Drafted messages to the client, and what each one unblocks.
+
+> **Status, 2026-08-12 (Day 13): the four client messages below are still drafts and none has been
+> sent.** One message *has* gone out, but it is not one of these and it did not go to the client:
+> [`../hardware/manufacturer-questions-ble-connection-2026-08-12.md`](../hardware/manufacturer-questions-ble-connection-2026-08-12.md)
+> was sent **direct to the manufacturer over Teams**, bypassing the client-forwarding route in rule 5
+> below. It is tracked in its own file, which carries its own follow-through checklist.
+>
+> Two consequences worth holding on to. **A direct channel to the manufacturer now exists**, so a
+> future hardware ask no longer has to wait on the client to relay it — but the client has not seen
+> those questions, so nothing there can be assumed known on their side. And 🔴
+> **`architecture-escalation-2026-08-12.md` remains unsent**, which is the one that is genuinely
+> time-sensitive: it asks for a decision, and the remaining `P1-4.0` authentication work and the
+> lock-timing design are both waiting on it.
 
 The split is deliberate: these go to **different people**. Bundling them into one message means the
 engineer who can answer the BLE questions is also reading about developer-account ownership, and the
@@ -36,3 +48,8 @@ came back in a way that breaks a design assumption, and asks for a decision rath
    every factual claim in it about their own hardware has to be traceable to a document they sent us.
    `../hardware/client-questions-2026-08-09.md` is retained as the working source and is **not** for
    sending.
+   **Amended Day 13:** a direct Teams channel to the manufacturer now exists and was used. The
+   traceability requirement is unchanged and if anything matters more when there is no client reading
+   it first — but the two-file covering-note structure is no longer mandatory for a purely technical
+   ask. Keep using it for anything commercial, scheduling-related, or that the client needs to know
+   was asked.
