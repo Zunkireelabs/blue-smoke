@@ -27,7 +27,17 @@ export function ScreenScaffold({ back, header, body, actions, footnote }: Screen
     <View
       style={[
         styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right },
+        {
+          // Longhand `paddingTop`/etc. here would *replace*, not add to, `styles.container`'s
+          // `padding: xl` shorthand for that edge once the array is flattened — on a device with
+          // no side inset (insets.left/right = 0 in portrait) that silently zeroes the intended
+          // content padding rather than sitting outside it. Summed explicitly so `xl` always
+          // holds regardless of which edges the safe area actually contributes to.
+          paddingTop: insets.top + tokens.spacing.xl,
+          paddingBottom: insets.bottom + tokens.spacing.xl,
+          paddingLeft: insets.left + tokens.spacing.xl,
+          paddingRight: insets.right + tokens.spacing.xl,
+        },
       ]}
     >
       {back ? <View style={styles.back}>{back}</View> : null}
@@ -42,7 +52,6 @@ export function ScreenScaffold({ back, header, body, actions, footnote }: Screen
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: tokens.spacing.xl,
   },
   back: {
     alignSelf: 'flex-start',

@@ -50,4 +50,17 @@ describe('ScreenScaffold', () => {
     expect(flexOneHosts(withoutBody).length).toBeGreaterThan(0);
     expect(flexOneHosts(withBody).length).toBeGreaterThan(0);
   });
+
+  it('keeps the middle wrapper itself flex: 1 with body absent, not just the outer container', () => {
+    // The trap (part 1 review): the outer `container` style is also `flex: 1`, so the test above
+    // passes even if `flex: 1` is deleted from `middle` — the container alone satisfies
+    // "some host has flex 1". Every slot is omitted here, so the only two hosts left are
+    // `container` and `middle`; asserting the count is exactly 2 fails the instant `middle`
+    // loses its own `flex: 1`, independent of the container's.
+    const renderer = render(<ScreenScaffold />);
+    const flexOneHosts = renderer.root.findAll(
+      (node) => typeof node.type === 'string' && StyleSheet.flatten(node.props.style ?? {}).flex === 1,
+    );
+    expect(flexOneHosts.length).toBe(2);
+  });
 });
