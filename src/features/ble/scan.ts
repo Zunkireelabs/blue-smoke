@@ -17,7 +17,66 @@ import {
   type BleScannerLike,
   type ScannedDevice,
 } from './BleClientContext';
-import { BLE_SERVICE_UUID } from './protocol';
+import { BLE_SERVICE_UUID, YP65_LOCAL_NAME_PREFIX, YP65_SERVICE_UUID } from './protocol';
+
+/**
+ * How to recognise "one of our devices" during a scan.
+ *
+ * This exists because the two things we scan for advertise differently, and
+ * the difference is not cosmetic — it decides whether a filter finds anything
+ * at all.
+ *
+ * §4 assumed a device that advertises the service it serves, so the radio can
+ * filter and the app never sees anything else. The real YP65 module does not:
+ * its advertising payload carries 0x1812 (HID) and the passthrough service
+ * 0xFFF0 appears nowhere in it (see `YP65_ADVERTISED_SERVICE_UUID`). Filtering
+ * on the service we actually want therefore matches nothing, and "no devices
+ * found" is indistinguishable from off, out of range, or asleep.
+ *
+ * So a profile carries both halves: what the radio filters on (cheap, but only
+ * usable when the device advertises it) and an optional client-side predicate
+ * for when it doesn't.
+ */
+export interface DiscoveryProfile {
+  /** Handed to the radio's own filter. `null` scans everything in range. */
+  readonly serviceUUIDs: string[] | null;
+  /**
+   * Applied to every result the radio returns. Only meaningful when
+   * `serviceUUIDs` is null — otherwise the radio has already filtered.
+   */
+  readonly matches?: (device: ScannedDevice) => boolean;
+  /** For logs and dev UI, so a fruitless scan can say what it was looking for. */
+  readonly label: string;
+}
+
+/**
+ * §4.1 — filter in the radio layer. Correct for `tools/mock-peripheral`, which
+ * implements §4 and does advertise its service.
+ */
+export const SPEC_V4_DISCOVERY: DiscoveryProfile = {
+  serviceUUIDs: [BLE_SERVICE_UUID],
+  label: 'spec §4 service UUID',
+};
+
+/**
+ * Real hardware. Scans unfiltered and matches on the local name, because the
+ * module does not advertise `YP65_SERVICE_UUID`.
+ *
+ * The name is a PREFIX test: the manufacturer appends the MAC to distinguish
+ * units ("YP65-AT" + MAC), so equality would match nothing. The name rides in
+ * the scan response rather than the advertisement, which is fine — both
+ * CoreBluetooth and Android scan actively by default.
+ *
+ * ⚠️ This costs us the iOS background-scan path, which requires a service
+ * filter. Fixing that properly needs HQD to add 0xFFF0 to the advertising
+ * payload via `AT+ADVDA`; until then, background proximity on iOS cannot work.
+ * Tracked as a client ask, not something the app can solve.
+ */
+export const YP65_DISCOVERY: DiscoveryProfile = {
+  serviceUUIDs: null,
+  matches: (device) => (device.name ?? '').startsWith(YP65_LOCAL_NAME_PREFIX),
+  label: `local name "${YP65_LOCAL_NAME_PREFIX}…" (service ${YP65_SERVICE_UUID} is not advertised)`,
+};
 
 // App-level operational choices, not §4 constants — §4.1 specifies what a
 // device advertises, never how long a central should listen for it. Same
@@ -48,7 +107,14 @@ export interface DeviceScanner {
   start(callbacks: ScanCallbacks, options?: { timeoutMs?: number }): ScanHandle;
 }
 
-export function createDeviceScanner(scanner: BleScannerLike): DeviceScanner {
+/**
+ * `profile` defaults to §4 so every existing caller and test keeps its exact
+ * previous behaviour. Real-hardware callers pass `YP65_DISCOVERY`.
+ */
+export function createDeviceScanner(
+  scanner: BleScannerLike,
+  profile: DiscoveryProfile = SPEC_V4_DISCOVERY,
+): DeviceScanner {
   return {
     start(callbacks: ScanCallbacks, options: { timeoutMs?: number } = {}): ScanHandle {
       const timeoutMs = options.timeoutMs ?? SCAN_TIMEOUT_MS;
@@ -74,11 +140,10 @@ export function createDeviceScanner(scanner: BleScannerLike): DeviceScanner {
 
       timeoutHandle = setTimeout(() => finish('timeout'), timeoutMs);
 
-      // §4.1 — filter on the service UUID rather than scanning everything and
-      // matching names client-side: the OS filters in the radio layer, and a
-      // name-based filter would both miss devices whose name is truncated out
-      // of the advertisement and match anything that borrowed the prefix.
-      scanner.startDeviceScan([BLE_SERVICE_UUID], null, (error, device) => {
+      // Filtering in the radio layer is preferred where the device allows it —
+      // the OS does the work and the app never sees anything else. Where it
+      // doesn't (see DiscoveryProfile), we scan wide and filter here instead.
+      scanner.startDeviceScan(profile.serviceUUIDs, null, (error, device) => {
         if (finished) {
           return;
         }
@@ -91,14 +156,28 @@ export function createDeviceScanner(scanner: BleScannerLike): DeviceScanner {
           return;
         }
 
-        const existing = found.get(device.id);
+        // Normalise before matching or storing. A real `BleManager` leaves
+        // `name`/`rssi` undefined when the advertisement carried neither,
+        // while every consumer downstream expects null — collapsing the two
+        // here is what keeps `undefined` out of the rendered list.
+        const scanned: ScannedDevice = {
+          id: device.id,
+          name: device.name ?? null,
+          rssi: device.rssi ?? null,
+        };
+
+        if (profile.matches && !profile.matches(scanned)) {
+          return;
+        }
+
+        const existing = found.get(scanned.id);
         // A peripheral is re-reported on every advertising interval. Only
         // surface an update when something a caller can see actually changed,
         // otherwise this re-renders a list several times a second for nothing.
-        if (existing && existing.rssi === device.rssi && existing.name === device.name) {
+        if (existing && existing.rssi === scanned.rssi && existing.name === scanned.name) {
           return;
         }
-        found.set(device.id, { id: device.id, name: device.name, rssi: device.rssi });
+        found.set(scanned.id, scanned);
         callbacks.onUpdate([...found.values()]);
       });
 

@@ -25,6 +25,13 @@ export const BYTE_ORDER = 'little-endian'; // §4.2 — all multi-byte integers
 
 // ── §4.2 — service and characteristics ──────────────────────────────────────
 
+// 🔴 SUPERSEDED BY REAL HARDWARE — do not use for anything that talks to a physical device.
+// This value was invented at spec-writing time (commit 0bb8e80, 2026-08-05) and never
+// confirmed against silicon. The client's BLE SoC (YC1012/YC8612) runs stock YP65-AT
+// passthrough firmware whose GATT table is fixed and cannot be redefined by us — see
+// YP65_SERVICE_UUID below. Kept because tools/mock-peripheral and its ~600 tests model the
+// §4 GATT layout and still use it; retiring that is a separate, larger change. Anything
+// aimed at real hardware (or at a phone standing in for it) must use the YP65 constants.
 export const BLE_SERVICE_UUID = '42530001-1E5B-4A9C-9D3F-7C6E1B2A5D80'; // §4.2
 
 export const BLE_CHARACTERISTIC_UUIDS = {
@@ -275,3 +282,132 @@ export const AUTH_BACKOFF = {
 
 export const LOW_BATTERY_LATCH_PERCENT = 15; // §4.4 — flags bit2 sets below this
 export const LOW_BATTERY_CLEAR_PERCENT = 20; // §4.4 — flags bit2 clears at/above this
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REAL HARDWARE — YP65-AT module (Yichip YC1012 / YC8612)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Everything above this line describes TECHNICAL_SPEC.md §4: a GATT layout we
+// specified and expected the device to implement. The client's hardware does
+// not work that way and cannot be made to without a firmware change on a chip
+// nobody on this project programs.
+//
+// The device's BLE stack runs on a second chip — a Yichip YC1012 (re-marked
+// YC8612; the manufacturer confirmed 2026-08-12 they are the same die) joined
+// to the PY32 application MCU by a 2-wire UART. That chip runs stock YP65-AT
+// transparent-passthrough firmware, so its GATT table is FIXED: one service
+// with five identical pipes. Our §4 characteristics C1-C6 cannot exist on it.
+// §4's byte layouts survive as PAYLOADS inside those pipes; §4's addressing
+// does not.
+//
+// Sources, both first-party vendor documents:
+//   [YP65]  YP65-AT-BLE-module-spec-v1.3-release.pdf  (Hangzhou Yiyuanli)
+//   [MFR]   Manufacturer's written answers, 2026-08-12
+//
+// ── What is DOCUMENTED (safe to rely on) ────────────────────────────────────
+
+/**
+ * [YP65 §11.1] The private passthrough service. A 16-bit UUID on the Bluetooth
+ * SIG base, expanded here because react-native-ble-plx compares 128-bit forms.
+ *
+ * 🔴 Do NOT use this as a scan filter — see YP65_ADVERTISED_SERVICE_UUID.
+ */
+export const YP65_SERVICE_UUID = '0000FFF0-0000-1000-8000-00805F9B34FB'; // [YP65 §11.1]
+
+/**
+ * [YP65 §11.1] Five characteristics, every one of them Notify + Write Without
+ * Response. Notify is uplink (device → phone), Write Without Response is
+ * downlink (phone → device). They are indistinguishable at the GATT layer;
+ * which one carries HQD's traffic is firmware policy, not protocol — see
+ * YP65_PROVISIONAL.dataPipe.
+ *
+ * The handle numbers in [YP65 §11.1] (0x002A, 0x002D, …) are deliberately not
+ * recorded here: handles are how the PY32 addresses a pipe over the UART. A
+ * phone addresses characteristics by UUID and never sees them.
+ */
+export const YP65_CHARACTERISTIC_UUIDS = {
+  fff1: '0000FFF1-0000-1000-8000-00805F9B34FB', // [YP65 §11.1]
+  fff2: '0000FFF2-0000-1000-8000-00805F9B34FB', // [YP65 §11.1]
+  fff3: '0000FFF3-0000-1000-8000-00805F9B34FB', // [YP65 §11.1]
+  fff4: '0000FFF4-0000-1000-8000-00805F9B34FB', // [YP65 §11.1]
+  fff5: '0000FFF5-0000-1000-8000-00805F9B34FB', // [YP65 §11.1]
+} as const;
+
+/**
+ * 🔴 THE SCAN TRAP. [YP65 §13.14] the module's default advertising payload is
+ *
+ *     02 01 06        Flags — LE General Discoverable, BR/EDR not supported
+ *     03 03 12 18     Complete 16-bit service UUIDs = 0x1812  ← HID, NOT FFF0
+ *     03 19 C1 03     Appearance = 0x03C1 (keyboard)
+ *
+ * The passthrough service is NOT advertised. A central filtering on
+ * YP65_SERVICE_UUID therefore finds nothing, and "no devices found" is
+ * indistinguishable from off, out of range, or asleep — the same silent
+ * failure class as OQ-12's guessed salt. This constant is what the device
+ * actually puts on air; scan.ts must not filter on the service it serves.
+ */
+export const YP65_ADVERTISED_SERVICE_UUID = '00001812-0000-1000-8000-00805F9B34FB'; // [YP65 §13.14]
+
+/**
+ * [YP65 §13.7 / MFR answer 1] Default local name, carried in the SCAN RESPONSE
+ * rather than the advertisement, so discovery must use an active scan (both
+ * CoreBluetooth and Android default to active — no configuration needed).
+ * The manufacturer says the MAC is appended to distinguish units, so this is a
+ * PREFIX to match on, never an equality test.
+ */
+export const YP65_LOCAL_NAME_PREFIX = 'YP65-AT'; // [YP65 §13.7], [MFR answer 1]
+
+/** [YP65 §12.1.3 note 1] Module-side default; renegotiated upward on connect. */
+export const YP65_DEFAULT_MTU_BYTES = 185; // [YP65 §12.1.3]
+
+/**
+ * [YP65 §12.1.3 note 2] The module requests these itself on connect. Recorded
+ * because the supervision timeout is the floor on how fast we can detect an
+ * involuntary drop — connection.ts cannot react sooner than the radio reports.
+ */
+export const YP65_CONNECTION_PARAMS = {
+  minIntervalMs: 10, // [YP65 §12.1.3] — 8 × 1.25 ms
+  maxIntervalMs: 40, // [YP65 §12.1.3] — 32 × 1.25 ms
+  slaveLatency: 5, // [YP65 §12.1.3]
+  supervisionTimeoutMs: 5000, // [YP65 §12.1.3] — 500 × 10 ms
+} as const;
+
+/**
+ * [MFR answer 1] Advertising is not continuous. It starts on power-up or a
+ * single button press and stops after this long without a connection, at which
+ * point the module sleeps and is invisible until woken physically. Any "device
+ * not found" report must state whether the scan began inside this window —
+ * 40 minutes of scanning a slept module is what it looks like when it doesn't.
+ */
+export const YP65_ADVERTISING_WINDOW_MS = 600_000; // [MFR answer 1] — 10 minutes
+
+// ── What is INFERRED or UNCONFIRMED (flip these when hardware confirms) ──────
+
+/**
+ * 🔴 Provisional. Each entry is a hypothesis with a named way to settle it.
+ * Grouped in one object so hardware bring-up changes values here and nothing
+ * else in the codebase.
+ */
+export const YP65_PROVISIONAL = {
+  /**
+   * Which characteristic carries HQD's application traffic. All five are
+   * identical at the GATT layer and the manufacturer has not said which is
+   * used. `fff1` is the first and the vendor's own examples lead with it, but
+   * that is a guess.
+   *
+   * Settle by: connecting to a powered board, subscribing to all five, and
+   * writing the read-status frame to each in turn — the one that answers wins.
+   */
+  dataPipe: 'fff1' as keyof typeof YP65_CHARACTERISTIC_UUIDS,
+
+  /**
+   * Whether the device demands the 6-digit PIN pairing that HQD's SDK document
+   * mentions. [YP65] documents no pairing at all, and the PIN most likely
+   * belongs to the HID service (0x1812 + keyboard appearance), which is
+   * disabled by default ([YP65 §13.30], HIDEN default 0). If HID is off, the
+   * passthrough service should need no bonding.
+   *
+   * Settle by: connecting from a phone and observing whether the OS prompts.
+   */
+  requiresPinPairing: false,
+} as const;

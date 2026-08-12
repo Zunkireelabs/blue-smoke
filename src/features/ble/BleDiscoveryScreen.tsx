@@ -25,12 +25,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Screen, Text, tokens } from '@/shared/ui';
-import type { ScannedDevice } from './BleClientContext';
+import { useBleManager, type ScannedDevice } from './BleClientContext';
+import { requestAndroidBluetoothPermission } from './bluetoothPermission';
 import { createConnectionManager, type ConnectionState } from './connection';
 import { createDevFakeManager } from './devFakeManager';
 import { readDeviceInfo, type DeviceInfo } from './deviceInfo';
-import { createDeviceScanner, type ScanHandle } from './scan';
-import { ProvisioningState } from './protocol';
+import { createDeviceScanner, YP65_DISCOVERY, type ScanHandle } from './scan';
+import { ProvisioningState, YP65_LOCAL_NAME_PREFIX } from './protocol';
+
+/**
+ * Which radio this harness drives.
+ *
+ * `fake` is the in-process fixture — deterministic, no permissions, no
+ * hardware, and the default so the screen still works on a simulator.
+ *
+ * `yp65` drives the REAL radio against the real discovery profile, and exists
+ * so the transport can be exercised before the client's board is powerable.
+ * A phone running nRF Connect's Peripheral mode (service 0xFFF0, five
+ * Notify + Write-Without-Response characteristics) stands in for the device
+ * convincingly enough to prove permissions, scanning, connection, service
+ * discovery and notifications — everything except HQD's application
+ * behaviour, which only the real board can answer.
+ */
+type RadioSource = 'fake' | 'yp65';
 
 const SCAN_TIMEOUT_MS = 6000; // shorter than scan.ts's default: this is a demo, not a pairing session
 
@@ -60,11 +77,26 @@ function signalLabel(rssi: number | null): string {
 }
 
 export function BleDiscoveryScreen() {
+  const [source, setSource] = useState<RadioSource>('fake');
+
   // Built once for the lifetime of the screen — rebuilding either would reset
   // the state machine mid-flow.
-  const { manager, scanner, controls } = useMemo(() => createDevFakeManager(), []);
+  const fake = useMemo(() => createDevFakeManager(), []);
+  const realManager = useBleManager();
+
+  // Keyed on `source` so switching radios rebuilds the whole chain. A
+  // connection manager still holding a handle to the other radio's device
+  // would report a state that belongs to a link nobody is looking at.
+  const manager = source === 'fake' ? fake.manager : realManager;
   const connectionManager = useMemo(() => createConnectionManager(manager), [manager]);
-  const deviceScanner = useMemo(() => createDeviceScanner(scanner), [scanner]);
+  const deviceScanner = useMemo(
+    () =>
+      source === 'fake'
+        ? createDeviceScanner(fake.scanner)
+        : createDeviceScanner(realManager, YP65_DISCOVERY),
+    [source, fake.scanner, realManager],
+  );
+  const controls = fake.controls;
 
   const [scanning, setScanning] = useState(false);
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
@@ -88,16 +120,44 @@ export function BleDiscoveryScreen() {
   const handleScan = useCallback(() => {
     setDevices([]);
     setError(null);
-    setScanning(true);
-    scanHandleRef.current = deviceScanner.start(
-      {
-        onUpdate: setDevices,
-        onFinished: () => setScanning(false),
-        onError: (detail) => setError(detail),
-      },
-      { timeoutMs: SCAN_TIMEOUT_MS },
-    );
-  }, [deviceScanner]);
+
+    const begin = () => {
+      setScanning(true);
+      scanHandleRef.current = deviceScanner.start(
+        {
+          onUpdate: setDevices,
+          onFinished: () => setScanning(false),
+          onError: (detail) => setError(detail),
+        },
+        { timeoutMs: SCAN_TIMEOUT_MS },
+      );
+    };
+
+    if (source === 'fake') {
+      begin();
+      return;
+    }
+
+    // Android 12+ refuses to scan without the runtime permission and reports
+    // NO error — the callback simply never fires. That is indistinguishable
+    // from "nothing in range", so ask first and say so when refused, rather
+    // than letting the user watch an empty list and blame the hardware.
+    requestAndroidBluetoothPermission()
+      .then((outcome) => {
+        if (outcome === 'granted') {
+          begin();
+          return;
+        }
+        setError(
+          outcome === 'permanentlyDenied'
+            ? 'Nearby-devices permission is blocked. Enable it in system settings, then scan again.'
+            : 'Nearby-devices permission was denied, so the scan cannot run.',
+        );
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Could not request Bluetooth permission.');
+      });
+  }, [deviceScanner, source]);
 
   const handleStopScan = useCallback(() => {
     scanHandleRef.current?.stop();
@@ -153,6 +213,31 @@ export function BleDiscoveryScreen() {
 
   return (
     <Screen scroll centered={false}>
+      <Card style={styles.block}>
+        <Text variant="caption" tone="secondary">
+          RADIO
+        </Text>
+        <View style={styles.actions}>
+          <Button
+            label="In-app fake"
+            variant={source === 'fake' ? 'primary' : 'secondary'}
+            onPress={() => setSource('fake')}
+            disabled={scanning}
+          />
+          <Button
+            label="Real radio (YP65)"
+            variant={source === 'yp65' ? 'primary' : 'secondary'}
+            onPress={() => setSource('yp65')}
+            disabled={scanning}
+          />
+        </View>
+        <Text variant="caption" tone="secondary">
+          {source === 'fake'
+            ? 'Three scripted peripherals, no radio and no permissions. Works on a simulator.'
+            : `Real radio, unfiltered scan, matching names starting "${YP65_LOCAL_NAME_PREFIX}". Needs a physical device.`}
+        </Text>
+      </Card>
+
       <View style={styles.actions}>
         <Button
           label={scanning ? 'Scanning…' : 'Scan for devices'}

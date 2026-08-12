@@ -6,7 +6,7 @@
  * a timeout. The mock stays the target for the byte-level modules.
  */
 
-import { createDeviceScanner } from '../scan';
+import { createDeviceScanner, YP65_DISCOVERY } from '../scan';
 import { BLE_SERVICE_UUID } from '../protocol';
 import type { BleScannerLike, ScannedDevice } from '../BleClientContext';
 
@@ -165,5 +165,85 @@ describe('createDeviceScanner', () => {
     jest.advanceTimersByTime(3000);
 
     expect(finished).toEqual(['stopped']);
+  });
+});
+
+/**
+ * The YP65 module does not advertise the service it serves — its advertising
+ * payload carries 0x1812 (HID) and nothing else useful. These tests pin the
+ * consequence: discovery must not depend on the service UUID being on air.
+ *
+ * This is the failure that has already cost this project two bench sessions,
+ * and it is invisible when it happens — a filtered scan that matches nothing
+ * looks exactly like a device that is off, out of range, or asleep. Catching
+ * it here is the cheap version.
+ */
+describe('createDeviceScanner — YP65_DISCOVERY against real-hardware advertising', () => {
+  function scannerSpy() {
+    let seen: { serviceUUIDs: string[] | null } | undefined;
+    let emit: (error: Error | null, device: ScannedDevice | null) => void = () => {};
+    const scanner: BleScannerLike = {
+      startDeviceScan(serviceUUIDs, _options, listener) {
+        seen = { serviceUUIDs };
+        emit = listener;
+      },
+      stopDeviceScan() {},
+    };
+    return {
+      scanner,
+      get filter() {
+        return seen;
+      },
+      emit: (device: ScannedDevice | null) => emit(null, device),
+    };
+  }
+
+  const yp65: ScannedDevice = { id: 'aa:bb', name: 'YP65-AT2A079820286 6', rssi: -44 };
+
+  test('scans UNFILTERED — a service filter would match nothing on this hardware', () => {
+    const spy = scannerSpy();
+    const handle = createDeviceScanner(spy.scanner, YP65_DISCOVERY).start({ onUpdate: () => {} });
+    handle.stop();
+
+    expect(spy.filter?.serviceUUIDs).toBeNull();
+  });
+
+  test('finds a device that advertises no service UUID at all, by name prefix', () => {
+    const spy = scannerSpy();
+    const found: ScannedDevice[][] = [];
+    const handle = createDeviceScanner(spy.scanner, YP65_DISCOVERY).start({
+      onUpdate: (devices) => found.push(devices),
+    });
+
+    spy.emit(yp65);
+    handle.stop();
+
+    expect(found.at(-1)).toEqual([yp65]);
+  });
+
+  test('ignores the unrelated traffic an unfiltered scan necessarily picks up', () => {
+    const spy = scannerSpy();
+    const found: ScannedDevice[][] = [];
+    const handle = createDeviceScanner(spy.scanner, YP65_DISCOVERY).start({
+      onUpdate: (devices) => found.push(devices),
+    });
+
+    // Taken from a real nRF Connect capture during bring-up: a laptop, a
+    // Windows advertising beacon, an air conditioner, and nameless peripherals.
+    spy.emit({ id: '01', name: "Sadin's MacBook Pro", rssi: -72 });
+    spy.emit({ id: '02', name: 'DESKTOP-J2R9SMK', rssi: -95 });
+    spy.emit({ id: '03', name: null, rssi: -64 });
+    spy.emit({ id: '04', name: 'net', rssi: -88 });
+    handle.stop();
+
+    expect(found).toHaveLength(0);
+  });
+
+  test('the §4 profile is unchanged and still filters in the radio layer', () => {
+    const spy = scannerSpy();
+    const handle = createDeviceScanner(spy.scanner).start({ onUpdate: () => {} });
+    handle.stop();
+
+    expect(spy.filter?.serviceUUIDs).toEqual([BLE_SERVICE_UUID]);
   });
 });

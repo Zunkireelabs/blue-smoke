@@ -98,9 +98,23 @@ export interface BleScannerLike {
   startDeviceScan(
     serviceUUIDs: string[] | null,
     options: unknown,
-    listener: (error: Error | null, device: ScannedDevice | null) => void,
+    // Deliberately the WIDER shape, with `name`/`rssi` optional rather than
+    // merely nullable. `BleDeviceLike` declares them optional (several P1-4.0
+    // fakes omit both entirely), so requiring `ScannedDevice` here would mean a
+    // real `BleManagerLike` did not satisfy this interface — which is exactly
+    // what broke when the dev harness first tried to drive a real radio.
+    // `scan.ts` narrows to `ScannedDevice` at its boundary, per the note on
+    // `BleDeviceLike.rssi`.
+    listener: (error: Error | null, device: ScannedDeviceLike | null) => void,
   ): void;
   stopDeviceScan(): void;
+}
+
+/** What a scanner may hand back before `scan.ts` normalises it. */
+export interface ScannedDeviceLike {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly rssi?: number | null;
 }
 
 /**
