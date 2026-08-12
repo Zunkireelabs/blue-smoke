@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tokens } from './tokens';
 
@@ -9,6 +9,30 @@ export interface ScreenScaffoldProps {
   body?: ReactNode;
   actions?: ReactNode;
   footnote?: ReactNode;
+}
+
+// Longhand `paddingTop`/etc. on the container would *replace*, not add to, a `padding: xl`
+// shorthand for that edge once a style array flattens — on a device with no side inset
+// (insets.left/right = 0 in portrait) that silently zeroes the intended content padding rather
+// than sitting outside it. Summed explicitly via this single function so `xl` always holds
+// regardless of which edges the safe area actually contributes to, and so this scaffold's own
+// padding and `useScaffoldContentWidth` below can never drift apart from each other.
+function edgePadding(inset: number): number {
+  return inset + tokens.spacing.xl;
+}
+
+/**
+ * The width available to a horizontally-measured child of `ScreenScaffold`'s `body` slot (e.g.
+ * a paging `ScrollView`'s pages) — `useWindowDimensions().width` minus this scaffold's own
+ * left/right padding. Exported so no consumer has to re-derive `insets.left/right -
+ * tokens.spacing.xl` itself (execution brief, UI-BUILD-E part 3 follow-up): that formula written
+ * a second time, in a screen, is what let it drift from `ScreenScaffold`'s own padding on the
+ * first attempt at this.
+ */
+export function useScaffoldContentWidth(): number {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  return width - edgePadding(insets.left) - edgePadding(insets.right);
 }
 
 /**
@@ -28,15 +52,10 @@ export function ScreenScaffold({ back, header, body, actions, footnote }: Screen
       style={[
         styles.container,
         {
-          // Longhand `paddingTop`/etc. here would *replace*, not add to, `styles.container`'s
-          // `padding: xl` shorthand for that edge once the array is flattened — on a device with
-          // no side inset (insets.left/right = 0 in portrait) that silently zeroes the intended
-          // content padding rather than sitting outside it. Summed explicitly so `xl` always
-          // holds regardless of which edges the safe area actually contributes to.
-          paddingTop: insets.top + tokens.spacing.xl,
-          paddingBottom: insets.bottom + tokens.spacing.xl,
-          paddingLeft: insets.left + tokens.spacing.xl,
-          paddingRight: insets.right + tokens.spacing.xl,
+          paddingTop: edgePadding(insets.top),
+          paddingBottom: edgePadding(insets.bottom),
+          paddingLeft: edgePadding(insets.left),
+          paddingRight: edgePadding(insets.right),
         },
       ]}
     >

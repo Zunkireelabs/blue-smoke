@@ -3,7 +3,6 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -17,6 +16,7 @@ import {
   ScreenScaffold,
   Text,
   tokens,
+  useScaffoldContentWidth,
 } from '@/shared/ui';
 import { completeOnboarding } from '@/app/stores/useOnboardingStore';
 
@@ -74,8 +74,7 @@ export function OnboardingCarouselScreen() {
   const [index, setIndex] = useState(0);
   const Illustration = CARDS[index].Illustration;
   const scrollRef = useRef<ScrollView>(null);
-  const { width: windowWidth } = useWindowDimensions();
-  const pageWidth = windowWidth - tokens.spacing.xl * 2;
+  const pageWidth = useScaffoldContentWidth();
   const isLast = index === CARDS.length - 1;
 
   const finish = () => {
