@@ -9,6 +9,11 @@ import { BluetoothPrimingScreen } from '../BluetoothPrimingScreen';
 import { NotificationPrimingScreen } from '../NotificationPrimingScreen';
 import { findByLabel } from '@/features/auth/testUtils';
 
+// BluetoothPrimingScreen now renders via CurtainGround, which reads safe-area insets —
+// same convention as OnboardingCarouselScreen.test.tsx for a screen with no SafeAreaProvider
+// ancestor in this standalone render.
+jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
+
 async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: string) {
   await act(async () => {
     findByLabel(renderer, label).props.onPress();

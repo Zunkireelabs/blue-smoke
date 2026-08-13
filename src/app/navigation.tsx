@@ -1,10 +1,5 @@
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
-import {
-  createNativeStackNavigator,
-  type NativeStackNavigationProp,
-} from '@react-navigation/native-stack';
-import { Pressable, StyleSheet, View } from 'react-native';
-
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BootSplashScreen } from '@/app/BootSplashScreen';
 import type { AuthMode } from '@/features/auth/authMode';
 import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
@@ -31,7 +26,6 @@ import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { useOnboardingStore, type OnboardingStatus } from '@/app/stores/useOnboardingStore';
-import { Text, tokens } from '@/shared/ui';
 
 /**
  * Root param list — spec §9.2 app/navigation.tsx. Contested shared file (CLAUDE.md): every
@@ -164,44 +158,6 @@ export function selectStack(
 }
 
 /**
- * A header action rendered as text rather than an icon — OQ-7 (brand assets) is unanswered, so
- * there is no icon set to draw from and inventing one would be a brand decision. Sized to the
- * kit's minimum hit area like every other pressable.
- */
-function HeaderTextButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={styles.headerButton}
-    >
-      <Text variant="label" tone="link">
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-/**
- * Hoisted to module scope and passed to `headerRight` by reference rather than wrapped in an
- * inline arrow. Defining it during render would give React a new component type on every pass
- * and remount the header subtree — `react/no-unstable-nested-components`. It reads navigation
- * from the hook instead of a prop precisely so the `options` object can stay static.
- */
-function HomeHeaderRight() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  return (
-    <View style={styles.headerGroup}>
-      {__DEV__ && (
-        <HeaderTextButton label="Screens" onPress={() => navigation.navigate('ScreenGallery')} />
-      )}
-      <HeaderTextButton label="Profile" onPress={() => navigation.navigate('Profile')} />
-    </View>
-  );
-}
-
-/**
  * Three mutually exclusive stacks, chosen by session and verification state.
  *
  * The stacks are SEPARATE rather than one stack with conditional navigation, and that is the
@@ -279,19 +235,21 @@ export function RootNavigator() {
             name="Home"
             component={HomeScreen}
             options={{
-              title: 'BlueSmoke',
-              // P1-8.0 — the only affordance into Profile. Home is the whole signed-in stack,
-              // so without this the screen is registered but unreachable.
-              headerRight: HomeHeaderRight,
+              // Home now builds its own header (avatar + dev "Screens" link, centered) so the
+              // gradient can run edge-to-edge behind the status bar — see HomeScreen.tsx.
+              headerShown: false,
             }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
           <Stack.Screen name="SetPassword" component={SetPasswordScreen} options={{ title: 'Set a password' }} />
-          {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection. */}
+          {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection.
+              No native header — `BluetoothPrimingScreen` renders its own gradient + "BlueSmoke"
+              + curtain shell, matching Home's. `slide_from_bottom` makes entering it read as
+              Home's own curtain continuing to rise, landing at the same resting height. */}
           <Stack.Screen
             name="BluetoothPriming"
             component={DevicePairingPrimingScreen}
-            options={{ title: 'Pair a device' }}
+            options={{ headerShown: false, animation: 'slide_from_bottom' }}
           />
           <Stack.Screen
             name="BluetoothGate"
@@ -362,12 +320,3 @@ export function RootNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  headerButton: {
-    minHeight: tokens.touchTarget.minHeight,
-    justifyContent: 'center',
-    paddingHorizontal: tokens.spacing.sm,
-  },
-  headerGroup: { flexDirection: 'row', alignItems: 'center' },
-});

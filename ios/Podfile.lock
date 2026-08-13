@@ -2327,7 +2327,7 @@ SPEC CHECKSUMS:
   AsyncStorage: 163ab23f6aa37a58b7f2379d0b4ee7ac84d6655c
   BVLinearGradient: cb006ba232a1f3e4f341bb62c42d1098c284da70
   FBLazyVector: 3c3be9a019176b5699455f7f66c5444b78a411c6
-  hermes-engine: 7c1917a60881b3e9e5296d508901559075f70563
+  hermes-engine: c4098054b2306914993082652f990674085c32e3
   MultiplatformBleAdapter: b1fddd0d499b96b607e00f0faa8e60648343dc1d
   PersonaInquirySDK2: 778e70a683a9c2c8f0035b92468374ce398d65a9
   RCTDeprecation: bccb6545c26db881ecddfd83a3f9ea82aba1605f

@@ -65,6 +65,17 @@ async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: strin
   });
 }
 
+// HomeScreen's `PairingModal` shows a brief "Looking for your device…" beat (real, un-mocked
+// `setTimeout`, same "real timers over here" convention `useDeviceScan`'s 20s timeout already
+// uses in this file) before the "We need Bluetooth to pair" dialog itself mounts — this waits
+// past that beat so `findByLabel(renderer, 'Continue' | 'Not now')` has something to find.
+async function openPairingDialog(renderer: ReactTestRenderer.ReactTestRenderer) {
+  await press(renderer, 'Pair a device');
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+  });
+}
+
 describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
   const K_DEV = Uint8Array.from({ length: 16 }, (_, i) => 0x30 + i);
 
@@ -79,7 +90,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     const renderer = renderFlow(manager);
 
     expect(renderedText(renderer)).toContain('No devices paired');
-    await press(renderer, 'Pair a device');
+    await openPairingDialog(renderer);
     expect(renderedText(renderer)).toContain('We need Bluetooth to pair');
 
     await press(renderer, 'Continue');
@@ -107,7 +118,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     });
     const renderer = renderFlow(manager);
 
-    await press(renderer, 'Pair a device');
+    await openPairingDialog(renderer);
     expect(renderedText(renderer)).toContain('We need Bluetooth to pair');
 
     await press(renderer, 'Not now');
@@ -131,7 +142,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     };
     const renderer = renderFlow(offManager);
 
-    await press(renderer, 'Pair a device');
+    await openPairingDialog(renderer);
     await press(renderer, 'Continue');
 
     expect(renderedText(renderer)).toContain('Bluetooth is off');
@@ -158,7 +169,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
       };
       const renderer = renderFlow(deniedManager);
 
-      await press(renderer, 'Pair a device');
+      await openPairingDialog(renderer);
       await press(renderer, 'Continue');
 
       expect(renderedText(renderer)).toContain('We need permission to continue');

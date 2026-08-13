@@ -57,6 +57,13 @@ const brandRaw = {
 const groundRaw = {
   top: '#DCE9FB',
   bottom: '#FFFFFF',
+  // Home screen only — a more saturated wash (opt-in via `GradientGround`'s `colors` prop, the
+  // other 15 consumers are unaffected) so the band reads clearly behind the "BlueSmoke" title.
+  // The bottom stop stays a light tint rather than fading to pure white so the sheet's curved
+  // top edge still has real colour contrast to read against, not just `elevation.sheetEdge`'s
+  // shadow.
+  topStrong: '#9FC7F5',
+  bottomTint: '#F2F7FE',
 } as const;
 
 const successRaw = {
@@ -109,6 +116,12 @@ const semanticColor = {
   brandGlow: brandRaw.glow,
   groundTop: groundRaw.top,
   groundBottom: groundRaw.bottom,
+  groundTopStrong: groundRaw.topStrong,
+  groundBottomTint: groundRaw.bottomTint,
+  // Home's sheet fill — a hair off pure `surface` white so the gradient's curved top edge has
+  // a real colour seam to read against, distinct from `groundBottomTint` above so the seam is
+  // a visible step, not a blend.
+  surfaceTint: '#F7FBFF',
   success: successRaw.text,
   successBg: successRaw.background,
 } as const;
@@ -158,6 +171,22 @@ const elevation = {
     },
     default: {
       elevation: 2,
+    },
+  }),
+  // Home redesign (reference-devices-list.md) — `GradientGround`'s sheet overlaps only the
+  // last `spacing.xxl` of the gradient wash, where it's already faded almost to `groundBottom`
+  // (white), the same as the sheet's own fill — so the curved top corners have no colour
+  // contrast to read by. A negative offset throws the shadow up into the gradient instead of
+  // down like `card`, so the curve reads regardless of what colour is behind it.
+  sheetEdge: Platform.select({
+    ios: {
+      shadowColor: neutral[900],
+      shadowOffset: { width: 0, height: -2 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+    },
+    default: {
+      elevation: 4,
     },
   }),
 } as const;
@@ -320,6 +349,14 @@ export const contrastPairs: ReadonlyArray<{
     bgToken: 'brandTint',
     fg: semanticColor.link,
     bg: semanticColor.brandTint,
+    size: 'body',
+  },
+  {
+    name: 'textPrimary on surfaceTint',
+    fgToken: 'textPrimary',
+    bgToken: 'surfaceTint',
+    fg: semanticColor.textPrimary,
+    bg: semanticColor.surfaceTint,
     size: 'body',
   },
   {
