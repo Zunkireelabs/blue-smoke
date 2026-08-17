@@ -65,14 +65,13 @@ async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: strin
   });
 }
 
-// HomeScreen's `PairingModal` shows a brief "Looking for your device…" beat (real, un-mocked
-// `setTimeout`, same "real timers over here" convention `useDeviceScan`'s 20s timeout already
-// uses in this file) before the "We need Bluetooth to pair" dialog itself mounts — this waits
-// past that beat so `findByLabel(renderer, 'Continue' | 'Not now')` has something to find.
+// HomeScreen's `PairingModal` opens straight into the "We need Bluetooth to pair" dialog — this
+// just waits a beat (real timers, matching the rest of this file's convention) for it to settle
+// so `findByLabel(renderer, 'Continue' | 'Not now')` has something to find.
 async function openPairingDialog(renderer: ReactTestRenderer.ReactTestRenderer) {
   await press(renderer, 'Pair a device');
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 2100));
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -94,8 +93,9 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     expect(renderedText(renderer)).toContain('We need Bluetooth to pair');
 
     await press(renderer, 'Continue');
-    // The gate resolves against the mock's `state()` ('PoweredOn') and replaces to DeviceScan.
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+    // The gate resolves against the mock's `state()` ('PoweredOn') and replaces to DeviceScan,
+    // which shows this same "Finding your device" copy for its real scan.
+    expect(renderedText(renderer)).toContain('Finding your device');
 
     // The mock's single device advertises `BLE_SERVICE_UUID` and is found synchronously.
     expect(renderedText(renderer)).toContain('BlueSmoke-');
@@ -146,7 +146,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     await press(renderer, 'Continue');
 
     expect(renderedText(renderer)).toContain('Bluetooth is off');
-    expect(renderedText(renderer)).not.toContain('Looking for your device…');
+    expect(renderedText(renderer)).not.toContain('Finding your device');
   });
 
   it('F7.E2 — permission denied (Android) resolves to ON-7 through the real composed flow', async () => {
@@ -173,7 +173,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
       await press(renderer, 'Continue');
 
       expect(renderedText(renderer)).toContain('We need permission to continue');
-      expect(renderedText(renderer)).not.toContain('Looking for your device…');
+      expect(renderedText(renderer)).not.toContain('Finding your device');
     } finally {
       Platform.OS = originalOS;
     }

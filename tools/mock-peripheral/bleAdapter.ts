@@ -42,6 +42,14 @@ export interface MockDeviceOptions {
   name: string;
   /** Scripted RSSI series consumed in call order by readRSSI(); last value repeats once exhausted. */
   rssiSeries?: number[];
+  /**
+   * Delay before this device's advertisement reaches `startDeviceScan`'s listener, milliseconds.
+   * Defaults to 0 — every existing caller's assumption before this option existed (`devFixture.ts`
+   * is the only one that sets it, to stagger its scan fixture so results trickle in the way real
+   * BLE advertisements do, rather than a "several devices" fixture dumping its whole list on
+   * screen in the same tick a real scan never would).
+   */
+  advertiseDelayMs?: number;
 }
 
 /**
@@ -60,6 +68,8 @@ export class MockDevice {
    * screen never makes.
    */
   rssi: number | null;
+  /** See `MockDeviceOptions.advertiseDelayMs` — read by `MockBleManager.startDeviceScan`. */
+  readonly advertiseDelayMs: number;
 
   private readonly core: DeviceCore;
   private rssiSeries: number[];
@@ -73,6 +83,7 @@ export class MockDevice {
     this.name = options.name;
     this.rssiSeries = options.rssiSeries ?? [];
     this.rssi = this.rssiSeries.length > 0 ? this.rssiSeries[0] : null;
+    this.advertiseDelayMs = options.advertiseDelayMs ?? 0;
   }
 
   async connect(): Promise<MockDevice> {
@@ -202,6 +213,9 @@ const DEFAULT_RADIO_STATE: BleRadioState = 'PoweredOn';
 export class MockBleManager {
   private readonly devices: MockDevice[];
   private radioState: BleRadioState;
+  /** Pending `advertiseDelayMs` arrivals from the in-flight scan — cleared on `stopDeviceScan()`
+   * so a cancelled scan can't still deliver a device after the caller stopped listening. */
+  private scanTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(devices: MockDevice[], radioState: BleRadioState = DEFAULT_RADIO_STATE) {
     this.devices = devices;
@@ -226,13 +240,25 @@ export class MockBleManager {
     if (serviceUUIDs && !serviceUUIDs.some((uuid) => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase())) {
       return;
     }
+    this.stopDeviceScan();
     for (const device of this.devices) {
-      listener(null, device);
+      // `advertiseDelayMs` defaults to 0, delivered synchronously here exactly like before that
+      // option existed — every existing caller (every test, `createMockPeripheral`) sees no
+      // behaviour change. Only a device built with a real delay (`devFixture.ts`'s dev fixture)
+      // arrives async.
+      if (device.advertiseDelayMs <= 0) {
+        listener(null, device);
+      } else {
+        this.scanTimers.push(setTimeout(() => listener(null, device), device.advertiseDelayMs));
+      }
     }
   }
 
   stopDeviceScan(): void {
-    // No background scan loop to cancel in this synchronous mock.
+    for (const timer of this.scanTimers) {
+      clearTimeout(timer);
+    }
+    this.scanTimers = [];
   }
 
   async connectToDevice(deviceId: string): Promise<MockDevice> {
@@ -263,6 +289,8 @@ export interface CreateMockPeripheralOptions extends DeviceCoreConfig {
   rssiSeries?: number[];
   /** Defaults to `'PoweredOn'` — every existing caller's assumption before this option existed. */
   radioState?: BleRadioState;
+  /** See `MockDeviceOptions.advertiseDelayMs`. Defaults to 0 (synchronous), same as that option. */
+  advertiseDelayMs?: number;
 }
 
 function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: MockDevice; core: DeviceCore } {
@@ -271,6 +299,7 @@ function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: Moc
     id: options.deviceId ?? 'mock-device-0001',
     name: `${ADVERTISING_LOCAL_NAME_PREFIX}${options.deviceUidSuffixHex ?? '0000'}`,
     rssiSeries: options.rssiSeries,
+    advertiseDelayMs: options.advertiseDelayMs,
   });
   return { device, core };
 }

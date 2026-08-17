@@ -86,7 +86,7 @@ describe('DevicePairingGateScreen — onResolved stability across re-renders', (
       tickRef.current?.();
     });
 
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+    expect(renderedText(renderer)).toContain('Finding your device');
     expect(scanCalls.count).toBe(1);
 
     // Force five re-renders of everything ABOVE DevicePairingGateScreen, well after resolution.
@@ -99,6 +99,6 @@ describe('DevicePairingGateScreen — onResolved stability across re-renders', (
     // A stable onResolved never re-fires the effect, so DeviceScan is never remounted and never
     // restarts its scan — still exactly one startDeviceScan call.
     expect(scanCalls.count).toBe(1);
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+    expect(renderedText(renderer)).toContain('Finding your device');
   });
 });

@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { CurtainGround, EmptyState, Text, tokens } from '@/shared/ui';
+import { GlassEffectView } from 'react-native-glass-effect-view';
+import { BrandMark, CurtainGround, EmptyState, Text, tokens } from '@/shared/ui';
 import { SignOutButton } from '@/features/auth/SignOutButton';
-import { useSessionStore } from '@/app/stores/useSessionStore';
-import { accountIdentifier } from '@/shared/lib/accountIdentifier';
 import { BluetoothPrimingBody } from '@/features/onboarding/BluetoothPrimingBody';
 import type { RootStackParamList } from '@/app/navigation';
 
@@ -14,11 +13,15 @@ import type { RootStackParamList } from '@/app/navigation';
 // exit rather than a bare spinner with no timeout (DE-8).
 const TAKING_LONGER_MS = 2 * 60 * 1000;
 
-/** How far down the Devices card's own top edge parks — passed through to `CurtainGround`. */
-const DEVICES_CURTAIN_TOP_RATIO = 0.31;
-/** How long the "Looking for your device…" beat shows before the "We need Bluetooth to pair"
- * dialog replaces it — reference screenshots asked for "a sec" of this before the dialog. */
-const PAIRING_LOADING_MS = 2000;
+// Native bottom sheets (iOS share sheet, Android modal sheets) dismiss on a short pull, not a
+// drag to the edge of the screen — a small distance, or a quick flick even short of that
+// distance, both read as "let go of this".
+const SHEET_DISMISS_DISTANCE = 60;
+const SHEET_DISMISS_VELOCITY = 0.5;
+
+/** How far down the Devices card's own top edge parks — passed through to `CurtainGround`.
+ * Exported so `DeviceScanScreen`'s results card parks at the same height as this one. */
+export const DEVICES_CURTAIN_TOP_RATIO = 0.31;
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -31,42 +34,59 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-/** Minimal person glyph — no icon set exists yet, this is small enough to hand-author inline
- * rather than pull in an icon library for one glyph. Relocated from `app/navigation.tsx`
- * (P0-7.0 follow-up): Home now owns its header, so this has no other consumer. */
+/** Person-in-a-circle glyph (reference screenshot) — no icon set exists yet, this is small
+ * enough to hand-author inline rather than pull in an icon library for one glyph. Relocated from
+ * `app/navigation.tsx` (P0-7.0 follow-up): Home now owns its header, so this has no other
+ * consumer. */
 function ProfileGlyph({ size, color }: { size: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="8" r="4" fill={color} />
-      <Path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={1.5} />
+      <Circle cx="12" cy="10" r="2.5" fill={color} />
+      <Path d="M6.5 18c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Bell glyph for the (currently decorative) notifications slot — hand-authored inline for the
+ * same reason `ProfileGlyph` is: no icon set exists yet, and it's one glyph. */
+function BellGlyph({ size, color }: { size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 3c-3 0-5 2.2-5 5.5v3.4c0 .6-.2 1.2-.6 1.7L5 15.3c-.6.8 0 2 1 2h12c1 0 1.6-1.2 1-2l-1.4-1.7c-.4-.5-.6-1.1-.6-1.7V8.5C17 5.2 15 3 12 3Z"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      <Path d="M10 19a2 2 0 0 0 4 0" stroke={color} strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
 
 /**
- * Home's identity control — an avatar + account identifier pill, top-left of the header
- * (reference screenshot). `accountIdentifier` is the same email/phone display string
- * `ProfileScreen` shows under "Signed in as" — see that util's own header comment, which has
- * anticipated a second consumer here since P1-8.0. Same glass tint as the rest of the kit's
- * icon buttons, just pill-shaped to fit the label.
+ * Notifications glyph, top-left of the header (reference screenshot) — a plain glyph, no chip
+ * behind it. No notifications screen exists yet (nothing registered in `navigation.tsx`), so
+ * this is deliberately not a `Pressable` — a button with no destination is the dead-CTA bug this
+ * project's tests exist to catch. Revisit once a Notifications route lands.
  */
-function IdentityPill({ label, onPress }: { label: string; onPress: () => void }) {
+function BellButton() {
+  return <BellGlyph size={24} color={tokens.color.textInverse} />;
+}
+
+/** Profile control, top-right of the header (reference screenshot) — a plain glyph, no chip
+ * behind it, no account identifier label; `ProfileScreen` itself is where the signed-in
+ * email/phone is shown. `iconTouchTarget` keeps the tap area at the kit's minimum without
+ * drawing anything extra around the icon. */
+function ProfileIconButton({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel="Profile"
-      style={({ pressed }) => [styles.pill, pressed && styles.pillPressed]}
+      style={({ pressed }) => [styles.iconTouchTarget, pressed && styles.iconPressed]}
     >
-      <View style={styles.pillFill} />
-      <View style={styles.pillAvatar}>
-        <View style={styles.pillAvatarFill} />
-        <View style={styles.pillAvatarHighlight} />
-        <ProfileGlyph size={20} color={tokens.color.textSecondary} />
-      </View>
-      <Text variant="label" tone="primary" style={styles.pillLabel} numberOfLines={1}>
-        {label}
-      </Text>
+      <ProfileGlyph size={24} color={tokens.color.textInverse} />
     </Pressable>
   );
 }
@@ -88,61 +108,159 @@ function HeaderTextButton({ label, onPress }: { label: string; onPress: () => vo
 }
 
 /**
- * "+" opens this instead of navigating — a transparent `Modal` over Home (same dimmed-backdrop
- * idiom `Sheet.tsx` uses, at a much lighter opacity: "slight overlay" over Home's own gradient
- * showing through, not a heavy scrim). Two phases, not one: a brief "Looking for your
- * device…" beat (the same copy/spinner `DeviceScanScreen` uses for its real scan — here purely
- * a materializing effect, since there's no permission yet to actually scan with) for
- * `PAIRING_LOADING_MS`, then the "We need Bluetooth to pair" content replaces it as a small
- * centered dialog card (reference screenshot's native-alert-style composition), rather than the
- * full-width sheet `BluetoothPrimingScreen` itself uses.
+ * "Pair a device"'s "+" control — a squircle, not a full circle (a plain circle read as a
+ * generic FAB, not the tile-shaped tap targets modern iOS/watchOS controls use). Its active state
+ * uses the REAL iOS 26 "Liquid Glass" material (`react-native-glass-effect-view` —
+ * added for this, not previously a dependency), not an approximation: on iOS 26+ it bridges
+ * Apple's own `UIGlassEffect`, so the refraction/specular highlight are the OS compositor's, not
+ * hand-drawn layers. On older iOS and on Android — both still in this project's Definition of
+ * Done — the library falls back to its own blur+shadow rendering, which is why there's no manual
+ * blur/gradient here on top of it; that fallback is the library's job, not this component's.
+ * `scale` pops slightly ABOVE 1 rather than down — Liquid Glass's active segment visually
+ * lifts/bulges off the surface, the opposite direction a normal button's press-in dip would
+ * suggest. `overflow: 'hidden'` on `glassButton` clips the glass layer to the squircle.
+ *
+ * No `tintColor` prop — the library's native iOS side (`GlassEffectView.mm`'s
+ * `hexStringToColor:`) hard-codes ANY tint it's given to full opacity, so passing one at all
+ * paints a flat colored block over the material instead of a translucent frost (tried `brand`,
+ * then `brandTint`; both still looked like solid fills, just different shades). Leaving the prop
+ * out skips that code path entirely (`GlassEffectView.mm`'s `updateProps` only replaces the view
+ * when `tintColor` actually changes from its default, so never setting it never triggers the
+ * broken tint logic) and falls through to the bare `UIGlassEffect` `initWithFrame` already
+ * creates — real, untinted, native glass. It still isn't colorless in practice: `glassButton`'s
+ * own `brandTint` fill stays underneath at all times (this view only overlays it on press), so
+ * the translucent glass picks up that color from what's actually behind it, the way real Liquid
+ * Glass gets its color from context rather than a paint. `UIGlassEffect` itself is resolved by
+ * string (`NSClassFromString`), a very new, undocumented API surface — expect rough edges.
+ */
+function PairDeviceButton({ onPress }: { onPress: () => void }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const animateScale = useCallback(
+    (toValue: number) => {
+      Animated.spring(scale, {
+        toValue,
+        useNativeDriver: true,
+        speed: 20,
+        bounciness: 6,
+      }).start();
+    },
+    [scale],
+  );
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Pair a device"
+      onPress={onPress}
+      onPressIn={() => animateScale(1.08)}
+      onPressOut={() => animateScale(1)}
+    >
+      {({ pressed }) => (
+        <Animated.View style={[styles.glassButton, { transform: [{ scale }] }]}>
+          {pressed && <GlassEffectView style={styles.glassButtonGlass} />}
+          <Text variant="title" tone="link" style={styles.glassPlus}>
+            +
+          </Text>
+        </Animated.View>
+      )}
+    </Pressable>
+  );
+}
+
+/**
+ * "+" opens this alongside `HomeScreen`'s own dimmed backdrop (rendered directly in the body,
+ * not in here — see `HomeScreen`) instead of navigating. Deliberately NOT the backdrop-inside-
+ * the-`Modal` idiom `Sheet.tsx` uses: a `Modal`'s `animationType="slide"` animates its whole
+ * subtree as one unit, so a backdrop rendered alongside the sheet *inside* the `Modal` slides up
+ * together with it — visibly "attached" to the card instead of reading as a separate dim layer
+ * that was already there. Keeping the backdrop in `HomeScreen`'s own tree means only the sheet
+ * card itself is inside this `Modal`, so only the card slides; the root `View` here is
+ * `pointerEvents="box-none"` so taps in the space around the card (not covered by it) fall
+ * through to `HomeScreen`'s backdrop `Pressable` underneath, which is what actually closes it.
+ *
+ * The "We need Bluetooth to pair" dialog renders as a bottom sheet — same curved top (`radii.xl`)
+ * as `CurtainGround`'s own curtain — sliding up from off screen (native `Modal`
+ * `animationType="slide"`) to rest with its top edge just below Home's "Devices" label
+ * (`sheetTop`, measured live off that label so it lines up regardless of device size — see
+ * `HomeScreen`).
+ *
+ * "Continue" calls `onContinue` straight away — no artificial delay first. There used to be a
+ * fixed-`PAIRING_LOADING_MS` "Looking for your device…" beat here, but it wasn't tied to any
+ * real scan (no Bluetooth permission exists yet at this point to scan with) — it was just a fixed
+ * timer standing in front of `BluetoothGate`, and it read as fake progress conflicting with the
+ * REAL scan-until-found beat `DeviceScanScreen` shows later (`useDeviceScan`'s actual
+ * `SCAN_TIMEOUT_MS`). Removed rather than kept "for feel".
+ *
+ * Swipe-to-dismiss rides on top of the same `translateY`, via core `Animated`/`PanResponder` —
+ * no gesture/reanimated dependency exists in this project yet, and this interaction doesn't need
+ * one. `onMoveShouldSetPanResponder` only claims the gesture once the touch has moved
+ * predominantly downward past a tiny slop, so a plain tap on "Continue"/"Not now" is never
+ * intercepted — only an actual drag is. Releasing past `SHEET_DISMISS_DISTANCE` (or a fast-enough
+ * flick short of it) calls `onClose` directly rather than animating fully off-screen first: the
+ * `Modal`'s own `animationType="slide"` close continues the sheet's motion from wherever the
+ * finger let go, so it reads as one continuous slide down instead of two stacked animations.
+ * Falling short of the threshold springs `translateY` back to 0.
  */
 function PairingModal({
   visible,
   onContinue,
   onClose,
+  sheetTop,
 }: {
   visible: boolean;
   onContinue: () => void;
   onClose: () => void;
+  sheetTop: number;
 }) {
-  const [phase, setPhase] = useState<'loading' | 'dialog'>('loading');
+  const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!visible) {
-      return;
+    if (visible) {
+      translateY.setValue(0);
     }
-    setPhase('loading');
-    const timer = setTimeout(() => setPhase('dialog'), PAIRING_LOADING_MS);
-    return () => clearTimeout(timer);
-  }, [visible]);
+  }, [visible, translateY]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          gesture.dy > 5 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderMove: (_event, gesture) => {
+          translateY.setValue(Math.max(0, gesture.dy));
+        },
+        onPanResponderRelease: (_event, gesture) => {
+          if (gesture.dy > SHEET_DISMISS_DISTANCE || gesture.vy > SHEET_DISMISS_VELOCITY) {
+            onClose();
+            return;
+          }
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 6,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 6,
+          }).start();
+        },
+      }),
+    [onClose, translateY],
+  );
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.pairingRoot}>
-        <Pressable
-          style={styles.pairingBackdrop}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-          onPress={onClose}
-        />
-        <View style={styles.pairingCenter} pointerEvents="box-none">
-          {phase === 'loading' ? (
-            <View style={styles.pairingLoading}>
-              <ActivityIndicator size="large" />
-              <Text variant="title" style={styles.centerText}>
-                Looking for your device…
-              </Text>
-              <Text variant="body" tone="secondary" style={styles.centerText}>
-                Hold your BlueSmoke close and make sure it's switched on.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.pairingDialog}>
-              <BluetoothPrimingBody onContinue={onContinue} onNotNow={onClose} />
-            </View>
-          )}
-        </View>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.pairingRoot} pointerEvents="box-none">
+        <Animated.View
+          style={[styles.pairingSheet, { top: sheetTop, transform: [{ translateY }] }]}
+          {...panResponder.panHandlers}
+        >
+          <View style={styles.pairingSheetHandle} />
+          <BluetoothPrimingBody onContinue={onContinue} onNotNow={onClose} />
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -159,22 +277,36 @@ function PairingModal({
  *
  * Built on `CurtainGround` (P0-7.0 follow-up) — the gradient + "BlueSmoke" wordmark + curtain
  * card shell shared with `BluetoothPrimingScreen`. Native header turned off in `navigation.tsx`
- * so the gradient runs edge-to-edge behind the status bar; the identity pill replaces the old
- * native `headerRight` avatar button.
+ * so the gradient runs edge-to-edge behind the status bar; the header row's three slots (bell,
+ * brand mark, profile icon — reference screenshot) replace the old native `headerRight` avatar
+ * button.
  *
- * Tapping "+" no longer navigates — `PairingModal` opens in place, a dimmed dialog over Home
- * rather than a pushed screen. "Continue" inside it still moves on to the real permission-check
- * screen (`BluetoothGate`); "Not now"/the backdrop just closes the modal, since there was never
- * anywhere to navigate back from.
+ * Tapping "+" no longer navigates — `PairingModal` opens in place, a bottom sheet sliding up over
+ * a dimmed Home rather than a pushed screen. The dim itself renders right here in the body (the
+ * `pairingBackdrop` `Pressable` below), not inside `PairingModal`'s `Modal` — see that
+ * component's own header comment for why: keeping it out of the `Modal` is what stops it sliding
+ * up "attached" to the card instead of reading as a backdrop that was already there. It rests
+ * with its top edge just below the "Devices" label below — `devicesLabelRef` measures that
+ * label's live on-screen position (`measureInWindow`, not `onLayout`'s parent-relative numbers)
+ * so the sheet lines up under it on any device size. "Continue" inside it still moves on to the
+ * real permission-check screen (`BluetoothGate`); "Not now"/the backdrop just closes it, since
+ * there was never anywhere to navigate back from.
  *
  * Sign-out moved to the Profile screen in P1-8.0, which is where the TODO puts it and which is
- * reachable from this screen's identity pill. It is still the only way back out of the gated
+ * reachable from this screen's profile icon. It is still the only way back out of the gated
  * stack.
  */
 export function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const user = useSessionStore((s) => s.user);
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [sheetTop, setSheetTop] = useState(0);
+  const devicesLabelRef = useRef<View>(null);
+
+  const measureDevicesLabel = useCallback(() => {
+    devicesLabelRef.current?.measureInWindow((_x, y, _width, height) => {
+      setSheetTop(y + height);
+    });
+  }, []);
 
   return (
     <View style={styles.root}>
@@ -183,44 +315,44 @@ export function HomeScreen() {
         titleTopSpacing={tokens.spacing.lg}
         subtitle={getGreeting()}
         headerLeft={
-          __DEV__ ? (
-            <HeaderTextButton label="Screens" onPress={() => navigation.navigate('ScreenGallery')} />
-          ) : undefined
+          <View style={styles.headerLeftGroup}>
+            <BellButton />
+            {__DEV__ && (
+              <HeaderTextButton label="Screens" onPress={() => navigation.navigate('ScreenGallery')} />
+            )}
+          </View>
         }
-        headerRight={
-          <IdentityPill
-            label={accountIdentifier(user?.email, user?.phone)}
-            onPress={() => navigation.navigate('Profile')}
-          />
-        }
+        headerCenter={<BrandMark size={28} groundColor={tokens.color.groundTopStrong} />}
+        headerRight={<ProfileIconButton onPress={() => navigation.navigate('Profile')} />}
       >
-        <Text variant="label" tone="secondary" style={styles.sectionLabel}>
-          Devices
-        </Text>
+        <View ref={devicesLabelRef} onLayout={measureDevicesLabel}>
+          <Text variant="label" tone="secondary" style={styles.sectionLabel}>
+            Devices
+          </Text>
+        </View>
         <EmptyState
           title="No devices paired"
           body="Pair your BlueSmoke to lock and unlock it from your phone."
         />
         <View style={styles.pairSpacer} />
         <View style={styles.pairSection}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Pair a device"
-            onPress={() => setPairingOpen(true)}
-            style={({ pressed }) => [styles.glassButton, pressed && styles.glassButtonPressed]}
-          >
-            <View style={styles.glassHighlight} />
-            <Text variant="title" tone="link" style={styles.glassPlus}>
-              +
-            </Text>
-          </Pressable>
+          <PairDeviceButton onPress={() => setPairingOpen(true)} />
           <Text variant="body" style={styles.centerText}>
             Pair a device
           </Text>
         </View>
       </CurtainGround>
+      {pairingOpen && (
+        <Pressable
+          style={styles.pairingBackdrop}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          onPress={() => setPairingOpen(false)}
+        />
+      )}
       <PairingModal
         visible={pairingOpen}
+        sheetTop={sheetTop}
         onContinue={() => {
           setPairingOpen(false);
           navigation.navigate('BluetoothGate');
@@ -301,94 +433,54 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.textPrimary,
     opacity: 0.18,
   },
-  pairingCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: tokens.spacing.xl,
-  },
-  pairingLoading: {
-    alignItems: 'center',
-    gap: tokens.spacing.sm,
-  },
-  // Rounded on all sides and compact, not the full-width bottom sheet `BluetoothPrimingScreen`
-  // itself uses — a small centered dialog, matching the reference screenshot's native-alert
-  // composition.
-  pairingDialog: {
-    width: '100%',
-    maxWidth: 360,
+  // Same curved-top motif as `CurtainGround`'s own curtain (`radii.xl`) — `top` is set inline
+  // per-render from the measured "Devices" label position, not a fixed value here. No elevation
+  // shadow: against `pairingBackdrop`'s flat dim, `sheetEdge`'s glow read as a halo smeared
+  // around the whole card rather than a clean edge, so the dim alone does the separating.
+  pairingSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: tokens.color.surfaceTint,
-    borderRadius: tokens.radii.xl,
+    borderTopLeftRadius: tokens.radii.xl,
+    borderTopRightRadius: tokens.radii.xl,
     padding: tokens.spacing.xl,
-    ...tokens.elevation.card,
+  },
+  // `backgroundMuted` alone (as `Sheet.tsx`'s handle uses) reads as near-invisible against this
+  // sheet's `surfaceTint` fill — the two are only a couple of `neutral` steps apart, and no other
+  // registered `bgToken` sits any greyer. Same move as `pairingBackdrop` below: dim `textPrimary`
+  // via the `opacity` *style* property rather than reach for a new literal/token pairing — a
+  // plain style number, not a color, so it renders as a solid mid-grey fill without adding a
+  // `contrastPairs` entry for a token nothing ever draws text on.
+  pairingSheetHandle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: tokens.radii.full,
+    backgroundColor: tokens.color.textPrimary,
+    opacity: 0.2,
+    marginBottom: tokens.spacing.lg,
   },
   headerTextButton: {
     minHeight: tokens.touchTarget.minHeight,
     justifyContent: 'center',
     paddingHorizontal: tokens.spacing.sm,
   },
-  pill: {
+  headerLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: tokens.spacing.sm,
+  },
+  // No chip — just enough padding around the glyph to keep the tap area at the kit's minimum.
+  iconTouchTarget: {
+    minWidth: tokens.touchTarget.minWidth,
     minHeight: tokens.touchTarget.minHeight,
-    paddingRight: tokens.spacing.md,
-    borderRadius: tokens.radii.full,
-    borderWidth: 1,
-    borderColor: tokens.color.border,
-    overflow: 'hidden',
-    maxWidth: 140,
-  },
-  pillPressed: {
-    opacity: 0.7,
-  },
-  // Same translucent-fill recipe as `pillAvatarFill` — a low-opacity tint layer under the
-  // content, not a solid `brandTint` fill, so the gradient behind the whole pill reads through
-  // it rather than the pill sitting on it as an opaque chip.
-  pillFill: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: tokens.color.brandTint,
-    opacity: 0.4,
-  },
-  // Sized to fill the pill's own height flush with its left edge — no padding around it — so
-  // the circle sits inside the pill's rounded left cap exactly, the way a chip's avatar sits
-  // flush in its rounded end, rather than floating inside a padded gap.
-  pillAvatar: {
-    width: tokens.touchTarget.minHeight,
-    height: tokens.touchTarget.minHeight,
-    marginRight: tokens.spacing.sm,
-    borderRadius: tokens.radii.full,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
-  // Translucent rather than the flat opaque `surface` fill it replaced — a partial-opacity
-  // white layer under the highlight blob is this kit's whole "glass" recipe (no native blur
-  // dependency), same idiom as `glassHighlight` elsewhere in this file.
-  pillAvatarFill: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: tokens.color.surface,
-    opacity: 0.16,
-  },
-  pillAvatarHighlight: {
-    position: 'absolute',
-    top: 6,
-    left: 8,
-    width: 18,
-    height: 10,
-    borderRadius: tokens.radii.full,
-    backgroundColor: tokens.color.surface,
-    opacity: 0.35,
-  },
-  pillLabel: {
-    flexShrink: 1,
+  iconPressed: {
+    opacity: 0.6,
   },
   centered: {
     flex: 1,
@@ -419,7 +511,7 @@ const styles = StyleSheet.create({
   glassButton: {
     width: 72,
     height: 72,
-    borderRadius: tokens.radii.full,
+    borderRadius: tokens.radii.xl,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -428,18 +520,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...tokens.elevation.card,
   },
-  glassButtonPressed: {
-    opacity: 0.7,
-  },
-  glassHighlight: {
+  // `borderRadius` set here too, not just relying on `glassButton`'s `overflow: 'hidden'` clip —
+  // `GlassEffectView.mm` reads its own layer's `cornerRadius` to round the native material's edge
+  // (`_view.layer.cornerRadius = self.layer.cornerRadius`), so this gives the glass a soft rounded
+  // edge of its own rather than a hard rectangle masked from the outside.
+  glassButtonGlass: {
     position: 'absolute',
-    top: 8,
-    left: 12,
-    width: 32,
-    height: 18,
-    borderRadius: tokens.radii.full,
-    backgroundColor: tokens.color.surface,
-    opacity: 0.5,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: tokens.radii.xl,
   },
   glassPlus: {
     fontSize: 32,

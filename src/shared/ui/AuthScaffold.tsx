@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,6 +44,8 @@ export interface AuthScaffoldProps {
  */
 export function AuthScaffold({ topLink, children }: AuthScaffoldProps) {
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const headerHeight = Math.round(height * AUTH_HEADER_HEIGHT_RATIO);
 
   return (
     <View style={styles.root}>
@@ -50,6 +53,7 @@ export function AuthScaffold({ topLink, children }: AuthScaffoldProps) {
         style={[
           styles.header,
           {
+            height: headerHeight,
             paddingTop: insets.top + tokens.spacing.md,
             paddingLeft: insets.left + tokens.spacing.lg,
             paddingRight: insets.right + tokens.spacing.lg,
@@ -106,6 +110,13 @@ export function AuthScaffold({ topLink, children }: AuthScaffoldProps) {
     </View>
   );
 }
+
+/**
+ * Header height as a fraction of screen height, so the sheet's curved top edge lands at the same
+ * height as Home's curtain card (`HomeScreen.tsx`'s `DEVICES_CURTAIN_TOP_RATIO`) rather than
+ * wherever the header's own content happens to end.
+ */
+const AUTH_HEADER_HEIGHT_RATIO = 0.31;
 
 /** Matched to the wordmark's cap height so the two read as one lockup, not an icon and a label. */
 const BRAND_MARK_SIZE = 28;

@@ -55,8 +55,10 @@ const COLOR_REFERENCE = /(\w+)\s*(?::|=)\s*\{?\s*tokens\.color\.(\w+)\b/g;
 
 /** Keys whose value renders as visible text or an icon fill — subject to WCAG contrast. */
 const FG_KEYS = new Set(['color', 'placeholderTextColor']);
-/** Keys whose value is the surface text/an icon sits on. */
-const BG_KEYS = new Set(['backgroundColor']);
+/** Keys whose value is the surface text/an icon sits on. `tintColor` is
+ * `react-native-glass-effect-view`'s `GlassEffectView` prop — the color tinting the glass
+ * material text/icons render on top of, same background role as `backgroundColor`. */
+const BG_KEYS = new Set(['backgroundColor', 'tintColor']);
 /** Keys whose value never renders text or an icon — outlines only. Applies to every scanned
  * file. Tokens found under these keys must be named in `EXEMPT_TOKENS` below, not silently
  * skipped. */
@@ -77,11 +79,23 @@ const BORDER_KEYS = new Set(['borderColor', 'shadowColor']);
  */
 const BRANDMARK_PATH = 'src/shared/ui/BrandMark.tsx';
 const ILLUSTRATIONS_DIR = 'src/shared/ui/illustrations/';
-const DECORATIVE_SHAPE_KEYS = new Set(['fill', 'stroke', 'stopColor', 'groundColor']);
+const DECORATIVE_SHAPE_KEYS = new Set(['fill', 'stroke', 'stopColor']);
 
 function isDecorativeShapeFile(relativePath: string): boolean {
   return relativePath === BRANDMARK_PATH || relativePath.startsWith(ILLUSTRATIONS_DIR);
 }
+
+/**
+ * `groundColor` is `BrandMarkProps`' own prop name (P0-7.0 geometry v3) — unlike `fill`/
+ * `stroke`/`stopColor`, no other component defines a prop with this name, so a caller passing
+ * one to `<BrandMark>` (e.g. Home's header, matching the mark's knockout to the gradient it
+ * sits on) carries the same non-text, shape-fill role `DECORATIVE_SHAPE_KEYS` covers inside
+ * `BrandMark.tsx` itself. Applied to every scanned file, not gated by `isDecorativeShapeFile` —
+ * doing that for `fill`/`stroke`/`stopColor` too would risk a future real icon's fill silently
+ * escaping its own contrast obligation (see that set's header comment); no such risk here since
+ * the key name is unique to this one component's prop.
+ */
+const GROUND_COLOR_KEY = new Set(['groundColor']);
 
 /**
  * Named, reasoned exemption list for tokens that legitimately never render text or an icon —
@@ -100,6 +114,9 @@ const EXEMPT_TOKENS: Readonly<Record<string, string>> = {
   surface: "BrandMark's `groundColor` default (P0-7.0 geometry v3) — the splash's white ground, "
     + 'passed as the inner flame knockout fill. Already covered as a bgToken above; this entry '
     + 'is for its separate, non-text use as a shape fill.',
+  groundTopStrong: "BrandMark's `groundColor` at Home's header (P0-7.0 follow-up) — matches the "
+    + "inner flame knockout to CurtainGround's gradient top stop so the mark reads seamlessly "
+    + 'there, the same non-text shape-fill role as the `surface` entry above.',
 };
 
 /** The destructured form (`const { color } = tokens; color.surface`) produces a different
@@ -126,9 +143,11 @@ function scan(files: SourceFile[]): ScanResult {
     if (DESTRUCTURED_COLOR_ACCESS.test(file.contents)) {
       destructured.push(file.relativePath);
     }
-    const borderKeysForFile = isDecorativeShapeFile(file.relativePath)
-      ? new Set([...BORDER_KEYS, ...DECORATIVE_SHAPE_KEYS])
-      : BORDER_KEYS;
+    const borderKeysForFile = new Set([
+      ...BORDER_KEYS,
+      ...GROUND_COLOR_KEY,
+      ...(isDecorativeShapeFile(file.relativePath) ? DECORATIVE_SHAPE_KEYS : []),
+    ]);
     for (const match of file.contents.matchAll(COLOR_REFERENCE)) {
       const [, key, tokenName] = match;
       if (FG_KEYS.has(key)) {

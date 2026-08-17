@@ -256,11 +256,9 @@ export function RootNavigator() {
             component={DevicePairingGateScreen}
             options={{ title: 'Pair a device' }}
           />
-          <Stack.Screen
-            name="DeviceScan"
-            component={DeviceScanScreen}
-            options={{ title: 'Pair a device' }}
-          />
+          {/* No native header — DeviceScanScreen renders its own full-bleed gradient (matching
+              Home's) with its own back control, same reasoning as Home itself above. */}
+          <Stack.Screen name="DeviceScan" component={DeviceScanScreen} options={{ headerShown: false }} />
           <Stack.Screen
             name="DevicePairingBoundary"
             component={PairingBoundaryScreen}

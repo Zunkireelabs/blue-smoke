@@ -8,9 +8,12 @@ import { tokens } from './tokens';
 export interface CurtainGroundProps {
   /** The curtain's contents. */
   children: ReactNode;
-  /** Top-left of the header row, above the gradient — e.g. Home's identity pill. */
+  /** Top-left of the header row, above the gradient — e.g. Home's notification glyph. */
   headerLeft?: ReactNode;
-  /** Top-right of the header row — e.g. the dev "Screens" link. */
+  /** Centre of the header row, e.g. a small brand mark. Truly centred regardless of how wide
+   * `headerLeft`/`headerRight` render, since all three slots share equal flex. */
+  headerCenter?: ReactNode;
+  /** Top-right of the header row — e.g. the profile icon. */
   headerRight?: ReactNode;
   /** Extra styles merged onto the curtain card itself. */
   style?: StyleProp<ViewStyle>;
@@ -44,6 +47,7 @@ const DEFAULT_CURTAIN_TOP_RATIO = 0.36;
 export function CurtainGround({
   children,
   headerLeft,
+  headerCenter,
   headerRight,
   style,
   curtainTopRatio = DEFAULT_CURTAIN_TOP_RATIO,
@@ -68,6 +72,7 @@ export function CurtainGround({
         ]}
       >
         <View style={styles.headerSide}>{headerLeft}</View>
+        <View style={[styles.headerSide, styles.headerCenterSide]}>{headerCenter}</View>
         <View style={[styles.headerSide, styles.headerRightSide]}>{headerRight}</View>
       </View>
 
@@ -111,9 +116,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: tokens.spacing.md,
   },
+  // Equal flex on all three slots — `headerCenter` lands on the row's true centre regardless of
+  // how wide `headerLeft`/`headerRight` render, rather than the visual centre drifting toward
+  // whichever side is narrower the way an unflexed `space-between` row would.
   headerSide: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  headerCenterSide: {
+    justifyContent: 'center',
   },
   headerRightSide: {
     justifyContent: 'flex-end',
