@@ -2,6 +2,58 @@
 
 Newest first. Conventions in [`README.md`](README.md).
 
+## 2026-08-17 — OQ-13 closes for real: the manufacturer's SDK, and what it costs
+
+**Branches:** `feature/ble-connectivity`
+**Landed:** `src/features/ble/h158/{h158Protocol,h158Session,H158BringUpScreen}.tsx?`, tests, an
+additive `filter` option on `scanner.ts`, an additive `writeCharacteristicWithoutResponseForService`
+on `BleClientContext.tsx`, a dev-only nav route. `docs/hardware/hqd-device-architecture.md` §11,
+`TECHNICAL_SPEC.md` v1.17 (OQ-13 closed, OQ-9 reconfirmed, OQ-16/OQ-17 registered), CLAUDE.md's
+Current State and authority-model caveat refreshed. The manufacturer's `itronlib` SDK archived at
+`docs/hardware/manufacturer-supplied-2026-08-17/` (397 KB source+docs, build output excluded).
+
+**What arrived:** written answers to all 18 blocking questions sent Day 12/13, plus — four days late
+— the `itronlib` Android SDK itself, working Kotlin with its own unit tests and a prebuilt demo APK.
+The SDK, not the prose, is what actually closes this: it names the one characteristic (`0xFFF1` of
+the five the module spec describes), and its own source and test disprove a corner of the written
+reply — item 10 confirmed our checksum reading as payload-only XOR, which `BleProtocol.kt`'s own test
+shows is wrong (it's XOR from the frame header). Full cross-check in
+`manufacturer-supplied-2026-08-17/MANIFEST.md` §4. Lesson repeated from Day 13's wire-colour finding:
+**when a prose answer and the vendor's own artifact disagree, trust the artifact.**
+
+**Decided, and why:** build a narrow bring-up spike (`src/features/ble/h158/**`) rather than touch
+`protocol.ts`/`auth.ts`/`crypto.ts`/`tools/mock-peripheral` at all. The real device doesn't implement
+§4 — no CMAC handshake, no notifications, not even a GATT profile shaped like ours — so there is
+nothing in the existing §4 implementation to *port*; deleting it before the client has agreed to lose
+the security model it implements would be the wrong call to make unilaterally. Explicit user decision
+this session, not an inference: ship the spike, record the consequences in docs, and hold off on a
+drafted client message this pass.
+
+**What this actually reveals, and why it's bigger than "which characteristic":** four separate
+findings now point at the same conclusion. **OQ-16** (new) — no device-side authentication exists at
+all; the firmware only supports "just-work unencrypted mode," no PIN, no bonding. **OQ-17** (new) —
+every unit advertises the identical Bluetooth name, and iOS exposes no MAC to tell them apart, so
+there is no radio-visible per-device identity for pillar 1's multi-device pairing. **OQ-9**
+(reconfirmed, not reopened) — an unlocked device stays unlocked across a disconnect; no dead-man
+timer, independently restated in this reply's item 16 after Day 12 already found it from the firmware
+description. **OQ-4** (unchanged, now more concerning) — no per-device key is written at manufacture
+either. CLAUDE.md's authority model line ("the firmware dead-man timer is what makes the device
+safe") now carries an explicit caveat rather than reading as a settled fact — see the file itself.
+
+**Also settled, incidentally:** reply item 17 explains the Day-10 40-minute silent-scan mystery —
+USB power alone can't run the system; it needs a soldered 4.2 V cell. And item 18 revises §10.1's
+bench-wiring read: the blue wire was read off the board's `T` silkscreen mark as a thermistor sense
+pin; this reply describes the same wire as `H+`, a heating-element drive line. Neither confirmed
+against the board directly yet — next bench session should settle it by testing, not asking a third
+time.
+
+**Method note carried forward from Day 12/13:** the SDK's own test file (`BleProtocolTest.kt`) was
+free, known-good test data — ported its vectors verbatim into `h158Protocol.test.ts` rather than
+inventing fixtures, so this module's tests are checked against the manufacturer's own values, not
+just against itself.
+
+---
+
 ## 2026-08-09 — the client's device is a two-chip design, and §4's GATT layout probably can't run on it
 
 **Branches:** `feature/ble-connectivity` (claim pushed Day 10, cut from `stage` @ `27d5291`)

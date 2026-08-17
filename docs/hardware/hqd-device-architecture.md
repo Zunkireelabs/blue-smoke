@@ -692,3 +692,98 @@ a sense input, not a power output.
 The wider lesson for anything else in that reply: **item 10's wire-colour text is demonstrably loose
 about this board.** It was a prose answer about wire colours, not a document — treat the rest of it
 as indicative rather than authoritative, and prefer the board or the schematic wherever they speak.
+
+---
+
+## 11. OQ-13 closes for real, Day 17/18 — the `itronlib` SDK, and what it costs us
+
+**Two things arrived together**
+([`manufacturer-supplied-2026-08-17/`](manufacturer-supplied-2026-08-17/)): full written answers to
+every one of the 18 blocking BLE questions from §7, and — four days late but delivered — the
+`itronlib` Android SDK the manufacturer promised "this Friday" in the 2026-08-12 reply. The SDK is
+working, tested Kotlin, not a document to interpret, and it is what actually closes what §3.2.1/§8
+left open. See `manufacturer-supplied-2026-08-17/MANIFEST.md` for full provenance and hashes.
+
+### 11.1 What's now closed
+
+- **Which of `0xFFF1`–`0xFFF5` HQD's firmware uses:** `0xFFF1`, both directions
+  (`itronlib`'s `BleSdkConfig.kt`, confirmed against LightBlue on real hardware; reply item 1). The
+  other four channels the module spec describes exist on the chip but HQD's firmware never touches
+  them.
+- **The exact frame format:** `HEAD(0x02) | LEN | CMD | DATA… | XOR | TAIL(0x01)` for a command,
+  `HEAD | LEN | CMD | ACK | DATA… | XOR | TAIL` for a reply — the **ACK byte** is new information;
+  no prior document or reply mentioned it. **The checksum span is corrected here too**: it is XOR
+  from the frame header (`HEAD^LEN^CMD^DATA…`), not the payload alone. Reply item 10 confirmed our
+  question's payload-only reading, which the SDK's own source and its own unit test disprove against
+  the manufacturer's own worked examples — see `manufacturer-supplied-2026-08-17/MANIFEST.md` §4 for
+  the arithmetic. Trust the SDK source over the prose answer whenever the two disagree, same lesson
+  as §10.1.
+- **The PIN question (§7 1d), independently reconfirmed:** reply item 3 — "not supported at present
+  … just-work unencrypted mode via AT commands." Matches §3.2.1's search-based finding exactly.
+- **Status byte mapping:** `0x31` = locked, `0x30` = unlocked (`BleProtocol.kt`) — the written reply
+  (item 2) gave both values without saying which is which; only the SDK source resolves it.
+- Implemented, promoted into `src/features/ble/h158/h158Protocol.ts` (deliberately **not**
+  `protocol.ts` — see that file's module doc for why): the frame codec, both commands, both response
+  parsers, and an undocumented quirk visible only in `BleConnectionManager.kt` — a `CHILD_LOCK` reply
+  carrying 3+ data bytes is routed through the *status* parser, not treated as malformed.
+
+### 11.2 What's still open
+
+- **YC1012 vs. YP65-AT.** Neither this reply nor the 2026-08-12 documents state whether YP65-AT is a
+  module built around the YC1012 silicon (§4.1) or an unrelated part. Not blocking — OQ-13's actual
+  blocker (the UUIDs) is answered either way.
+- **Who wrote HQD's application firmware** (§3.2.1's third unclosed point) is, strictly, still open —
+  `itronlib` is HQD's own Android SDK talking to that firmware, not a statement of who authored it.
+- **`AC-H158-V1.01` — main board or charge/protection board?** Still not confirmed either way. Reply
+  item 18 describes `B+`/`B-`/`H+`(heating)/airflow-sensor-microphone/on-PCB-antenna for *this* board
+  — which reads as though it answers "main board," contradicting the Day-10 working assumption, but
+  it's a prose answer about wire function again (§10.1's lesson), not a document. **This also revises
+  §10.1**: that section read the blue wire as a thermistor sense pin (`T` silkscreen marking); this
+  reply describes the same blue wire as `H+`, the heating element drive. Settle it on the bench (see
+  the bring-up order below) rather than by asking a third time.
+
+### 11.3 What this means for the build, independent of any of the above
+
+The bytes are now real. What they describe is not what spec §4 describes, on every axis that
+matters for pillar 3 (proximity lock/unlock) and the CLAUDE.md authority model:
+
+- **No device-side authentication of any kind.** Just-work, unencrypted, plaintext commands (reply
+  item 3). Anyone with the device's Bluetooth name and a generic BLE tool can send `A1 78`. Inviolable
+  rule 2 (`K_dev` never leaves the server) and rule 3 (`age_verified` validated server-side) still
+  protect *our* server; neither protects the *device* the way §4.5's CMAC handshake was meant to.
+- **No dead-man timer.** Reply item 16: an unlocked device stays unlocked across a disconnect —
+  "H158 retains the state prior to disconnection." CLAUDE.md's authority model ("the firmware
+  dead-man timer is what makes the device safe … any design requiring the app to be alive for the
+  device to lock is wrong") describes a mechanism this firmware does not implement.
+- **No unsolicited notifications.** Reply item 13 — lock state must be *polled* via Read Status; the
+  device never pushes a change, including on its own physical button. `h158Session.ts`'s design
+  reflects this: every command carries an explicit timeout because a bad frame produces silence
+  (reply item 12), not an error reply — timeout is the only failure signal this transport has.
+- **Every unit advertises the identical name**, and it only advertises after a physical button press,
+  lapsing again after three separate idle timers (reply items 4, 6, 7). iOS exposes no MAC address to
+  distinguish units (OQ-14, already registered) — between the two, there is no way to key a
+  multi-device pairing flow (pillar 1) off anything the radio provides.
+
+None of this is a code defect to fix — it's what the hardware is. Registered as open questions in
+`TECHNICAL_SPEC.md` §13; not drafted as a client message this pass (that's a deliberate choice, not
+an oversight — see the session log for 2026-08-17).
+
+### 11.4 Bring-up order, hardware-gated
+
+Do this **before** attributing anything to our own code — the manufacturer's own demo app is the
+control:
+
+1. Solder a charged 4.2 V lithium cell to `B+`/`B-` — **USB power alone will not run the system**
+   (reply item 17). This alone explains the Day-10 40-minute scan that found nothing.
+2. Single-press the button. Expect a blue LED flash and advertising to start (reply item 6).
+3. Scan with nRF Connect. Expect the name `YP65-AT`. Advertising lapses after 10 minutes idle —
+   re-press before each attempt. **If `YP65-AT` appears, `AC-H158-V1.01` is the main board** — settles
+   §11.2's open question on the bench rather than by asking again.
+4. Install `manufacturer-supplied-2026-08-17/H158-itronlib-sdk/app/build/outputs/apk/debug/`'s debug
+   build (or the hashed `H158 Demo.apk` it corresponds to — see MANIFEST.md) and run their own
+   `docs/ble-manual-test.md` script. **If their own app cannot drive the board, the board or its
+   firmware is the problem, not this codebase** — it may still need a PY32C642 firmware upgrade via
+   PW200 (reply item 6). ⚠️ Do not press the PW200's flash button exploratorily — §9.2's licence-credit
+   warning still applies.
+5. Only once step 4 passes, run `H158BringUpScreen` (dev-only, behind `__DEV__`) and compare its
+   captured hex trace against theirs.

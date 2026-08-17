@@ -9,16 +9,17 @@
  * boundary throws.** Every failure arrives at the caller as a typed
  * `ScanState`, because a scan failure is a screen state, not an exception.
  *
- * ⚠️ **`BLE_SERVICE_UUID` is unconfirmed against real hardware — OQ-13.** The
- * client's PCBA documents describe a two-chip board whose GATT profile belongs
- * to the BLE module vendor, so the §4.2 UUID this scanner filters on may not be
- * what the device advertises. See `docs/hardware/hqd-device-architecture.md`.
- * The consequence is deliberately contained: the UUID is one imported constant
- * and every other behaviour in this file — dedupe, ordering, timeout, adapter
- * state, teardown — is independent of its value. **A wrong UUID fails silently
- * here** (no results, indistinguishable from no devices in range), which is why
- * `ScanState.noDevicesFound` carries `filteredOnServiceUuid`: whatever renders
- * it can say what was searched for rather than only that nothing was found.
+ * **OQ-13 is resolved** (docs/hardware/manufacturer-supplied-2026-08-17/) —
+ * but the answer is that the real H158/YP65-AT hardware does not implement
+ * §4 at all: no FFF0 advertising, a different frame format, no
+ * authentication. `BLE_SERVICE_UUID` below is still the §4 constant, correct
+ * for that (currently unimplemented) protocol; the real device is scanned
+ * for via the `filter.namePrefix` option (see `CreateDeviceScannerOptions`
+ * and `../h158/h158Protocol.ts`), because a wrong or absent UUID **fails
+ * silently** — no results, indistinguishable from no devices in range —
+ * which is why `ScanState.noDevicesFound` carries `filteredOnServiceUuid`:
+ * whatever renders it can say what was searched for rather than only that
+ * nothing was found.
  */
 
 import { base64ToBytes } from './base64';
@@ -125,12 +126,31 @@ export interface DeviceScanner {
   subscribe(listener: (state: ScanState) => void): () => void;
 }
 
+/**
+ * What the radio-level scan filters on. Defaults to the §4.1 service-UUID
+ * filter — every existing caller and test keeps that behaviour unchanged.
+ *
+ * A `namePrefix` filter exists for devices that don't advertise their
+ * service UUID at all — the H158/YP65-AT is one (see
+ * `../h158/h158Protocol.ts`): it advertises its name in the scan response
+ * only, never FFF0, so a UUID-filtered radio scan finds nothing, silently,
+ * same failure mode as a wrong UUID. `serviceUuids: null` skips the
+ * radio-level UUID filter entirely so `namePrefix` is the only filter
+ * applied, in `onAdvertisement` below.
+ */
+export interface DeviceScanFilter {
+  serviceUuids: string[] | null;
+  namePrefix?: string;
+}
+
 export interface CreateDeviceScannerOptions {
   scanner: BleScannerLike;
   /** Injectable for tests; defaults to `Date.now`. */
   now?: () => number;
   scanTimeoutMs?: number;
   deviceStaleAfterMs?: number;
+  /** Defaults to `{ serviceUuids: [BLE_SERVICE_UUID] }` — today's behaviour, unchanged. */
+  filter?: DeviceScanFilter;
 }
 
 function adapterStateToBlockedReason(state: string): ScanBlockedReason | null {
@@ -203,6 +223,7 @@ export function createDeviceScanner(options: CreateDeviceScannerOptions): Device
   const now = options.now ?? (() => Date.now());
   const scanTimeoutMs = options.scanTimeoutMs ?? SCAN_TIMEOUT_MS;
   const deviceStaleAfterMs = options.deviceStaleAfterMs ?? DEVICE_STALE_AFTER_MS;
+  const filter: DeviceScanFilter = options.filter ?? { serviceUuids: [BLE_SERVICE_UUID] };
 
   // Insertion-ordered by discovery time — a Map preserves that for free.
   //
@@ -271,6 +292,13 @@ export function createDeviceScanner(options: CreateDeviceScannerOptions): Device
       return;
     }
 
+    if (filter.namePrefix) {
+      const name = advertisement.name ?? advertisement.localName ?? null;
+      if (!name || !name.toLowerCase().startsWith(filter.namePrefix.toLowerCase())) {
+        return;
+      }
+    }
+
     const timestamp = now();
     const existing = devices.get(advertisement.id);
 
@@ -302,7 +330,17 @@ export function createDeviceScanner(options: CreateDeviceScannerOptions): Device
       emit({ status: 'stopped', devices: visibleDevices() });
       return;
     }
-    emit({ status: 'noDevicesFound', filteredOnServiceUuid: BLE_SERVICE_UUID });
+    // Default filter reports the §4 service UUID, matching every existing
+    // caller/test. A non-default filter (e.g. the H158 name-prefix scan)
+    // reports what it actually searched for instead — still a fact for
+    // whatever renders it, not a lie about a UUID that wasn't used.
+    const searched =
+      filter.serviceUuids && filter.serviceUuids.length > 0
+        ? filter.serviceUuids.join(', ')
+        : filter.namePrefix
+          ? `name prefix "${filter.namePrefix}"`
+          : BLE_SERVICE_UUID;
+    emit({ status: 'noDevicesFound', filteredOnServiceUuid: searched });
   }
 
   function beginScan(): void {
@@ -311,13 +349,16 @@ export function createDeviceScanner(options: CreateDeviceScannerOptions): Device
     emitScanning();
 
     try {
-      // §4.1 — filtered on the service UUID. The app must never present
-      // arbitrary peripherals, so the filter is passed to the radio rather
-      // than applied to the results: an unfiltered scan that discards
-      // non-matches afterwards still wakes the CPU for every BLE device in
-      // the room, and on Android it is the filtered form that survives
-      // background execution limits.
-      scanner.startDeviceScan([BLE_SERVICE_UUID], null, onAdvertisement);
+      // §4.1 — filtered on the service UUID by default. The app must never
+      // present arbitrary peripherals, so the filter is passed to the radio
+      // rather than applied to the results where possible: an unfiltered
+      // scan that discards non-matches afterwards still wakes the CPU for
+      // every BLE device in the room, and on Android it is the filtered form
+      // that survives background execution limits. A `namePrefix` filter
+      // (H158/YP65-AT — see `../h158/h158Protocol.ts`) can't be pushed to the
+      // radio the same way, since the OS scan APIs filter on service UUIDs,
+      // not names — it's applied in `onAdvertisement` instead.
+      scanner.startDeviceScan(filter.serviceUuids, null, onAdvertisement);
     } catch (error) {
       scanning = false;
       emit({ status: 'failed', detail: error instanceof Error ? error.message : 'unknown error' });

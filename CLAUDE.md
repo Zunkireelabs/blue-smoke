@@ -26,6 +26,8 @@ Check these on **every** change. A breach is an automatic block, not a review co
 
 **And the authority model:** the **firmware dead-man timer** is what makes the device safe. The app's proximity monitor only makes it feel *fast*. Any design requiring the app to be alive for the device to lock is **wrong** — reject it.
 
+🔴 **This model describes the product we're contracted to build, not the hardware shipped to us so far.** As of Day 17/18 the real device implements no dead-man timer, no device-side authentication of any kind (just-work, unencrypted, no PIN), and never pushes an unsolicited state change — see spec §13 OQ-9/OQ-16/OQ-17 and `docs/hardware/hqd-device-architecture.md` §11.3. The rule above still governs what we design and build; it is not weakened by what the current firmware can't yet enforce. Treat this as an open client conversation, not a reason to relax the model.
+
 ---
 
 ## Read before answering, don't guess
@@ -222,43 +224,36 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-*(Updated Day 10, 2026-08-09. This block goes stale fastest — distrust it if the date is old.)*
+*(Updated Day 17/18, 2026-08-17. This block goes stale fastest — distrust it if the date is old. The
+Day 10 version of this block below was itself several days stale by the time this update landed —
+OQ-13 had already moved through two more rounds of manufacturer replies before anyone refreshed it.)*
 
-- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code, and it now signs in and walks
-  end to end on dev** (phone test-OTP → verify stack → seeded Home; Track A, 2026-08-09 — the
-  sign-in blocker was a missing `react-native-url-polyfill`, see the Track A brief). `typecheck`,
-  `test` (274 tests / 30 suites) and `bundle:check` are green; iOS runs on the simulator.
-  **Android has never been compiled** — no JDK, no `ANDROID_HOME` — and both platforms on
-  physical hardware are in the Definition of Done.
-- **Where the work is:** `chore/integrate-auth-db-persona`, ~62 commits, **not pushed**. `stage` is
-  far behind it. Reading `stage` or `main` will mislead you about current state.
+- 🔴 **OQ-13 is CLOSED.** The manufacturer delivered a working `itronlib` Android SDK plus full
+  written answers to all 18 blocking BLE questions
+  (`docs/hardware/manufacturer-supplied-2026-08-17/`). The device is **not** a §4 GATT peripheral: one
+  characteristic (`0xFFF1`, service `0xFFF0`), a custom frame format, **no authentication of any
+  kind** (just-work, unencrypted, no PIN — new **OQ-16**), **no dead-man timer** (reconfirms OQ-9),
+  and **every unit shares one Bluetooth name** with iOS exposing no MAC to tell them apart (new
+  **OQ-17**, compounds OQ-14). None of this is implementable as an extension of `protocol.ts` — it's
+  a different transport entirely. Promoted into `src/features/ble/h158/h158Protocol.ts` and
+  `h158Session.ts` (bring-up spike, dev-only `H158BringUpScreen.tsx`), deliberately **not**
+  `protocol.ts` — that file, `auth.ts`, `crypto.ts`, `tools/mock-peripheral`, and the whole §4.5 CMAC
+  handshake remain unchanged and are **not superseded**: they're still what we build once the client
+  decides how (or whether) to add authentication and a dead-man timer to the firmware. Read
+  [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§11**
+  before touching real hardware or writing anything under `src/features/ble/h158/**`.
+- **Environment note:** JDK 17 + Android SDK are now installed on at least one dev machine
+  (`android-dev/jdk`, `android-dev/sdk`) — `npm run android` is possible there. This is
+  machine-specific, not a project-wide change; check yours before assuming it.
 - **Blocking the whole plan:** **OQ-1** (sample IDs, hardware ~Day 26), **OQ-4** (who burns the
-  device root key into OTP at manufacture), and 🔴 **OQ-12** (the `serial_hash` salt — same factory
-  conversation as OQ-4, so chase them together). All answered by the client; all take longer to
-  answer than to implement. Chase daily.
-- 🔴 **NEW Day 10 — OQ-13, and it outranks the rest.** The client's PCBA archive shows the device is
-  a **two-chip design** (PY32C642F app MCU + a separate **YC1012 Bluetooth SoC** on a UART), so the
-  GATT profile belongs to **the firmware running on the YC1012**, not to the PY32 — and **§4's six
-  characteristics are probably not implementable as written.** That profile manual, which holds the
-  real service UUID, was not supplied. **Who wrote the YC1012's firmware is itself open:** its
-  datasheet says `QFN2*2_12L`, a bare 2×2 mm SoC, **not** a pre-programmed off-the-shelf module — so
-  it may be the silicon vendor's stock build or the client's own contractor's, and the two answers
-  point at different parties. Don't repeat the earlier "belongs to the module vendor" phrasing; it
-  was an inference stated as fact (spec v1.14, `hqd-device-architecture.md` §4.1). **What's actually blocked is one constant (`BLE_SERVICE_UUID`) plus the
-  wire-level half of the §4.5 handshake** — not the tasks; still don't guess the UUID, it fails
-  silently exactly like a guessed OQ-12 salt. Everything transport-independent in `P1-3.0`/`P1-7.0`
-  landed on Day 10 against the mock: scan, dedupe, ordering, timeout, adapter-state handling,
-  Android runtime permissions, the pairing screen, and reconnect with re-handshake. (An earlier,
-  looser version of this line said the two tasks were "blocked outright," and it stalled one
-  execution attempt that read it and stopped.) Read
-  [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§8
-  specifically before writing any BLE scan or connect code** — sources in
-  `docs/hardware/client-supplied-2026-08-09/`.
-  **OQ-14**: the supplied SDK is Android-only and keyed on MAC address, so it cannot go to iOS.
-- **`P1-4.0` has nothing executable left.** Part 1 (§4.5 handshake + CMAC) and Part 2a (§4.3
-  `deviceInfo`) are done and reviewed. Everything remaining is gated on OQ-12 (`salt → serial_hash →
-  issue-device-session → K_sess`) or on hardware. Do not "unblock" it by inventing a salt — a guessed
-  value fails **silently**.
+  device root key into OTP at manufacture — now entangled with OQ-16, since there may be nowhere on
+  the device to check a key even if one exists), and 🔴 **OQ-12** (the `serial_hash` salt — same
+  factory conversation as OQ-4). All client-owned; all take longer to answer than to implement.
+- **`P1-4.0` has nothing executable left against real hardware.** Part 1 (§4.5 handshake + CMAC) and
+  Part 2a (§4.3 `deviceInfo`) are done and reviewed **against the mock**, which still correctly
+  implements §4 — that hasn't changed. Whether §4.5 is ever run against the *real* device is now an
+  open client conversation (OQ-16), not an implementation task. Do not invent a salt for OQ-12 either
+  way — a guessed value fails **silently**.
 - **OQ-6 is overdue, not blocking.** The firmware team has still never been contacted, so §4 is an
   unratified contract that several tasks are already built against. That is a real risk, but it is
   not what stops the next commit.

@@ -26,6 +26,19 @@ export interface BleDeviceLike {
     characteristicUUID: string,
     base64Value: string,
   ): Promise<{ value: string | null }>;
+  /**
+   * H158/YP65-AT's FFF1 pipe is Write-Without-Response only
+   * (docs/hardware/manufacturer-supplied-2026-08-17/ —
+   * `ble-manual-test.md`), unlike every §4 write characteristic, which is
+   * Write w/ response. Optional, for the same reason `onDisconnected` and
+   * `cancelConnection` above are optional: existing narrow test doubles
+   * predate it and don't need it.
+   */
+  writeCharacteristicWithoutResponseForService?(
+    serviceUUID: string,
+    characteristicUUID: string,
+    base64Value: string,
+  ): Promise<{ value: string | null }>;
   monitorCharacteristicForService(
     serviceUUID: string,
     characteristicUUID: string,

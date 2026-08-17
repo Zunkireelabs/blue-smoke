@@ -545,3 +545,118 @@ describe('createDeviceScanner — timeout and staleness', () => {
     });
   });
 });
+
+// ── DeviceScanFilter — name-prefix scanning for H158/YP65-AT ────────────────
+//
+// The H158/YP65-AT doesn't advertise a service UUID at all (see
+// ../h158/h158Protocol.ts and docs/hardware/manufacturer-supplied-2026-08-17/)
+// — it can only be found by name. This is additive: every test above keeps
+// passing with the default filter untouched.
+
+describe('createDeviceScanner — DeviceScanFilter (namePrefix)', () => {
+  function setup(extra: Parameters<typeof createMockPeripheral>[0] extends infer T ? Partial<T> : never = {}) {
+    return createMockPeripheral({
+      kDev: K_DEV,
+      clock: new FakeClock(0),
+      advertisedRssi: -55,
+      manufacturerData: buildManufacturerData(),
+      ...extra,
+    });
+  }
+
+  test('a namePrefix filter passes serviceUuids: null to the radio, not the §4 UUID', () => {
+    const { manager } = setup();
+    const startDeviceScan = jest.spyOn(manager, 'startDeviceScan');
+    const scanner = createDeviceScanner({
+      scanner: manager,
+      filter: { serviceUuids: null, namePrefix: 'YP65-AT' },
+    });
+
+    scanner.start();
+
+    expect(startDeviceScan).toHaveBeenCalledWith(null, null, expect.any(Function));
+
+    scanner.dispose();
+  });
+
+  test('devices whose name does not match the prefix are dropped, not just hidden', () => {
+    // The primary mock device advertises as "BlueSmoke-0000" — see
+    // createMockPeripheral. A second advertiser carries the real H158 name.
+    const { manager } = setup({
+      additionalAdvertisers: [{ id: 'h158-0001', name: 'YP65-AT', advertisedRssi: -50 }],
+    } as never);
+    const scanner = createDeviceScanner({
+      scanner: manager,
+      filter: { serviceUuids: null, namePrefix: 'YP65-AT' },
+    });
+
+    scanner.start();
+
+    const state = scanner.getState();
+    const devices = state.status === 'scanning' ? state.devices : [];
+    expect(devices).toHaveLength(1);
+    expect(devices[0].id).toBe('h158-0001');
+    expect(devices[0].name).toBe('YP65-AT');
+
+    scanner.dispose();
+  });
+
+  test('the name match is case-insensitive', () => {
+    const { manager } = setup({
+      additionalAdvertisers: [{ id: 'h158-0001', name: 'yp65-at-aabbcc', advertisedRssi: -50 }],
+    } as never);
+    const scanner = createDeviceScanner({
+      scanner: manager,
+      filter: { serviceUuids: null, namePrefix: 'YP65-AT' },
+    });
+
+    scanner.start();
+
+    const state = scanner.getState();
+    const devices = state.status === 'scanning' ? state.devices : [];
+    expect(devices).toHaveLength(1);
+
+    scanner.dispose();
+  });
+
+  test('no default filter behaviour changes when `filter` is omitted entirely', () => {
+    const { manager, device } = setup();
+    const startDeviceScan = jest.spyOn(manager, 'startDeviceScan');
+    const scanner = createDeviceScanner({ scanner: manager });
+
+    scanner.start();
+
+    expect(startDeviceScan).toHaveBeenCalledWith([BLE_SERVICE_UUID], null, expect.any(Function));
+    const state = scanner.getState();
+    const devices = state.status === 'scanning' ? state.devices : [];
+    expect(devices[0]?.id).toBe(device.id);
+
+    scanner.dispose();
+  });
+
+  test('noDevicesFound reports the name prefix that was actually searched for', () => {
+    jest.useFakeTimers();
+    try {
+      const { manager } = setup({ additionalAdvertisers: [] } as never);
+      const scanner = createDeviceScanner({
+        scanner: manager,
+        filter: { serviceUuids: null, namePrefix: 'YP65-AT' },
+        scanTimeoutMs: 1000,
+      });
+
+      // The primary mock device advertises as "BlueSmoke-0000" — it exists,
+      // but the name filter must still exclude it, leaving the scan empty.
+      scanner.start();
+      jest.advanceTimersByTime(1000);
+
+      expect(scanner.getState()).toEqual({
+        status: 'noDevicesFound',
+        filteredOnServiceUuid: 'name prefix "YP65-AT"',
+      });
+
+      scanner.dispose();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

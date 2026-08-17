@@ -17,6 +17,7 @@ import {
 } from '@/features/verification/useVerificationStatus';
 import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
 import { PairDeviceScreen } from '@/features/devices/PairDeviceScreen';
+import { H158BringUpScreen } from '@/features/ble/h158/H158BringUpScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 
 /**
@@ -38,6 +39,9 @@ export type RootStackParamList = {
   // Authenticated and verified
   Home: undefined;
   PairDevice: undefined;
+  // Dev-only bring-up spike for the real H158/YP65-AT hardware — see
+  // src/features/ble/h158/H158BringUpScreen.tsx. Not §4, not PairDevice.
+  H158BringUp: undefined;
 };
 
 /**
@@ -158,6 +162,13 @@ export function RootNavigator() {
             component={PairDeviceScreen}
             options={{ title: 'Pair device' }}
           />
+          {__DEV__ && (
+            <Stack.Screen
+              name="H158BringUp"
+              component={H158BringUpScreen}
+              options={{ title: 'H158 bring-up' }}
+            />
+          )}
         </Stack.Navigator>
       ) : stack === 'pending' ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
