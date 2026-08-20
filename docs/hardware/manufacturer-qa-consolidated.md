@@ -130,6 +130,95 @@ continuous red LEDs** indicate, specifically — is it a distinct fault code, a 
 revision's normal boot indicator, or something else? Neither round of manufacturer correspondence
 has ever described this pattern.
 
+**Superseded by 2026-08-20, below:** point 5's "USB-power-insufficient" theory for the PW200 connect
+failure was wrong — see that section for the real cause (adapter orientation) and a second real
+factor (battery must stay connected during programming, contrary to what point 5 implies).
+
+---
+
+## 2026-08-20 (Day 21/22) — connection intermittency solved, PW200 flash pipeline solved, firmware/protocol mismatch is the new open question
+
+Full narrative in `docs/session-log/anish.md`. Summary here for anyone scanning hardware state only.
+
+### Two 08-17/18 findings retested today and refuted
+
+- **The device does *not* force-disconnect after ~17-20s.** That symptom, observed informally during
+  today's early BLE trials before the cause was understood, does not reproduce once the device is
+  woken with a button press before connecting. An idle link survived 120.5s on our own app and
+  3+ minutes on the manufacturer's demo app, identical connection parameters both times. What looked
+  like an unsolicited drop was a connection made to a device that was already asleep, timing out on
+  its own schedule.
+- **RSSI is not weak.** Readings of -83/-84 dBm recorded earlier were a **stale cached value** —
+  `scanner.ts` only re-emits a device's row when a fresh advertisement arrives, so a sleeping
+  (non-advertising) device's last-seen RSSI sits on screen indefinitely. Live readings, confirmed via
+  the manufacturer's own app which redraws RSSI continuously, are -57 to -61 dBm — normal for a
+  device sitting next to the phone.
+
+### Connection intermittency — solved
+
+The H158 only advertises for a few seconds after its physical button is pressed, then goes silent
+(consistent with reply item 7's stated timeouts, though the *duration* we observe is seconds, not
+the ~10 minutes the reply describes — worth asking about, see the new question set). Our own
+`H158BringUpScreen` scanner made a sleeping device look permanently connectable, because
+`DEVICE_STALE_AFTER_MS` in `scanner.ts` is a filter applied only when a new advertisement triggers a
+re-render — nothing re-evaluates it on a timer, so a device that stopped advertising keeps its last
+snapshot on screen with an apparently-live Connect button. **This is a real dev-only bug, not yet
+fixed** — see the session log for detail.
+
+Woken immediately before connecting: 6/6 successful connects, 0.3-0.7s. Left asleep: 3/3
+`HCI_ERR_HOST_TIMEOUT` failures, ~30s each.
+
+### PW200 chip-ID read — solved, cause was an adapter, not the device
+
+`[0009] The target chip is not connected` blocked the whole day until, by elimination, **flipping the
+USB-C programming adapter's orientation** made an ID read succeed immediately. SWD only maps onto the
+adapter's pins in one direction; the wrong way is indistinguishable from a dead target. Ruled out
+before finding this: wrong MCU selected in PowerWriter, VREF, clock speed, a "the MCU sleeps and drops
+SWD" hypothesis (refuted with 7 ID attempts, device kept awake throughout, all `[0009]`), and PW200
+USB-port flakiness (real, but incidental — reseating/direct-to-laptop fixed it independently).
+
+**Second real factor, contrary to what 08-17/18 point 5 assumed:** the board's MCU needs the
+**battery connected** during programming. The manufacturer's project files set `I/O VREF = 3.3V`
+(the PW200 supplying the target rail), which reads as "battery should come off to avoid contention" —
+but pulling it produced a red `NG` on the PW200's own LEDs. Battery connected + correct adapter
+orientation is what actually flashes successfully. USB power alone still cannot sustain the board
+(reply item 17 stands), it just isn't the *contention* story we assumed.
+
+### 🔴 Chip identity discrepancy — unresolved, needs the manufacturer's confirmation
+
+Point 3 above (08-17/18) records the chip as **PY32C642F15**, read physically off the package
+markings (`PUYA` / `C642F15` / `4B6HM1A`) and matched by us in PowerWriter's database as
+`PY32C642xx5`. **Both of the manufacturer's own firmware project files
+(`H158_V0R0_5EDA983B_202607151202.pkg` and `H158_Test_260708_01.pkg`, both supplied 2026-08-09 in
+`BLE.zip`, never opened until today) instead specify `PY32F002Bx5`** — same flash size (24.00 KB) and
+OTP size (0.13 KB), different part family. We have not reconciled this; both `.pkg` files loaded and
+flashed successfully as `PY32F002Bx5`, so that is what today's programming was actually done against,
+regardless of which reading of the physical package is correct. **New question, below.**
+
+### 🔴 New finding, the one that actually matters most: three firmware images, three behaviours, and none matches the documented protocol
+
+Flashed via PW200, then tested identically with the manufacturer's own demo app (byte-identical
+frames both times, so this isolates the firmware, not our code):
+
+| Firmware | `TX 02 01 A2 A1 01` (Read Status) response |
+|---|---|
+| Originally shipped | silence — no reply, ever |
+| `H158_Test_260708_01.pkg` (built 2026-07-08) | silence — no reply, ever |
+| `H158_V0R0_5EDA983B_202607151202.pkg` (built 2026-07-15) | `RX 81 00 03 00 00 00`, ~35-75ms, **reproduced across two independent flash cycles** |
+
+Reply item 2 specifies `02 05 A2 00 30/31 00 ## ** 01` — header `0x02`, tail `0x01`. **No firmware we
+hold produces that.** The `V0R0` image's `0x81`/`0x82` replies are not parseable by the
+manufacturer's own demo app (`Failed to parse BLE frame: Invalid frame head: 0x81`), and are
+**invariant across Lock/Unlock/Read Status** — the reply bytes do not change regardless of which
+command was sent or the device's actual state, consistent with `0x81`/`0x82` being a generic
+NAK/error frame rather than a real status reply.
+
+**This is the new blocking question**, and it is squarely the manufacturer's to answer — see
+`manufacturer-questions-firmware-2026-08-20.md`.
+
+Firmware and instructions archived at `manufacturer-supplied-2026-08-20/` (both `.pkg` files, plus a
+text transcript of the previously-unopened PW200 instructions deck).
+
 ---
 
 ## Reference — full source documents

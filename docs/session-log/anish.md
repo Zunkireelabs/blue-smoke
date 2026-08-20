@@ -2,6 +2,121 @@
 
 Newest first. Conventions in [`README.md`](README.md).
 
+## 2026-08-20 — connection intermittency solved, PW200 flash pipeline solved, firmware genuinely replies now — but not in the documented protocol
+
+**Branches:** `feature/ble-connectivity`
+
+**Landed:** revert of a temp auth-stack bypass in `navigation.tsx` (was never committed, so no code
+diff lands from this session at all — see "Tried and abandoned"). Docs:
+`docs/hardware/manufacturer-qa-consolidated.md` (two 08-17/18 findings corrected, new 08-20 section),
+`docs/hardware/manufacturer-questions-firmware-2026-08-20.md` (drafted, **not yet sent**),
+`docs/hardware/manufacturer-supplied-2026-08-20/` (the two firmware `.pkg` files + a text transcript
+of the PW200 instructions deck, archived because `temp-ss/` is gitignored and these are small enough
+to keep durably).
+
+This was entirely a hands-on hardware/bench session plus documentation — no app code shipped. If
+you're picking this up, **read this whole entry before touching hardware** — several hours went into
+finding things that are now cheap to know in advance.
+
+### Where this leaves the BLE picture
+
+**Solved — connection.** The H158 only advertises for a few seconds after its physical button is
+pressed, then goes silent. Woken immediately before connecting: 6/6 successful connects in 0.3-0.7s.
+Left asleep: 3/3 timeouts (`HCI_ERR_HOST_TIMEOUT`, ~30s). This explains everything that looked like
+BLE flakiness in earlier sessions.
+
+**Real dev-only bug found, not fixed:** `H158BringUpScreen`'s scanner keeps offering Connect on a
+device that has stopped advertising. `scanner.ts`'s `DEVICE_STALE_AFTER_MS` filter is only applied
+when a fresh advertisement triggers a re-render — nothing re-evaluates it on a timer — so a sleeping
+device's last-seen row sits on screen indefinitely with an apparently-live Connect button. Whoever
+picks up `P0-2.5`/scanner work next should know this; it isn't specific to the bring-up screen, it's
+in `scanner.ts` itself.
+
+**Two 08-17/18 findings retested and refuted** (details + evidence in
+`manufacturer-qa-consolidated.md`'s new 08-20 section, not repeating the numbers here):
+- The "~17-20s unsolicited force-disconnect" — doesn't reproduce; was a connection racing a device
+  that was already asleep.
+- The "-83/-84 dBm weak signal" — was a stale cached RSSI, never re-emitted. Live is -57 to -61 dBm.
+
+**Solved — PW200 chip-ID read** (`[0009] The target chip is not connected`, blocking since Day 17/18).
+Root cause: the yellow USB-C programming adapter only works in one orientation. Wrong way is
+indistinguishable from a dead target — cost most of the day. Confirmed by elimination after ruling
+out (in order): wrong MCU selected in PowerWriter, VREF (3.3V vs External), clock speed (10MHz vs
+1MHz), a "the MCU sleeps and drops SWD" theory (refuted — 7 ID attempts with the device kept awake
+throughout the whole procedure, all still `[0009]`), and PW200-to-PC USB flakiness (real, incidental,
+fixed independently by reseating/going direct to the laptop rather than a hub).
+
+**Second real factor, and this one contradicts what 08-17/18 assumed:** the board needs its
+**battery connected** during PW200 programming, not disconnected. The manufacturer's project sets
+`I/O VREF = 3.3V` (PW200 supplies the target rail), which reads like "pull the battery to avoid
+contention" — that's what I told Anish's stand-in (me) to do, and it produced a red `NG`. Battery on
++ correct adapter orientation is what actually works. Recorded wrong in this session initially;
+corrected once it was tested.
+
+**🔴 New, unresolved: three firmware images, three behaviours, none matches the documented
+protocol.** Full table and byte-level evidence in `manufacturer-qa-consolidated.md`. Short version:
+the originally-shipped firmware and `H158_Test_260708_01.pkg` both stay silent to every command.
+`H158_V0R0_5EDA983B_202607151202.pkg` replies (`TX 02 01 A2 A1 01` → `RX 81 00 03 00 00 00`, ~35-75ms,
+reproduced across two independent flashes) but not in the `02...01` framing the manufacturer's spec
+and their own demo app expect — their app throws `Failed to parse BLE frame: Invalid frame head:
+0x81`. The reply is also byte-identical regardless of whether Lock, Unlock, or Read Status was sent,
+which reads like a NAK/ack frame rather than a real payload. **This is now a manufacturer question,
+not an implementation task** — draft above, not yet sent.
+
+**🔴 Also unresolved: chip identity discrepancy.** We identified the MCU as `PY32C642F15` from
+package markings back on Day 17/18. Both of the manufacturer's own `.pkg` project files instead
+specify `PY32F002Bx5` (same flash/OTP size, different part). Not urgent — both packages flashed fine
+against `PY32F002Bx5` — but worth a definitive answer, folded into the same question set.
+
+**Decided, and why:**
+
+- **Chose to flash `V0R0` over `Test` on the strength of it being newer, release-named, and delivered
+  standalone** rather than buried in an older bundle. Turned out right — it's the only image that
+  replies at all — but it was a guess at the time, not something we could have known from the
+  filenames alone. Their own instructions deck actually demos loading `Test`, which is presumably
+  just because that was the file at hand when the deck was made, not a recommendation.
+- **Archived the two `.pkg` files and a transcript of the PW200 instructions into the repo**
+  (`manufacturer-supplied-2026-08-20/`) rather than leaving them in `temp-ss/` (gitignored) or a
+  Desktop folder (not shared). Small files (<30KB each); worth keeping durable given how much of the
+  day was spent because this material sat unopened since 2026-08-09.
+- **Did not revert `manufacturer-qa-consolidated.md`'s 08-17/18 section, corrected it in place with a
+  pointer forward instead.** The journal convention is append-only for the log; this doc isn't the
+  log, but rewriting history there would hide *why* point 5's power theory was reasonable at the
+  time. A forward-pointing correction note seemed more honest than silent editing.
+
+**Tried and abandoned:**
+
+- A Sonnet subagent driving the PowerWriter GUI via synthetic mouse/keyboard input — stalled
+  immediately on a modal dialog and never recovered; killed. PowerWriter's custom-drawn UI doesn't
+  expose real coordinates via UI Automation and doesn't respond to `SendKeys`/synthetic clicks
+  reliably enough for unattended automation. Everything from that point on was manual: screenshot
+  from the user, read it, tell them the next click.
+- A dev-only `H158BringUp` entry added to the **auth** stack (reachable without Supabase configured,
+  for bring-up on a machine with no backend set up) — this was explicitly temporary and got reverted
+  before anything committed. The legitimate `__DEV__`-gated route already exists on the **home**
+  stack from the 08-17 session and was untouched.
+- Chasing VREF, clock speed, and a chip-sleep hypothesis for the PW200 `[0009]` error — all
+  reasonable in sequence, all wrong. Real cause was the adapter orientation, unrelated to any
+  PowerWriter setting.
+
+**Blocked / needs someone else:**
+
+- 🔴 **The firmware/protocol question above is now with the manufacturer, not us.** Send
+  `manufacturer-questions-firmware-2026-08-20.md` before doing any more `h158Protocol.ts` work — we
+  don't yet know which firmware or protocol is actually current.
+- The scanner staleness bug (`DEVICE_STALE_AFTER_MS` never re-evaluated on a timer) needs a real fix,
+  not just a workaround for the bring-up screen. Whoever's on `scanner.ts` next should pick this up.
+- This branch is still not pushed as of the start of this session — pushing now, but the habit of
+  pushing daily slipped again this week.
+
+**Gotcha worth stealing:** 🔴 **We had unopened manufacturer material for eleven days** (`BLE.zip`,
+supplied 2026-08-09) containing the actual PW200 procedure, a schematic, and a second firmware image
+— and spent most of today's bench time rediscovering by trial-and-error what was already written
+down. Before any hands-on hardware session: **grep every manufacturer-supplied archive for anything
+we haven't listed as "read" somewhere**, not just the files we remember receiving.
+
+---
+
 ## 2026-08-17 — OQ-13 closes for real: the manufacturer's SDK, and what it costs
 
 **Branches:** `feature/ble-connectivity`
