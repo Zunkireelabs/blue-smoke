@@ -2,9 +2,8 @@
 
 **Prepared by the app development team, 2026-08-20.**
 
-> **Not yet sent.** Follows the same direct-to-manufacturer channel as
-> `manufacturer-questions-ble-connection-2026-08-12.md` (Teams). Plain-text version at the end is
-> what should be pasted.
+> ✅ **SENT — 2026-08-20, by Anish, over Teams, directly to the manufacturer.** Same channel as
+> `manufacturer-questions-ble-connection-2026-08-12.md`. Awaiting reply.
 
 This is a follow-up to your 2026-08-17 reply, specifically items 2, 6, 7, 12, and 18. We followed
 your PW200 firmware-upgrade instructions (received 2026-08-09 inside `BLE.zip`, `Programming Software
