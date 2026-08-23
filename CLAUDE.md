@@ -224,11 +224,38 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-*(Updated Day 17/18, 2026-08-17. This block goes stale fastest — distrust it if the date is old. The
-Day 10 version of this block below was itself several days stale by the time this update landed —
-OQ-13 had already moved through two more rounds of manufacturer replies before anyone refreshed it.)*
+*(Updated Day 24, 2026-08-23. This block goes stale fastest — distrust it if the date is old. Each
+previous version of this block was several days stale by the time anyone refreshed it, and the
+consequence has twice been re-walking ground that was already settled.)*
 
-- 🔴 **OQ-13 is CLOSED.** The manufacturer delivered a working `itronlib` Android SDK plus full
+- 🔴 **The device transport is now a written contract.** The manufacturer's protocol document
+  (`H158—CMD Protocol-202608131414`) finally arrived on 2026-08-23, having been cited as the authority
+  in three earlier replies without ever being sent. It **confirms** what §11 had reverse-engineered
+  from their Android SDK — frame layout, XOR-from-header checksum, lock/unlock/terminal-info — and
+  adds that **those three are the entire command set.** There is no version query, no battery command,
+  and no authentication or pairing command, so the firmware exposes no surface on which auth could be
+  added without new firmware. Archived with the reply, the **iOS SDK** (closes **OQ-14**), the correct
+  MCU datasheet, and `H158_Test_260814_01_.pkg` at
+  [`docs/hardware/manufacturer-supplied-2026-08-23/`](docs/hardware/manufacturer-supplied-2026-08-23/).
+  Read [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§12**.
+- ⚠️ **None of that is verified on hardware.** `H158_Test_260814_01_.pkg` has **not been flashed**.
+  The bench device last spoke the undocumented `0x81`/`0x82` framing, which the manufacturer explains
+  as an *older* protocol version. The honest statement is "three sources agree on what the device
+  should send", not "we know what it sends". The bench matrix to run is in
+  [`docs/hardware/manufacturer-qa-consolidated.md`](docs/hardware/manufacturer-qa-consolidated.md)
+  Round 3. **Run it before trusting any of the above against a real unit.**
+- 🔴 **OQ-17 is now a contradiction, not an answer.** The manufacturer has said both that the
+  advertised name carries a per-device MAC suffix (Day 12) *and* that "all devices share the same
+  Bluetooth name" (Day 13). Their iOS SDK cannot arbitrate. **This is decidable by scanning two
+  units** — settle it by measurement, not by asking a fourth time.
+- **Two process failures, same shape, two weeks apart.** `BLE.zip` (2026-08-09) sat unopened for
+  eleven days holding the PW200 procedure that unblocked the device; the 2026-08-23 `.rar` held the
+  firmware, the protocol document, the iOS SDK and the correct datasheet while the covering message
+  appeared to contain none of them. **Extract every manufacturer archive in full and diff its file
+  list before concluding anything is missing.** Relatedly, and now proven three times: **when their
+  prose disagrees with their shipped artifact, the artifact is right** — most recently the 2026-08-21
+  frame tables, which get both the device-info command and the unlock checksum wrong.
+- 🔴 **OQ-13 is CLOSED** *(Day 17/18; still accurate — §12 confirms rather than revises it).* The manufacturer delivered a working `itronlib` Android SDK plus full
   written answers to all 18 blocking BLE questions
   (`docs/hardware/manufacturer-supplied-2026-08-17/`). The device is **not** a §4 GATT peripheral: one
   characteristic (`0xFFF1`, service `0xFFF0`), a custom frame format, **no authentication of any
@@ -259,4 +286,10 @@ OQ-13 had already moved through two more rounds of manufacturer replies before a
   not what stops the next commit.
 - **11 open questions registered** — spec §13 (OQ-1…OQ-9, OQ-11, OQ-12). **OQ-10 has no row** while
   being referenced in `session-log/sadin.md` — reconstruct it or retire the ID. Read them before
-  assuming an answer.
+  assuming an answer. *(OQ-14 closed Day 24; OQ-13, OQ-15 already closed.)*
+- **The lint warning baseline in this file is stale.** The Commands section says 70; `npm run lint`
+  reports **89** on a clean checkout, and `npm test` reports **449 tests / 39 suites**, not 273/30.
+  The rule itself is unchanged (no `eslint-disable`; no `no-bitwise` outside the three permitted
+  directories) — only the numbers drifted. **7 tests fail on Windows** in
+  `tools/lint-guard/__tests__/verificationGuard.test.ts`; that is a known platform bug diagnosed in
+  `docs/execution-briefs/P0-5.0-ci-hardening.md`, not a regression, and it still needs an owner.

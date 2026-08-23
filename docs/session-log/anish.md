@@ -2,6 +2,132 @@
 
 Newest first. Conventions in [`README.md`](README.md).
 
+## 2026-08-23 — the manufacturer's protocol document arrives, three days late and inside an archive nobody opened
+
+**Branches:** `feature/ble-connectivity`
+
+**Landed:** `docs/hardware/manufacturer-supplied-2026-08-23/` (firmware, protocol doc + transcription,
+iOS SDK, correct MCU datasheet, two module specs, MANIFEST), `manufacturer-supplied-2026-08-20/MANIFEST.md`
+(backfilled — it was the only archive folder without one), `manufacturer-qa-consolidated.md` (Round 3),
+`manufacturer-questions-firmware-2026-08-20.md` (marked replied), `hqd-device-architecture.md` §12,
+`TECHNICAL_SPEC.md` §13 (OQ-14 closed, OQ-17 contradiction registered), `CLAUDE.md` Current state,
+`client-supplied-2026-08-09/MANIFEST.md` (two superseded rows). Code:
+`src/features/ble/h158/h158Protocol.ts` + tests — ACK error codes.
+
+### The one thing to take away
+
+**The reply was in the `.rar`, not in the message.** Their answer was "use `H158_Test_260814_01_.pkg`
+uniformly", and I concluded — and said out loud — that they had forgotten to attach it. They hadn't.
+Only the inner `H158_IOS_Demo.zip` had been extracted locally, so a search over the extracted folder
+showed no `.pkg` and no protocol document. Listing the `.rar` itself showed both, plus the iOS SDK,
+plus the correct MCU datasheet, plus two module specs we didn't have.
+
+**This is the second time in two weeks.** `BLE.zip` sat unopened for eleven days holding the PW200
+procedure that unblocked the device. Same failure, same cost. The rule is now written into
+`CLAUDE.md` and both MANIFESTs: **extract every manufacturer archive in full and diff its file list
+before concluding anything is missing.**
+
+### What the protocol document settles
+
+`H158—CMD Protocol-202608131414.docx` has been cited as the authority in three separate replies
+(08-13 items 2 and 11, 08-21) and had never been sent until now. It is short, and it confirms
+everything §11 reverse-engineered from the Android SDK on 08-17 — frame layout, `LEN` semantics,
+lock/unlock/terminal-info, the status byte meanings — including the checksum-span correction, now
+stated in their own words: "从 head 字段 到 data 字段，所有的数据异或的结果".
+
+The genuinely new fact is **negative and useful: those three are the entire command set.** The table
+of contents has only §2.1 and §2.2. No version query, no battery command, and — relevant to OQ-16 —
+no authentication or pairing command anywhere. It is now *documented*, not merely observed, that
+there is no command surface on which auth could be added without new firmware.
+
+### The artifact beat the prose again — third time
+
+Their 08-21 Q&A prose contradicts their own protocol document in two places, and is wrong in both:
+
+- Device-info TX given as `02 02 A1 A1 01` (CMD `0xA1`, length `0x02`). The document's §2.2 says CMD
+  `0xA2` with no data byte, and `BleProtocolTests.swift:154-162` asserts exactly that. **`02 01 A2 A1
+  01` — what we already send — is correct.**
+- Unlock reply checksum given as `0x26`, copy-pasted from the request row. XOR gives **`0x27`**.
+
+I derived both of these from the checksum rule before finding the document, then confirmed them
+against it and against their Swift. Worth saying because the derivation is cheap: **XOR-check every
+frame in any table they send.** Two of six examples in that file are wrong.
+
+### Code: ACK error codes
+
+`h158Protocol.ts` already implemented the framing correctly (08-17 work — the new document required
+no change to it, which is the strongest evidence that pass was right). The real gap was ACK handling:
+every non-zero ACK collapsed into one `expected 0x00` string, which is precisely the catch-all
+CLAUDE.md forbids. The codes were sitting in the 08-13 reply item 12 all along — `0x01` data error,
+`0x02` data length error, `0xF1` unknown command.
+
+Added `H158Ack` + `h158AckLabel`, and failures now carry the `ack` byte so callers can branch. The
+asymmetry that made this worth doing properly: **a malformed frame gets no reply at all**, so a
+non-zero ACK always means the frame was structurally valid and its *content* was rejected — our bug,
+never line noise, and never retry-unchanged. A silent timeout stays ambiguous between malformed,
+asleep, and out of range. 57 tests in the h158 suite, up from 44.
+
+### 🔴 Not verified — do not read the above as "it works"
+
+**`H158_Test_260814_01_.pkg` has not been flashed.** I had no device on the bench today. Everything
+above is three sources agreeing on what the device *should* send. The bench matrix is written up in
+`manufacturer-qa-consolidated.md` Round 3 — Read Status, Lock, Unlock, their demo app, both
+advertising windows, bad checksum, and the three error ACKs. **Run it across two independent
+flashes**, same standard as 08-20, which is what caught the two false findings that session.
+
+If 260814 does *not* produce the documented framing, stop — that is another manufacturer round, not
+something to code around.
+
+### OQ-17 got worse
+
+The manufacturer has now answered the device-name question **both ways**: 08-12 item 1 says the name
+is `YP65-AT` with the MAC appended "to distinguish between devices"; 08-13 item 4 says "all devices
+share the same Bluetooth name". Both cannot be true, and it decides whether pillar 1 has any
+radio-visible device identity to key on.
+
+Their iOS SDK can't arbitrate — it prefix-matches then keys on CoreBluetooth's per-install identifier,
+which works either way. **Scan two units and read the names.** Registered in spec §13 and inline on
+`H158_DEVICE_NAME_PREFIX`. Do not ask a fourth time.
+
+### Closed today
+
+- **OQ-14 (iOS)** — open since Day 11, circular answer since Day 12. The iOS SDK arrived: `h158lib`,
+  Swift, 20 unit tests. It also resolves the objection that made the Android SDK unportable — the
+  vendor themselves key on CoreBluetooth's identifier and filter by name, not MAC, so the
+  direct-CoreBluetooth approach no longer needs separate agreement.
+- **Chip identity** — PY32F002B and PY32C642 are the same die, different package marking. Correct
+  datasheet archived; the `PY32F030` one in `client-supplied-2026-08-09/` is marked superseded.
+
+### Still open, still theirs
+
+Two questions went unanswered: what `81 00 03 00 00 00` actually meant, and whether production units
+ship needing a PW200 flash before they respond at all. **The second is not an engineering question
+any more** — if units need a bench flash before they talk to a phone, that belongs to the client and
+the factory. It has been asked twice. It should go to the client next, not to the manufacturer.
+
+### Also noticed, not fixed
+
+- `CLAUDE.md`'s numbers were stale: lint baseline says 70, actual is **89** on a clean checkout;
+  tests say 273/30, actual is **449/39**. Corrected in the block, and I verified my own changes add
+  **zero** warnings (stash, lint, unstash, lint — 89 both ways). The rule itself hasn't changed.
+- The **7 Windows-only `verificationGuard.test.ts` failures** are still red and still unowned.
+  Diagnosed in `docs/execution-briefs/P0-5.0-ci-hardening.md` — `npx` resolves to `npx.cmd` and
+  `execFileSync` can't spawn it without `shell: true`. Worse than a red test: the same `catch` masks
+  a spawn failure as "ESLint found nothing", so the inviolable-rule-1 guard **passes vacuously on
+  every platform**. That deserves an owner more than it deserves another mention here.
+- The **scanner staleness bug** from 08-20 is still unfixed, deliberately out of scope for this
+  branch — `scanner.ts` is a contested shared file and needs a heads-up to Sadin and Hardik first.
+  Still worth remembering that it is what manufactured the "-83 dBm" and "17-20s disconnect" false
+  findings.
+
+### Shared files touched
+
+`CLAUDE.md`, `docs/**`, and `src/features/ble/h158/**` (not shared). **Not** `protocol.ts`, `auth.ts`,
+`crypto.ts`, `scanner.ts`, `navigation.tsx` or the mock — all untouched. Mention the `CLAUDE.md` and
+docs edits in the PR body per the announce rule.
+
+---
+
 ## 2026-08-20 — connection intermittency solved, PW200 flash pipeline solved, firmware genuinely replies now — but not in the documented protocol
 
 **Branches:** `feature/ble-connectivity`
