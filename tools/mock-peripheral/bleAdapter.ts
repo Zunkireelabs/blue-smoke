@@ -19,6 +19,7 @@ import {
   BLE_SERVICE_UUID,
 } from '../../src/features/ble/protocol';
 import { DeviceCore, type CharacteristicKey, type DeviceCoreConfig } from './deviceCore';
+import { bytesToBase64, base64ToBytes } from './byteLayout';
 
 type CharacteristicListener = (error: Error | null, characteristic: { value: string } | null) => void;
 
@@ -66,7 +67,13 @@ export class MockDevice {
   readonly name: string;
   /** §4.1 — `react-native-ble-plx` exposes both; the app prefers `name`, falling back to this. */
   readonly localName: string | null;
-  rssi: number | null = null;
+  /**
+   * P1-3.0 — populated at construction, not left `null` until the first `readRSSI()` call: real
+   * `react-native-ble-plx` delivers RSSI on the scan callback itself. `advertisedRssi` wins when
+   * given explicitly; otherwise falls back to `rssiSeries[0]` so "weak RSSI device"/"several
+   * devices" scan fixtures that only set a series still show a signal value immediately.
+   */
+  rssi: number | null;
   /** §4.1 manufacturer data as base64, exactly as ble-plx delivers it. `null` if none. */
   readonly manufacturerData: string | null;
 
@@ -82,7 +89,7 @@ export class MockDevice {
     this.name = options.name;
     this.localName = options.name;
     this.rssiSeries = options.rssiSeries ?? [];
-    this.rssi = options.advertisedRssi ?? null;
+    this.rssi = options.advertisedRssi ?? (this.rssiSeries.length > 0 ? this.rssiSeries[0] : null);
     this.manufacturerData = options.manufacturerData
       ? Buffer.from(options.manufacturerData).toString('base64')
       : null;
@@ -109,7 +116,7 @@ export class MockDevice {
   ): Promise<{ value: string }> {
     this.assertServiceUuid(serviceUUID);
     const key = characteristicKeyForUuid(characteristicUUID);
-    return { value: Buffer.from(this.core.read(key)).toString('base64') };
+    return { value: bytesToBase64(this.core.read(key)) };
   }
 
   async writeCharacteristicWithResponseForService(
@@ -119,7 +126,7 @@ export class MockDevice {
   ): Promise<{ value: string }> {
     this.assertServiceUuid(serviceUUID);
     const key = characteristicKeyForUuid(characteristicUUID);
-    this.core.write(key, Buffer.from(base64Value, 'base64'));
+    this.core.write(key, base64ToBytes(base64Value));
     return { value: base64Value };
   }
 
@@ -131,7 +138,7 @@ export class MockDevice {
     this.assertServiceUuid(serviceUUID);
     const key = characteristicKeyForUuid(characteristicUUID);
     const unsubscribe = this.core.subscribe(key, (bytes) => {
-      listener(null, { value: Buffer.from(bytes).toString('base64') });
+      listener(null, { value: bytesToBase64(bytes) });
     });
     return { remove: unsubscribe };
   }
@@ -195,35 +202,55 @@ export class MockDevice {
 
 type ScanListener = (error: Error | null, device: MockDevice | null) => void;
 
+/**
+ * P1-3.0 §3.1 — the five states `react-native-ble-plx`'s `BleManager.state()` actually reports
+ * (`CBManagerState` on iOS, `BluetoothAdapter`'s wrapped states on Android), and the only ones
+ * `readBluetoothGateState` (`src/features/ble/bluetoothPermission.ts`) distinguishes. `Resetting`
+ * is a real sixth ble-plx value but isn't one of the states that selector branches on (it falls
+ * into the same "unknown" bucket as `Unknown`), so it isn't part of this mock's selectable set.
+ */
+export type BleRadioState = 'PoweredOn' | 'PoweredOff' | 'Unauthorized' | 'Unsupported' | 'Unknown';
+
+const DEFAULT_RADIO_STATE: BleRadioState = 'PoweredOn';
+
 type AdapterStateListener = (state: string) => void;
 
 /**
- * The fake `BleManager`.
- *
- * Originally backed by exactly one MockDevice. P1-3.0 needs a *list* — dedupe,
- * ordering and "no devices found" are untestable against a single peripheral —
- * so it now holds several while keeping `device` pointing at the first, which
- * is what every pre-existing caller uses. The GATT half is still single-device:
- * only `devices[0]` has a `DeviceCore` behind it, and the extra peripherals
- * exist to be *discovered*, not connected to.
+ * The fake `BleManager`. Backed by one or more `MockDevice`s — `createMockPeripheral()` (the
+ * single-device convenience every existing test uses) always builds exactly one; multi-device
+ * scan fixtures (P1-3.0 §3.2 — "none / one / several / weak RSSI") go through
+ * `createMockBleFleet()` below instead, which shares this same class over several devices. Every
+ * device in the array is independently connectable — `createMockPeripheral`'s
+ * `additionalAdvertisers` build theirs sharing the primary's `DeviceCore` (they're meant as
+ * scan-only decoys), but nothing here enforces that; nothing has ever needed it to.
  */
 export class MockBleManager {
-  /** The primary peripheral — the one with a DeviceCore. Unchanged for existing callers. */
-  private readonly device: MockDevice;
   private readonly devices: MockDevice[];
-  private adapterState: string = 'PoweredOn';
+  /**
+   * `string`, not `BleRadioState` — `setAdapterState` (test hook) needs to drive values outside
+   * the mock's typed "selectable set" too, e.g. `scanner.test.ts`'s `BleAdapterState.RESETTING`
+   * (`Resetting` is real ble-plx but deliberately excluded from `BleRadioState`, see that type's
+   * doc comment). `state()`/`BleScannerLike` are already `Promise<string>`/`(state: string)`, so
+   * nothing narrower is actually required here.
+   */
+  private adapterState: string;
   private readonly adapterStateListeners = new Set<AdapterStateListener>();
   private activeScan: { serviceUUIDs: string[] | null; listener: ScanListener } | null = null;
 
-  constructor(device: MockDevice, additionalDevices: MockDevice[] = []) {
-    this.device = device;
-    this.devices = [device, ...additionalDevices];
+  constructor(devices: MockDevice[], radioState: BleRadioState = DEFAULT_RADIO_STATE) {
+    this.devices = devices;
+    this.adapterState = radioState;
   }
 
   async state(): Promise<string> {
     return this.adapterState;
   }
 
+  /**
+   * P1-3.0 — `BleScannerLike`'s subscribe half (`BleClientContext.tsx`). `scanner.ts` reacts to a
+   * radio state change mid-scan (e.g. Bluetooth switched off); the simpler `useDeviceScan.ts`
+   * path never subscribes and only ever calls `state()`/`setState()` directly.
+   */
   onStateChange(listener: AdapterStateListener, emitCurrentState = false): Subscription {
     this.adapterStateListeners.add(listener);
     if (emitCurrentState) {
@@ -245,6 +272,11 @@ export class MockBleManager {
     for (const listener of this.adapterStateListeners) {
       listener(state);
     }
+  }
+
+  /** Alias for `setAdapterState` — same operation, kept for `bleAdapter.radioStateAndFleet.test.ts`. */
+  setState(radioState: BleRadioState): void {
+    this.setAdapterState(radioState);
   }
 
   /** §4.1 — the app must filter scan results on the service UUID; these mocks only ever advertise it. */
@@ -271,7 +303,7 @@ export class MockBleManager {
    * scan. The app's dedupe path (P1-3.0) has nothing to exercise without it.
    * No-op when no scan is running — matching the radio.
    */
-  emitAdvertisement(device: MockDevice = this.device): void {
+  emitAdvertisement(device: MockDevice = this.devices[0]): void {
     if (!this.activeScan || !this.matchesFilter(this.activeScan.serviceUUIDs)) {
       return;
     }
@@ -288,17 +320,15 @@ export class MockBleManager {
   }
 
   async connectToDevice(deviceId: string): Promise<MockDevice> {
-    this.assertKnownDevice(deviceId);
-    return this.device.connect();
+    return this.findKnownDevice(deviceId).connect();
   }
 
   async isDeviceConnected(deviceId: string): Promise<boolean> {
-    return deviceId === this.device.id && this.device.isConnected();
+    return this.devices.some((device) => device.id === deviceId && device.isConnected());
   }
 
   async cancelDeviceConnection(deviceId: string): Promise<MockDevice> {
-    this.assertKnownDevice(deviceId);
-    return this.device.cancelConnection();
+    return this.findKnownDevice(deviceId).cancelConnection();
   }
 
   private matchesFilter(serviceUUIDs: string[] | null): boolean {
@@ -308,11 +338,12 @@ export class MockBleManager {
     );
   }
 
-  private assertKnownDevice(deviceId: string): void {
-    // Only the primary peripheral is connectable — the rest have no DeviceCore.
-    if (deviceId !== this.device.id) {
+  private findKnownDevice(deviceId: string): MockDevice {
+    const device = this.devices.find((candidate) => candidate.id === deviceId);
+    if (!device) {
       throw new Error(`MockBleManager: unknown device ${deviceId}`);
     }
+    return device;
   }
 }
 
@@ -326,18 +357,16 @@ export interface CreateMockPeripheralOptions extends DeviceCoreConfig {
   /** P1-3.0 — §4.1 manufacturer data for the primary peripheral. */
   manufacturerData?: Uint8Array;
   /**
-   * P1-3.0 — extra peripherals that appear in scan results but have no
-   * `DeviceCore` and cannot be connected to. For exercising dedupe, ordering
-   * and multi-device list behaviour.
+   * P1-3.0 — extra peripherals that appear in scan results, sharing the primary's `DeviceCore`.
+   * For exercising dedupe, ordering, and multi-device list behaviour where a full independent
+   * `DeviceCore` per device isn't the point — see `createMockBleFleet` below for that case.
    */
   additionalAdvertisers?: MockDeviceOptions[];
+  /** Defaults to `'PoweredOn'` — every existing caller's assumption before this option existed. */
+  radioState?: BleRadioState;
 }
 
-export function createMockPeripheral(options: CreateMockPeripheralOptions): {
-  manager: MockBleManager;
-  device: MockDevice;
-  core: DeviceCore;
-} {
+function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: MockDevice; core: DeviceCore } {
   const core = new DeviceCore(options);
   const device = new MockDevice(core, {
     id: options.deviceId ?? 'mock-device-0001',
@@ -346,12 +375,42 @@ export function createMockPeripheral(options: CreateMockPeripheralOptions): {
     advertisedRssi: options.advertisedRssi,
     manufacturerData: options.manufacturerData,
   });
-  // These share the primary's DeviceCore so the type checks out, but nothing
-  // reads through it — `MockBleManager.assertKnownDevice` refuses to connect
-  // to them, which is the honest model of "discovered, not connectable".
+  return { device, core };
+}
+
+export function createMockPeripheral(options: CreateMockPeripheralOptions): {
+  manager: MockBleManager;
+  device: MockDevice;
+  core: DeviceCore;
+} {
+  const { device, core } = buildDeviceAndCore(options);
   const additional = (options.additionalAdvertisers ?? []).map(
     (advertiserOptions) => new MockDevice(core, advertiserOptions),
   );
-  const manager = new MockBleManager(device, additional);
+  const manager = new MockBleManager([device, ...additional], options.radioState);
   return { manager, device, core };
+}
+
+/**
+ * P1-3.0 §3.2 — one manager backed by several devices, for scan fixtures a single-device
+ * `createMockPeripheral()` can't shape: "several devices" and "weak RSSI device" scan states.
+ * "No devices found" needs no fixture at all — pass `[]`. Each entry still gets a full,
+ * §4-faithful `DeviceCore` (not a scan-only stub), so selecting any of them and connecting is
+ * exactly as real as the single-device path — see this package's README on why a second, looser
+ * mock is not an option.
+ */
+export function createMockBleFleet(
+  devices: CreateMockPeripheralOptions[],
+  radioState: BleRadioState = DEFAULT_RADIO_STATE,
+): {
+  manager: MockBleManager;
+  devices: MockDevice[];
+  cores: DeviceCore[];
+} {
+  const built = devices.map(buildDeviceAndCore);
+  const manager = new MockBleManager(
+    built.map((b) => b.device),
+    radioState,
+  );
+  return { manager, devices: built.map((b) => b.device), cores: built.map((b) => b.core) };
 }

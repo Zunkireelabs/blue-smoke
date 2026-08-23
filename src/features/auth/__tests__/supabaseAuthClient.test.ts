@@ -37,13 +37,27 @@ describe('supabaseAuthClient — config forced absent', () => {
     }
   });
 
+  /**
+   * Every method on the interface, deliberately — the point of this table is
+   * that it is exhaustive, so a method added later without a `runSafely`
+   * wrapper is caught here rather than by a screen crashing in the field.
+   * `signUpWithEmail`, `requestPasswordReset` and `resendSignupConfirmation`
+   * were removed with Method A (P1-1.0, keeping passwords); `setPassword` is
+   * `confirmPasswordReset` renamed, and `requestEmailCode` /
+   * `verifyEmailCode` / `confirmSignupWithCode` are the email-code additions
+   * this table had never covered before.
+   */
   it.each([
-    ['signUpWithEmail', () => supabaseAuthClient.signUpWithEmail('a@example.com', 'password123')],
     ['signInWithEmail', () => supabaseAuthClient.signInWithEmail('a@example.com', 'password123')],
-    ['requestPasswordReset', () => supabaseAuthClient.requestPasswordReset('a@example.com')],
-    ['confirmPasswordReset', () => supabaseAuthClient.confirmPasswordReset('newpassword123')],
+    ['setPassword', () => supabaseAuthClient.setPassword('newpassword123')],
     ['requestPhoneOtp', () => supabaseAuthClient.requestPhoneOtp('+12015550123')],
     ['verifyPhoneOtp', () => supabaseAuthClient.verifyPhoneOtp('+12015550123', '123456')],
+    ['requestEmailCode', () => supabaseAuthClient.requestEmailCode('a@example.com')],
+    ['verifyEmailCode', () => supabaseAuthClient.verifyEmailCode('a@example.com', '123456')],
+    [
+      'confirmSignupWithCode',
+      () => supabaseAuthClient.confirmSignupWithCode('a@example.com', '123456'),
+    ],
     ['signOut', () => supabaseAuthClient.signOut()],
   ] as const)('%s never throws — it resolves ok:false', async (_name, call) => {
     await expect(call()).resolves.toEqual({ ok: false, error: COACHING_ERROR });

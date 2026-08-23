@@ -358,13 +358,30 @@ remaining time and still offer sign-out.
 
 ### Manual fallback — F6.F
 
-> 🔴 **BLOCKED — OQ-2.** No owner, no channel, no SLA. **Assumption used to draw this screen:** an
-> email address the user can contact, with an expected response window stated on screen. Replace the
-> address and the window when the policy lands; the layout should not need to change.
+> 🔴 **STILL BLOCKED — OQ-2**, but the blockage is now narrower. The **mechanism** is decided and
+> written up in spec **§6.4.1**; what is missing is three strings the client owes us: the named
+> reviewer, the support address, and the SLA number. **Assumption used to draw this screen** (now
+> a proposal on its way to the client rather than a guess): an email address, with an expected
+> response window of **2 business days** stated on screen. Replace the address and the window when
+> the policy lands; the layout should not need to change.
 
 The fallback carries **only the user ID and the vendor status**. No images — we could not attach one
 if we tried. The screen states what happens next and roughly when, then returns the user to a state
 they can leave.
+
+**This screen keeps a retry button.** Escalation and retry sit side by side — `[ Try again with a
+different document ]` next to the contact route — rather than retry-then-escalate. Many wrongly
+rejected people succeed with a second form of ID and should not be made to wait for a human; the
+person for whom retry genuinely will not work should not be made to wait either. See spec §6.4.
+
+**Do not build a route that reaches this screen only from F6.D3.** §6.4 surfaces the fallback at
+attempt 6+, which needs the server-side attempt counter that F6.D1–D3 do not have (see VF-8/9/10
+below). If this is the only entry point, the screen ships unreachable. It must also hang off **F6.E**
+(VF-6, "Something went wrong") and the **4–5 "having trouble?"** affordance, both of which exist today.
+
+**The user's account is not deleted while this is outstanding** — not on a timer, not after a
+failure count. Spec §6.4 records why; the short version is that an unverified row is inert, deleting
+it destroys the case the reviewer needs, and it is not a lockout in any case.
 
 ### 🔴 F6.Z — every verification screen needs sign-out
 

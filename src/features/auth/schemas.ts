@@ -1,14 +1,25 @@
 import { z } from 'zod';
 
 /**
- * P1-1.0 — Zod schemas for Method A (email + password) and the client-side
- * shape of Method B (phone + OTP). Spec §1.2 / §1.2.1.
+ * P1-1.0 — Zod schemas for email (a 6-digit code, spec §1.2.2) and the
+ * client-side shape of Method B (phone + OTP, spec §1.2.1). Email is the
+ * only front door: there is no separate signup/login schema, and no reset
+ * schema — the code is the recovery path.
+ *
+ * `passwordSchema` now routes: PR 2 wires it into `setPasswordSchema` below
+ * for "Set a password" in Settings, and directly for "Use password instead"
+ * sign-in — password sign-in itself is a later credential, not a competing
+ * front door (see `client.ts`). `signupSchema`, `loginSchema` and
+ * `passwordResetRequestSchema` do not survive: they validated forms PR 1
+ * deleted.
  *
  * Password strength: no policy is specified anywhere in TECHNICAL_SPEC.md.
- * `MIN_PASSWORD_LENGTH` below is a placeholder floor, not a spec value — it
- * must be confirmed against (and kept in sync with) the Supabase project's
- * own Auth password policy (Dashboard → Authentication → Policies), since a
- * mismatch between client-side and server-side rules just means confusing
+ * `MIN_PASSWORD_LENGTH` below is kept at 8, stricter than the confirmed
+ * server floor of **6** (measured live against `bluesmoke-dev`, 2026-08-11 —
+ * Dashboard → Authentication → Policies). Stricter-than-server is safe: it
+ * only ever rejects client-side something the server would also reject, and
+ * never accepts something the server won't. Do not lower this to 6 without a
+ * deliberate product call — the gap between the two is what stops confusing
  * server rejections after client-side validation already passed.
  */
 const MIN_PASSWORD_LENGTH = 8;
@@ -19,28 +30,46 @@ export const passwordSchema = z
   .string()
   .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
 
-export const signupSchema = z
+/**
+ * PR 2 — "Set a password" in Settings. No current-password field: Supabase's
+ * "Secure password change" is confirmed OFF on `bluesmoke-dev` (measured
+ * live, 2026-08-11), so `updateUser({ password })` only needs a live
+ * session, not reauthentication. `confirmPassword` exists purely to catch a
+ * fat-fingered retype client-side — the server never sees it.
+ */
+export const setPasswordSchema = z
   .object({
-    email: emailSchema,
     password: passwordSchema,
     confirmPassword: z.string(),
   })
-  .refine(data => data.password === data.confirmPassword, {
+  .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match.',
     path: ['confirmPassword'],
   });
-export type SignupInput = z.infer<typeof signupSchema>;
+export type SetPasswordInput = z.infer<typeof setPasswordSchema>;
 
-export const loginSchema = z.object({
+/**
+ * PR 2 — "Use password instead" sign-in. Deliberately not `emailCodeRequestSchema`
+ * plus a bolted-on password field: this is its own schema because it serves a
+ * different call (`signInWithEmail`, not `requestEmailCode`) even though the
+ * email half is identical.
+ */
+export const passwordSignInSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Enter your password.'),
 });
-export type LoginInput = z.infer<typeof loginSchema>;
+export type PasswordSignInInput = z.infer<typeof passwordSignInSchema>;
 
-export const passwordResetRequestSchema = z.object({
+/**
+ * The email a 6-digit code is sent to — signup and sign-in alike. Named for
+ * the flow it serves rather than "email form" so the one place that
+ * validates an auth email stays obviously tied to the code path that owns
+ * it.
+ */
+export const emailCodeRequestSchema = z.object({
   email: emailSchema,
 });
-export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;
+export type EmailCodeRequestInput = z.infer<typeof emailCodeRequestSchema>;
 
 /**
  * Method B (§1.2.1) phone shape. This is a permissive E.164 check only — the

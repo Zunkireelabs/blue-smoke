@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Button, GradientGround, Text, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 
 /**
@@ -9,63 +10,47 @@ import type { RootStackParamList } from '@/app/navigation';
  * auth.users.id"). No default pre-selected, equal visual weight — this
  * screen does not decide which method is "primary."
  *
- * "Continue with Email" goes to Login, not Signup: email/password already
- * distinguishes new vs. returning users, and login is the more common case
- * at this entry point. Signup is one tap away via the link that screen
- * adds. "Continue with Phone" goes straight to phone input — OTP is
- * unified for new and existing numbers (spec §1.2.1), there's no separate
- * signup/login split to choose between.
+ * "Continue with Email" goes to `EmailCodeRequest`, not a Login screen —
+ * P1-1.0 (email + code, keeping passwords) replaced the email/password split
+ * with a single 6-digit-code front door, so there is no signup/login
+ * distinction left to route on. "Continue with Phone" goes straight to
+ * phone input for the same reason: OTP is unified for new and existing
+ * numbers (spec §1.2.1), there's no separate signup/login split there
+ * either.
  */
 export function AuthMethodChoiceScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sign up or log in</Text>
+    <GradientGround style={styles.sheet}>
+      <Text variant="title" style={styles.title}>
+        Sign up or log in
+      </Text>
 
-      <Pressable
-        style={styles.button}
-        onPress={() => navigation.navigate('Login')}
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Email"
-      >
-        <Text style={styles.buttonText}>Continue with Email</Text>
-      </Pressable>
-
-      <Pressable
-        style={styles.button}
-        onPress={() => navigation.navigate('PhoneInput')}
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Phone"
-      >
-        <Text style={styles.buttonText}>Continue with Phone</Text>
-      </Pressable>
-    </View>
+      <View style={styles.actions}>
+        <Button
+          label="Continue with Email"
+          onPress={() => navigation.navigate('EmailCodeRequest')}
+        />
+        <Button
+          label="Continue with Phone"
+          variant="secondary"
+          onPress={() => navigation.navigate('PhoneInput')}
+        />
+      </View>
+    </GradientGround>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  sheet: {
     justifyContent: 'center',
-    padding: 24,
-    gap: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16,
     textAlign: 'center',
+    marginBottom: tokens.spacing.xxl,
   },
-  button: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  actions: {
+    gap: tokens.spacing.md,
   },
 });

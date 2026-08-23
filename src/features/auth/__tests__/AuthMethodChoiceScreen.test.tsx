@@ -19,7 +19,7 @@ function renderChoice() {
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="AuthChoice" component={AuthMethodChoiceScreen} />
-          <Stack.Screen name="Login">{() => <Text>LOGIN SCREEN</Text>}</Stack.Screen>
+          <Stack.Screen name="EmailCodeRequest">{() => <Text>EMAIL CODE SCREEN</Text>}</Stack.Screen>
           <Stack.Screen name="PhoneInput">{() => <Text>PHONE SCREEN</Text>}</Stack.Screen>
         </Stack.Navigator>
       </NavigationContainer>,
@@ -41,7 +41,7 @@ describe('AuthMethodChoiceScreen', () => {
     await act(async () => {
       findByLabel(renderer, 'Continue with Email').props.onPress();
     });
-    expect(renderedText(renderer)).toContain('LOGIN SCREEN');
+    expect(renderedText(renderer)).toContain('EMAIL CODE SCREEN');
   });
 
   it('navigates to the phone flow', async () => {

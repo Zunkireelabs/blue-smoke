@@ -39,7 +39,16 @@ export type VerificationState =
   /** The webhook recorded a pass. Still only a hint — see the note above. */
   | 'verified'
   /** The vendor declined, or the inquiry failed or expired. */
-  | 'declined';
+  | 'declined'
+  /**
+   * The read itself failed (network, RLS, transport) — we do not know the answer, which is a
+   * different thing from 'none'. F6.X / VF-7: before this state existed, a query error with no
+   * cached data fell through to `data ?? 'none'` and sent the user into an ID scan, including a
+   * verified user whose very first read of this session happened to fail. Only reachable when
+   * there is no cached data at all (see `useVerificationStatus` below) — an error on a
+   * background refetch never overrides a last-known-good state.
+   */
+  | 'error';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -91,8 +100,20 @@ export function useVerificationStatus() {
     },
   });
 
+  // Cached data always wins over a concurrent error: once any successful read has landed
+  // (verified/pending/declined/none), a later background refetch failing must not evict it —
+  // only the FIRST read, before any data exists, can ever produce 'error'. That is what keeps
+  // a transient network blip from bouncing an already-verified user into VF-7, let alone VF-2.
+  const state: VerificationState = query.isPending
+    ? 'loading'
+    : query.data !== undefined
+      ? query.data
+      : query.isError
+        ? 'error'
+        : 'none';
+
   return {
-    state: query.isPending ? ('loading' as const) : (query.data ?? 'none'),
+    state,
     /**
      * Surfaced so the caller can offer a retry. Errors here are transport failures, never a
      * verification decision — a failed fetch must never be rendered as "declined".

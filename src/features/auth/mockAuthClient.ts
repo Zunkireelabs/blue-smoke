@@ -15,28 +15,42 @@ import type { AuthClient, AuthOutcome, AuthResult } from './client';
 
 const DEV_OTP_CODE = '123456';
 
-export interface MockAuthClientOptions {
+/**
+ * Byte-identical to `supabaseAuthClient`'s copy, deliberately. Wrong code,
+ * expired code and unknown address are one indistinguishable outcome in both
+ * clients; a test asserting this string therefore guards the real client's
+ * no-enumeration behaviour too.
+ */
+const INVALID_CODE_ERROR = 'Incorrect or expired code.';
+
+export interface SeedEmailAccountOptions {
   /**
-   * When true, `signUpWithEmail` returns `sessionEstablished: false` (the
-   * "check your email" path a screen must handle) instead of a live
-   * session. Default false: matches the more common demo path so a test
-   * that doesn't care about email confirmation doesn't have to opt out of
-   * it. Both values are exercised by SignupScreen's own test file.
+   * Set a password on the seeded account, so a test can exercise
+   * `signInWithEmail` (unrouted in this PR, but still tested — see
+   * `client.ts`). Omit for a code-only account, which is what
+   * `verifyEmailCode` itself produces — nothing in this PR can set a
+   * password on an account created that way.
    */
-  requireEmailConfirmation?: boolean;
+  password?: string;
+  /**
+   * Seed the account as still needing sign-up confirmation, the only state
+   * in which `confirmSignupWithCode` succeeds.
+   */
+  confirmationPending?: boolean;
 }
 
 export interface MockAuthClient extends AuthClient {
-  /** Test-only: pre-seed an account so a login test can exercise success. */
-  seedEmailAccount(email: string, password: string): void;
+  /** Test-only: pre-seed an account so a test can exercise an already-registered path. */
+  seedEmailAccount(email: string, options?: SeedEmailAccountOptions): void;
 }
 
-export function createMockAuthClient(options: MockAuthClientOptions = {}): MockAuthClient {
-  const { requireEmailConfirmation = false } = options;
+export function createMockAuthClient(): MockAuthClient {
+  type EmailAccount = { password: string | null; userId: string; confirmationPending: boolean };
 
-  const emailAccounts = new Map<string, { password: string; userId: string }>();
+  const emailAccounts = new Map<string, EmailAccount>();
   const phoneAccounts = new Map<string, { userId: string }>();
   const otpRequested = new Set<string>();
+  const emailCodeRequested = new Set<string>();
 
   let nextUserId = 1;
   function freshUserId(): string {
@@ -44,44 +58,72 @@ export function createMockAuthClient(options: MockAuthClientOptions = {}): MockA
   }
 
   return {
-    seedEmailAccount(email, password) {
-      emailAccounts.set(email, { password, userId: freshUserId() });
-    },
-
-    async signUpWithEmail(email, password): Promise<AuthResult<AuthOutcome>> {
-      if (emailAccounts.has(email)) {
-        return { ok: false, error: 'An account with this email already exists.' };
-      }
-      const userId = freshUserId();
-      emailAccounts.set(email, { password, userId });
-      return {
-        ok: true,
-        data: { userId, sessionEstablished: !requireEmailConfirmation },
-      };
+    seedEmailAccount(email, options = {}) {
+      emailAccounts.set(email, {
+        password: options.password ?? null,
+        userId: freshUserId(),
+        confirmationPending: options.confirmationPending ?? false,
+      });
     },
 
     async signInWithEmail(email, password): Promise<AuthResult<AuthOutcome>> {
       const account = emailAccounts.get(email);
-      // Same generic message regardless of "no such account" vs "wrong
-      // password" — mirrors supabaseAuthClient's non-enumeration behavior,
-      // so a test asserting this string also guards the real client's copy.
-      if (!account || account.password !== password) {
+      // Same generic message regardless of "no such account", "wrong
+      // password" and "no password set" — mirrors supabaseAuthClient's
+      // non-enumeration behavior, so a test asserting this string also
+      // guards the real client's copy.
+      if (!account || account.password == null || account.password !== password) {
         return { ok: false, error: 'Incorrect email or password.' };
       }
       return { ok: true, data: { userId: account.userId, sessionEstablished: true } };
     },
 
-    async requestPasswordReset(_email): Promise<AuthResult> {
-      // Real client doesn't error on an unknown email either (spec: reset
-      // requests are themselves an enumeration vector) — mock matches.
+    async setPassword(_newPassword): Promise<AuthResult> {
+      // No signed-in-user concept in the mock — always succeeds. A test that
+      // needs the failure path uses jest.spyOn(...).mockResolvedValue on
+      // this method directly, same as PhoneInputScreen's rate-limit test.
       return { ok: true, data: undefined };
     },
 
-    async confirmPasswordReset(_newPassword): Promise<AuthResult> {
-      // No recovery-session concept in the mock — always succeeds. A test
-      // that needs the failure path uses jest.spyOn(...).mockResolvedValue
-      // on this method directly, same as PhoneInputScreen's rate-limit test.
+    /**
+     * Sign-up confirmation. **Kept but unrouted** (see `client.ts`), and
+     * deliberately not tested against the same code `verifyEmailCode`
+     * issues — those are two different Supabase templates in the real
+     * client and this mock keeps that same separation rather than
+     * collapsing it into one code set.
+     */
+    async confirmSignupWithCode(email, code): Promise<AuthResult<AuthOutcome>> {
+      const account = emailAccounts.get(email);
+      if (!account || !account.confirmationPending || code !== DEV_OTP_CODE) {
+        return { ok: false, error: INVALID_CODE_ERROR };
+      }
+      account.confirmationPending = false;
+      return { ok: true, data: { userId: account.userId, sessionEstablished: true } };
+    },
+
+    async requestEmailCode(email): Promise<AuthResult> {
+      // Never errors on an unknown address — that is the whole point of
+      // `shouldCreateUser: true` in the real client. A mock that rejected
+      // unknown emails here would let an enumeration bug pass its tests.
+      emailCodeRequested.add(email);
       return { ok: true, data: undefined };
+    },
+
+    async verifyEmailCode(email, code): Promise<AuthResult<AuthOutcome>> {
+      if (!emailCodeRequested.has(email) || code !== DEV_OTP_CODE) {
+        return { ok: false, error: INVALID_CODE_ERROR };
+      }
+      emailCodeRequested.delete(email);
+
+      // The single front door is signup and sign-in in one action
+      // (`shouldCreateUser`), so a first-time address gets an account
+      // rather than an error.
+      let account = emailAccounts.get(email);
+      if (!account) {
+        account = { password: null, userId: freshUserId(), confirmationPending: false };
+        emailAccounts.set(email, account);
+      }
+      return { ok: true, data: { userId: account.userId, sessionEstablished: true } };
     },
 
     async requestPhoneOtp(phone): Promise<AuthResult> {

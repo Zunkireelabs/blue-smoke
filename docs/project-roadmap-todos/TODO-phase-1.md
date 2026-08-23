@@ -42,7 +42,13 @@ hardware box), `P1-7.0` +2 (2/12). Audited Day 9: `P1-1.0` 15 · `P1-2.0` 1 · `
       spec value; flagged in schemas.ts to confirm against the Supabase project's own Auth
       password policy once P0-3.0 exists)*
 - [x] Login screen with error handling that does not leak account existence
-- [x] Password reset request + email flow
+- [x] Password reset request + email flow *(**this box was ticked before any email had ever been
+      delivered** — the screen existed, the send did not. Now genuinely proven, 2026-08-09: custom
+      SMTP via Resend on dev, mail Delivered and opened, and the verify link preserved
+      `redirect_to=bluesmoke://reset-password`. The allow-list is proven **honoured**, not merely
+      configured, by a two-send control — the same request without `redirect_to` fell back to
+      `http://localhost:3000`. 🔴 **Still not proven: that the deep link opens the app** — that
+      needs a physical device, and the box below stays unticked for it. See `supabase/README.md`)*
 - [x] Deep-link handling for the reset link on both platforms *(config only — bluesmoke:// scheme
       registered in Info.plist/AndroidManifest.xml + RN linking config; unrunnable on this
       machine, brief §2 — unverified on a device, not untested-in-principle)*
@@ -74,6 +80,17 @@ hardware box), `P1-7.0` +2 (2/12). Audited Day 9: `P1-1.0` 15 · `P1-2.0` 1 · `
 - [ ] Tested on both platforms, both methods *(no physical device or simulator on this machine,
       brief §2 — unit/typecheck/lint only; genuinely deferred, not faked)*
 
+**Method A — PR 2, password as a later credential** *(email + code auth pivot, see
+`docs/execution-briefs/P1-1.0-email-code-auth-with-passwords.md`)* — Method A's original boxes
+above predate this pivot and describe screens PR 1 deleted; they are left ticked as history, not
+current scope. This is the current scope:
+- [x] "Set a password" in Settings (`PF-8`) — new + confirm password, no current-password field
+      (Supabase "Secure password change" confirmed OFF on `bluesmoke-dev`, 2026-08-11)
+- [x] "Use password instead" sign-in (`AU-14`), reached only via a subordinate action on the
+      email-code screen — never a competing front door
+- [x] Security section on Profile (`PF-1`) gated on `user?.email`, so a phone-only account never
+      sees a dead-end "Set a password" row
+
 **Assumption:** BaaS auth supports email/password and reset email flow; Twilio Verify account
 provisioned for the phone method (§1.2.1, confirmed 2026-08-05).
 **Excludes:** social / SSO login.
@@ -96,24 +113,47 @@ the denial matrix item 9 asks you to walk. Two things it settles that are easy t
 permission is a button that silently does nothing), and denying Bluetooth must leave **the rest of
 the app working** — account, profile and verification are all reachable without it.
 
-- [ ] Onboarding carousel explaining the product and the privacy model
-- [ ] BLE permission priming screen, requested **at the moment of need**, not at launch
-- [ ] Camera permission priming, requested at the start of verification
+- [x] Onboarding carousel explaining the product and the privacy model *(P1-2.0, ON-1..3 —
+      walked live on the iOS simulator; `simctl uninstall` + reinstall confirmed the AsyncStorage
+      flag clears and the carousel returns, rather than the Keychain-survives-uninstall trap this
+      project hit on 2026-08-09)*
+- [x] BLE permission priming screen, requested **at the moment of need**, not at launch *(P1-2.0,
+      `BluetoothPrimingScreen`/ON-4 — real component, no launch-time mount anywhere; the actual
+      pairing-flow call site is P1-4.0/Phase D's job, tracked there, not invented here)*
+- [x] Camera permission priming, requested at the start of verification *(ON-5, shipped P2-6.0 —
+      correcting this box now since it was never ticked when built)*
 - [x] iOS: `NSBluetoothAlwaysUsageDescription`, `NSCameraUsageDescription` written to justify, not
       just declare *(both present in `Info.plist` and both genuinely justificatory — the camera one
       names Persona, the Bluetooth one explains the proximity behaviour)*
 - [ ] Android: runtime permissions — `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `CAMERA`, and location
-      where required by API level *(**declared, not requested.** All five are in
-      `AndroidManifest.xml`; no runtime request flow exists anywhere in `src/`, which is the part
-      this box is about)*
-- [ ] **Denial recovery path** — explanation + deep link to Settings
-- [ ] "Permanently denied" state handled distinctly from "denied once"
-- [x] Permission state re-checked on app foreground *(`PairDeviceScreen.tsx` mounts an
-      `AppStateCoordinator`; `onEnterForeground` calls `checkBlePermissions()` — never
-      `requestBlePermissions()`, which would re-prompt on every app switch — and resumes the scan
-      if now granted. Tested in `PairDeviceScreen.test.tsx`: blocked → Settings → granted resumes
-      scanning without a second `requestMultiple` call)*
-- [ ] **No dead ends** — verified by walking every denial combination
+      where required by API level *(**partial.** `requestAndroidBluetoothPermission()` (P1-2.0,
+      `src/features/ble/bluetoothPermission.ts`) now does the real `PermissionsAndroid.requestMultiple`
+      call for `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` — but nothing calls it yet (Phase D), CAMERA
+      is Persona's own SDK's concern not ours, and Android has still never been compiled on this
+      project (no JDK) so none of this has actually been run. Leaving unticked rather than
+      claiming something unrun. `feature/ble-connectivity`'s `PairDeviceScreen.tsx`, merged in
+      2026-08-23, is in the same state — declares the manifest entries, no runtime request flow)*
+- [x] **Denial recovery path** — explanation + deep link to Settings *(P1-2.0, ON-8/ON-9 —
+      `Linking.openSettings()`, real, tested; not a placeholder button)*
+- [x] "Permanently denied" state handled distinctly from "denied once" *(P1-2.0 — `BluetoothGateScreen`
+      resolves ON-7 vs ON-8 vs ON-9 from real `BleManager` state, proven by
+      `BluetoothGateScreen.test.tsx` against real iOS/Android state strings, not a shared
+      component behind a variant prop. iOS never reaches ON-7 — see that file's own note on why)*
+- [x] Permission state re-checked on app foreground *(P1-2.0 — `BluetoothGateScreen`'s `AppState`
+      listener, tested. `PairDeviceScreen.tsx`'s own `AppStateCoordinator` does the equivalent for
+      that parallel implementation — see the P1-3.0 merge-finding note below)*
+- [ ] **No dead ends** — verified by walking every denial combination *(**mostly done; one gap, and
+      it is Android.** Both original blockers are gone: P1-3.0 gave these screens a real trigger
+      (`Home` → "Pair a device" → ON-4 → gate), and the signed-in session walks fine now. On
+      2026-08-11 all five radio states were driven live on the iOS simulator through that real
+      trigger, by forcing `createDevBleManager`'s fixture state: `PoweredOn` → resolves to
+      DeviceScan · `PoweredOff` → ON-9 · `Unauthorized` → ON-8 · `Unsupported` → ON-10 · `Unknown`
+      → bounded spinner → timeout screen, whose "Try again" was pressed and re-armed a fresh
+      timeout rather than sticking. ON-10's header back chevron was pressed and genuinely exits.
+      **Still not walked: ON-7 (denied once).** iOS never reaches it by design — it needs Android,
+      which has still never been compiled on this project (no JDK). **ON-6 also still has no real
+      trigger** (notification priming is F7.9, past P1-3.0's pairing boundary). Leaving unticked
+      for those two rather than rounding up.)*
 
 **Assumption:** standard OS permission dialogs are acceptable to client.
 **Excludes:** custom permission-priming screens beyond the agreed flow.
@@ -134,8 +174,11 @@ the app working** — account, profile and verification are all reachable withou
 - [x] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1)
       *(`parseAdvertisement()`; `stateHintRaw`/`flagsRaw` are parsed and carried, never interpreted
       — §4.1 defines no encoding for either, see the spec gap noted in `scanner.ts` and
-      `PairDeviceScreen.tsx`)*
-- [x] Discovered-device list UI with signal strength indication *(`PairDeviceScreen.tsx`)*
+      `PairDeviceScreen.tsx`. `DeviceScanScreen.tsx` — the parallel P1-3.0 implementation merged
+      2026-08-23, see the note below — deliberately skips this: DV-4 only requires signal strength,
+      and `0xFF`-unknown battery has no UI to attach to without it; that box is revisited at P1-5.0)*
+- [x] Discovered-device list UI with signal strength indication *(`PairDeviceScreen.tsx`; also
+      `DeviceScanScreen.tsx` — see the merge note below)*
 - [x] Scan timeout + explicit "no devices found" state with troubleshooting help
       *(`ScanState.noDevicesFound`, `PairDeviceScreen.tsx`)*
 - [x] Bluetooth-off state detected and handled with a prompt to enable
@@ -145,10 +188,20 @@ the app working** — account, profile and verification are all reachable withou
       deliberately not RSSI order; see the mutation-verify note in that file)*
 - [x] Scan stopped on screen exit — no battery leak *(`useFocusEffect`/`useEffect` in
       `PairDeviceScreen.tsx`, tested)*
-- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors *(needs physical hardware —
-      OQ-1, ~Day 26; out of scope for this pass)*
+- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors *(still needs physical
+      hardware — OQ-1, ~Day 26 — but "Android has never been compiled" is no longer true as of
+      2026-08-23: JDK 17 + the Android SDK are installed and `./gradlew assembleDebug` succeeds,
+      see `docs/session-log/sadin.md`. Compiling is no longer what blocks this box; a device is)*
 - [x] Tested against the mock peripheral *(`scanner.test.ts` 29 tests, `PairDeviceScreen.test.tsx`
       7 tests, all against `tools/mock-peripheral`)*
+
+> **Merge finding, 2026-08-23:** two independent pairing-flow implementations exist —
+> `PairDeviceScreen.tsx` (`feature/ble-connectivity`, this task's boxes above) and
+> `DevicePairingPrimingScreen.tsx` → `BluetoothGateScreen.tsx` → `DeviceScanScreen.tsx` →
+> `PairingBoundaryScreen.tsx` (`stage`, registered as `BluetoothPriming`/`BluetoothGate`/
+> `DeviceScan`/`DevicePairingBoundary`). Both are now merged and both are registered in
+> `navigation.tsx`; Home's "Pair a device" button currently points at the `stage` flow. Needs a
+> team decision on which is canonical — not made here.
 
 **Assumption:** device advertises the agreed BLE service UUID.
 **Excludes:** support for non-Blue-Smoke BLE peripherals.
@@ -357,18 +410,26 @@ the app working** — account, profile and verification are all reachable withou
 > User profile and app settings: view account details, manage notification preferences, and
 > access support/legal links.
 
-- [ ] Profile screen — email, display name, member since
-- [ ] Verification status displayed (verified / not verified + date) — **never the DOB**
-- [ ] Notification preferences (lock status, low battery)
-- [ ] Support contact link — the route used by the manual fallback (spec §6.4)
-- [ ] Privacy policy + terms links
-- [ ] **A plain-language explanation of the on-device privacy model** — this is the product's core promise; say it where users will read it
-- [ ] App version + build number displayed for support purposes
-- [ ] Sign out
+- [x] Profile screen — email, display name, member since
+- [x] Verification status displayed (verified / not verified + date) — **never the DOB**
+- [ ] Notification preferences (lock status, low battery) — ⛔ **blocked:** `push_tokens` exists but §5.5 push has no client code; this is a build, not a checkbox
+- [ ] Support contact link — the route used by the manual fallback (spec §6.4) — ⛔ **blocked on OQ-2** (owner, channel, SLA all unanswered)
+- [ ] Privacy policy + terms links — ⛔ **blocked:** no URLs exist in the repo or the spec; inventing them is prohibited
+- [ ] **A plain-language explanation of the on-device privacy model** — this is the product's core promise; say it where users will read it — ⚠️ **copy is stale:** v1.5 moved capture into Persona's SDK, so there is no *on-device* model to describe. Rewrite against the vendor architecture before building
+- [ ] App version + build number displayed for support purposes — ⛔ **blocked:** needs a new dependency (`react-native-device-info` or equivalent); `package.json` is a contested shared file, announce first
+- [x] Sign out — moved here from `HomeScreen`, reachable via the Home header
 
 **Assumption:** profile fields limited to the agreed set.
 **Excludes:** in-app account deletion / data-export tooling.
 **Risk:** — *(none recorded in PRD)*
+
+**Partially delivered** on `feature/P1-8.0-profile-settings`: `src/features/profile/{ProfileScreen,useProfile}.tsx|ts`,
+reachable from a `Profile` header action on Home. Display name is editable (RLS `own_profile`
+already permits it, and nothing else ever writes the column, so read-only would leave it
+permanently blank). The four ⛔ items each need an input that does not exist yet — none is a
+coding problem. Also fixed here: `HomeScreen` rendered a blank identifier for every phone-only
+account (`email ?? …` never fires when GoTrue returns `''`), now covered by
+`src/shared/lib/__tests__/accountIdentifier.test.ts`.
 
 ---
 

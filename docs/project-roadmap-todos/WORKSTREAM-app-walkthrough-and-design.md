@@ -74,6 +74,13 @@ closes it.
       *done 2026-08-09; the row was then **deleted again** after the gate-reclose proof (Track A
       B5), so `verifications` is empty by intent. Re-seed with the SQL below when needed; the
       current test user is the phone user `4327be3e…` (`+1 415 212 7777`).*
+
+      ⚠️ **"empty by intent" was not true until 2026-08-09.** A review query found the seed row
+      still present (see the Track A brief's B5 note). It is genuinely gone now — verified
+      0 rows — but treat this SQL as what it is: **a deliberate bypass of the age gate.** A
+      seeded row has `inquiry_id` null, so no vendor decision exists behind it, and
+      `issue-device-session` will release key material on it. If you re-seed, delete it in the
+      same session, and never on staging or production.
       ```sql
       insert into verifications
         (user_id, age_verified, provider_status, outcome_reason, method, app_version, platform)

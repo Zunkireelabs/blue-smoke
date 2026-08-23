@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
-import { Screen, Text, tokens } from '@/shared/ui';
+import { Screen, Text, tokens, useCountdown } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 
 /**
  * P1-1.0 Method B, step 2 (spec §1.2.1) — segmented 6-digit OTP entry with
- * a resend cooldown. Error handling mirrors Method A: `verifyPhoneOtp`'s
- * "Incorrect or expired code." is rendered verbatim, no branching on cause
- * (matches LoginScreen's non-enumeration discipline — see its header).
+ * a resend cooldown. `verifyPhoneOtp`'s "Incorrect or expired code." is
+ * rendered verbatim, no branching on cause — the same non-enumeration
+ * discipline every P1-1.0 auth form follows (see `EmailCodeEntryScreen`).
  *
  * `RESEND_COOLDOWN_SECONDS` is not specified anywhere in the spec (Twilio
  * Verify's own resend policy isn't configured yet — that's P0-3.0). 30s is
@@ -38,16 +38,8 @@ export function OtpEntryScreen() {
   const [code, setCode] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
+  const { remaining: cooldown, restart: restartCooldown } = useCountdown(RESEND_COOLDOWN_SECONDS);
   const inputRef = useRef<TextInput>(null);
-
-  useEffect(() => {
-    if (cooldown <= 0) {
-      return undefined;
-    }
-    const id = setTimeout(() => setCooldown(prev => prev - 1), 1000);
-    return () => clearTimeout(id);
-  }, [cooldown]);
 
   async function verify(digits: string) {
     setFormError(null);
@@ -90,7 +82,7 @@ export function OtpEntryScreen() {
         return;
       }
       setCode('');
-      setCooldown(RESEND_COOLDOWN_SECONDS);
+      restartCooldown();
     } catch {
       setFormError('Something went wrong. Please try again.');
     }

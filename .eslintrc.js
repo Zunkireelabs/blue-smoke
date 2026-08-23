@@ -74,6 +74,26 @@ const ANALYTICS_IMPORT_PATTERNS = [
   },
 ];
 
+// P1-3.0 §3.4 — "prove it cannot ship." `tools/mock-peripheral` is pure-Node test/dev tooling
+// (Buffer, and previously node:crypto too — see deviceCore.ts's module doc comment); a fake BLE
+// stack reachable from any real (non-test) app code path is a device that unlocks without a
+// device (CLAUDE.md's authority model). The one sanctioned import is `src/app/providers.tsx`'s
+// `__DEV__`-gated wiring point (P1-3.0) — everything else under `src/` is production code that
+// ships in a release build and must never reach it, `__tests__/**` files are the other
+// legitimate caller (they drive the mock directly, never through the app's real composition
+// root). Verified firing on this repo's ESLint 8.57.1 by
+// tools/lint-guard/__tests__/mockPeripheralImportGuard.test.ts.
+const MOCK_PERIPHERAL_IMPORT_MESSAGE =
+  'tools/mock-peripheral may only be imported from src/app/providers.tsx (the __DEV__-gated ' +
+  'dev BLE wiring point, P1-3.0) or from __tests__/** files. A fake BLE stack reachable from ' +
+  'any other production path is a device that unlocks without a device — see CLAUDE.md\'s ' +
+  'authority model.';
+
+const MOCK_PERIPHERAL_IMPORT_PATTERN = {
+  group: ['**/tools/mock-peripheral/**', '**/tools/mock-peripheral'],
+  message: MOCK_PERIPHERAL_IMPORT_MESSAGE,
+};
+
 module.exports = {
   root: true,
   extends: '@react-native',
@@ -112,9 +132,25 @@ module.exports = {
                 message: VERIFICATION_IMPORT_MESSAGE,
               },
             ],
-            patterns: ANALYTICS_IMPORT_PATTERNS,
+            patterns: [...ANALYTICS_IMPORT_PATTERNS, MOCK_PERIPHERAL_IMPORT_PATTERN],
           },
         ],
+      },
+    },
+    {
+      // P1-3.0 §3.4 — the mock-import guard for the rest of `src/`. Deliberately its own
+      // override, not folded into the verification-subtree one above: ESLint overrides don't
+      // merge a rule's options across matching entries for the same file — the LAST matching
+      // override wins outright — so if this lived in a second override that also matched
+      // `src/features/verification/**`, it would silently replace (not add to) that subtree's
+      // `no-restricted-imports` config instead of extending it. `excludedFiles` keeps this
+      // override from ever applying to a verification-subtree file in the first place, so the
+      // two never collide; the verification subtree gets this same protection via
+      // `MOCK_PERIPHERAL_IMPORT_PATTERN` folded into its own override above instead.
+      files: ['src/**/*.{js,jsx,ts,tsx}'],
+      excludedFiles: ['src/app/providers.tsx', 'src/features/verification/**', '**/__tests__/**'],
+      rules: {
+        'no-restricted-imports': ['error', { patterns: [MOCK_PERIPHERAL_IMPORT_PATTERN] }],
       },
     },
     {

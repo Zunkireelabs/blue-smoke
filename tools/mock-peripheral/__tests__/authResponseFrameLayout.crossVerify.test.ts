@@ -17,7 +17,7 @@
  */
 import { DeviceCore } from '../deviceCore';
 import { FakeClock } from '../clock';
-import { aesCmac, hkdfSha256 } from '../crypto';
+import { aesCmac, hkdfSha256, nodeDeviceCoreCrypto, nodeNonceSource } from '../crypto';
 import {
   AUTH_HKDF_INFO,
   AUTH_PROOF_FIXED_PREFIX,
@@ -61,7 +61,7 @@ describe('protocol.ts / mock cross-verification — §4.5 (v1.4) authResponse fr
 
   test('a frame pair built purely from the raw spec table is accepted by the mock', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
     core.connect();
     const nonce = Buffer.from(core.read('authChallenge'));
 
@@ -107,7 +107,7 @@ describe('protocol.ts / mock cross-verification — §4.5 (v1.4) authResponse fr
 
   test('a frame pair built from the pre-v1.4 (superseded) offsets is rejected by the mock', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, crypto: nodeDeviceCoreCrypto, nonceSource: nodeNonceSource });
     core.connect();
     core.read('authChallenge');
 
@@ -121,7 +121,7 @@ describe('protocol.ts / mock cross-verification — §4.5 (v1.4) authResponse fr
     core.write('authResponse', staleFrame1);
 
     // A framing reset writes no commandResult at all.
-    expect(core.read('commandResult')).toEqual(Buffer.alloc(4, 0));
+    expect(core.read('commandResult')).toEqual(new Uint8Array(4));
     expect(core.isAuthenticated()).toBe(false);
   });
 });

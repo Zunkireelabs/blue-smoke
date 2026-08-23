@@ -1,8 +1,8 @@
 # Blue Smoke — Technical Specification
 
-**Version:** 1.16
+**Version:** 1.18
 **Status:** Authoritative build contract
-**Last updated:** 2026-08-12
+**Last updated:** 2026-08-23
 **Supersedes:** `archive/PROJECT_BRIEF-superseded.md`
 
 > This document is the **single source of technical truth** for Blue Smoke. If this document
@@ -58,7 +58,7 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 | Firmware | **We author the BLE spec (§4); the client's firmware team implements it** | Firmware development is an add-on, quoted separately. |
 | Timeline | **30 days** | See `project-roadmap-todos/ROADMAP.md`. |
 | Push | **Supabase → FCM (Android) / APNs (iOS)** via Edge Function | Avoids adding Firebase as a second BaaS. |
-| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1 | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. |
+| Auth methods | **Email + password, and Phone + OTP** (Twilio Verify, native Supabase provider) — see §1.2.1. **Amended by §1.2.2:** email's front door is now a 6-digit code, not a password; password survives as a later, unrouted credential. | Confirmed in team meeting, 2026-08-05. Users choose either at signup/login; both resolve to the same `auth.users.id`. |
 
 > ### 1.2.1 Phone + OTP authentication — second auth method
 > **Status: confirmed in team meeting, 2026-08-05.** Raised during Phase 1 auth planning as a
@@ -91,6 +91,130 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 >
 > **Does not affect:** §2–§14 of this spec. This is additive to the account/auth layer only —
 > device trust model, verification pipeline, BLE spec, and crypto are all untouched.
+
+> ### 1.2.2 Email + Code (passwordless front door), password kept as a later credential
+> **Status: team-confirmed 2026-08-09 (Hardik), amended 2026-08-11 (P1-1.0 PR 1: "email + code
+> auth, keeping passwords").** Raised after §1.2.1 was locked in, as a proposal; confirmed on
+> 2026-08-09 together with the wider decision that **all email authentication in this product uses
+> 6-digit codes and never links**.
+>
+> 🔴 **Client confirmation is still outstanding.** Team-confirmed is not client-confirmed. Treat the
+> codes-not-links decision as provisional in exactly the way §1.2.1's phone-OTP addition was between
+> its proposal and its team meeting — this section records an internal decision, not a signed-off
+> one.
+>
+> Adds a **third** first-class auth capability alongside the two confirmed in §1.2.1, but — unlike
+> §1.2.1's "users choose either at signup/login" — only **two** of the three are front doors a user
+> can pick at signup/login. Password sign-in survives as a **later credential**, not a competing
+> entry point:
+>
+> | | |
+> |---|---|
+> | **Method A — Email + password** | 🔴 **Amended 2026-08-11 — retained, not removed.** Briefly removed entirely on 2026-08-10 (no signup screen, no login screen, no way to set a password on any account) because keeping two email methods side by side was unstable: one had a password field and one did not, and only one could be the front door. That instability is resolved by demoting password to a **later credential** instead of deleting it: `signInWithEmail` (sign-in) and `setPassword` (renamed from `confirmPasswordReset`, since the reset flow it served no longer exists) both survive on `AuthClient`, real and tested, but **unrouted** — no screen calls either one in this PR. PR 2 adds *Set a password* in Settings and *Use password instead* on sign-in. There is still no email/password **signup** screen and no plan to add one: every account is created via Method C below; a password is something you add afterward, from an already-authenticated session. |
+> | **Method B — Phone + OTP** | Existing, confirmed (§1.2.1). **Unchanged** — it uses Twilio, not SMTP, and was already code-based. |
+> | **Method C — Email + Code** *(new)* | **The single email front door.** User enters only their email; Supabase Auth (`signInWithOtp`, email) sends a 6-digit code through the **same SMTP path** Method A's emails already use, just a different template. User enters the code to authenticate — this one path serves both a brand-new address and a returning one. |
+>
+> **The email flows, all code-based:**
+>
+> | Flow | Send | Verify | Proven against real Supabase? |
+> |---|---|---|---|
+> | Sign-up confirmation | `requestEmailCode` (`signInWithOtp`, `shouldCreateUser: true`) | `verifyOtp({ type: 'signup' })` — kept, **unrouted**, see the verify-type table below | ✅ dev, 2026-08-09 |
+> | Sign in / sign up — Method C | `requestEmailCode` (`signInWithOtp({ email, shouldCreateUser: true })`) | `verifyOtp({ type: 'email' })` — the only verify type anything routes to | ✅ dev, 2026-08-09 · ✅ **through the app on Android, 2026-08-10** |
+> | ~~Password reset~~ | **removed** | **removed — the code is the recovery path.** A user who forgets their Method A password signs in with a code (Method C) and, once PR 2 lands, sets a new password from Settings. |
+>
+> ✅ **The two verify types are interchangeable for a sign-up code — measured, not inferred.** This
+> was first noticed by accident and recorded here as a discrepancy to test deliberately; that test
+> was then run. Results against dev, 2026-08-10:
+>
+> | Code issued by | Verified with | Result |
+> |---|---|---|
+> | *Confirm signup* template | `type: 'email'` | ✅ `200`, sets `email_confirmed_at` — twice, once **through the app on Android with a brand-new account** |
+> | *Confirm signup* template | `type: 'signup'` | ✅ `200` |
+> | *Magic link / OTP* template | `type: 'email'` | ✅ `200` |
+> | *Magic link / OTP* template | `type: 'signup'` | **untested — do not assume** |
+>
+> **Consequence:** the app needs only one verify type. `EmailCodeEntryScreen` always verifies with
+> `type: 'email'`, and a brand-new account signs up, confirms and signs in through that single path
+> end to end. `confirmSignupWithCode` (`type: 'signup'`) still works but **nothing routes to it**;
+> it is kept rather than deleted because it costs nothing and the fourth cell above is still blank.
+>
+> 🔴 **The wider lesson, which outlives this table:** the false claim that the two verify types were
+> "not interchangeable" was enforced by `mockAuthClient`, so the whole suite stayed green while the
+> comment, the mock and the spec all agreed with each other and disagreed with the server. That is
+> the **same failure shape as the `Email OTP Length` defect** below — the mock used the app's own
+> constant, so no test could contradict it. **A mock is not evidence about a vendor; only a call to
+> the vendor is.**
+>
+> Both rows verified end to end on dev, over HTTP with no app involved: a 6-digit code delivered,
+> `verifyOtp` returned a session for the expected `user_id` with `role: authenticated`. The
+> sign-up row additionally set `email_confirmed_at`, confirming a real previously-stranded account
+> through the flow rather than by a database edit.
+>
+> **Codes are single-use, and every failure looks the same.** A replayed code and a wrong code both
+> return `403 otp_expired`, **identically** — the server does not distinguish them, which is what
+> makes one generic client-side error message (`toAuthUserMessage`, never the raw provider error)
+> correct rather than merely convenient.
+>
+> ⚠️ **Issuing a new code invalidates the previous one, silently.** This is a UX hazard, not just a
+> testing footnote: a user who taps *Resend* and then types the code from the **first** email gets
+> `403 otp_expired` with no explanation of why a code they are reading right now is refused. The
+> older email stays in the inbox looking perfectly valid. `EmailCodeEntryScreen` clears the input
+> on resend; copy should tell the user to use the newest email.
+>
+> **Password reset is removed, not converted.** There is no reset flow and no "check your email"
+> confirmation screen for it. A user who forgets their Method A password signs in with a code
+> instead — `requestEmailCode` / `verifyEmailCode` is the recovery path. Once PR 2 lands, they can
+> then set a new password from Settings via `setPassword`.
+>
+> **`shouldCreateUser` is deliberately `true`.** With `false`, `signInWithOtp` errors for an
+> unrecognised address, which **leaks account existence** and breaks the no-enumeration rule applied
+> to every other auth path in §1.2.1. `true` makes Method C signup and sign-in the same action and
+> keeps the response identical for known and unknown addresses.
+>
+> **Unified identity:** resolves to the same `auth.users.id` as Methods A and B. The same
+> account-linking policy from §1.2.1 applies unchanged: a first-time login via Method C with no
+> existing link creates a new account; linking to an existing identity is only ever a deliberate
+> already-authenticated action, never an automatic merge at verify time.
+>
+> **New dependency:** none beyond what Method A already requires. This is the same Supabase Auth
+> + SMTP path as Method A's emails, just a different template (OTP code instead of a
+> confirmation/magic link). Does **not** need Twilio or any other new service.
+>
+> **Delivery templates.** The Supabase dashboard email templates **Confirm sign up** and **Magic
+> link or OTP** must use `{{ .Token }}` rather than `{{ .ConfirmationURL }}`. These are dashboard
+> state, not repo state — see `supabase/README.md` for the full provisioning list.
+>
+> **Code length is 6, and that is a server setting, not a client one.** Supabase's *Email OTP
+> Length* (Authentication → Providers → Email) governs how many digits `{{ .Token }}` renders. It
+> must be **6**, matching Method B's Twilio codes and the app's code-entry screens.
+> ⚠️ **A longer value makes sign-in impossible, silently:** `EmailCodeEntryScreen` auto-submits at
+> six characters and caps input at six, so the remaining digits cannot be typed at all. Every unit
+> test still passes — they drive a mock that uses the app's own constant — and the failure presents
+> as the user mistyping. Observed on dev 2026-08-09, where the setting was 8. **Re-confirm this is
+> still 6 as part of P1-1.0's own definition of done.**
+>
+> 🔴 **Not enforced server-side: the 60 s email rate limit.** The dashboard exposes a minimum
+> interval between auth emails, but on dev **it was not enforced**: two `POST /auth/v1/otp` calls
+> seconds apart both returned `200` and both delivered, in the same minute (2026-08-09). The anon
+> key that hits this endpoint ships inside the app. Treat server-side rate limiting as **not
+> currently a control we have** — a cost/abuse decision, not a bug in this PR. The client keeps a
+> 60 s cooldown on email flows anyway — it is the honest UX for a code the user is waiting on, and
+> it costs nothing if the server limit is later switched on — but a client cooldown restrains only
+> the app, never a direct API caller. Method B's 30 s is a Twilio-side placeholder and does not
+> apply to email.
+>
+> **SMTP impact:** SMTP now blocks **2 of 3** auth methods (Methods A and C both depend on it;
+> Method B does not — it uses Twilio). Custom SMTP is configured and delivery-proven on dev as of
+> 2026-08-09; staging and prod are not.
+>
+> **Effort impact:** absorbed into `P1-1.0`'s existing ~4.5 person-day figure rather than re-opening
+> it. Removing the reset-link flow (screen, deep-link branch, linking config) roughly offsets adding
+> Method C, and the code-entry screen mirrors Method B's rather than being extracted into a forced
+> shared component (see the P1-1.0 execution brief on why extraction wasn't taken as a given here).
+>
+> **Does not affect:** §2–§14 of this spec, same as §1.2.1. Additive to the account/auth layer
+> only — device trust model, verification pipeline, BLE spec and crypto are untouched, and
+> `age_verified` enforcement (rule 3) is indifferent to which method produced the session.
 
 ### 1.3 Explicit non-goals (base scope)
 
@@ -1000,6 +1124,62 @@ operational policy behind it — **OQ-2**, unaffected by the vendor change.
 Failure messaging stays coaching, never diagnostic. Persona's own decline reasons must not be
 surfaced verbatim if they reveal matching internals.
 
+**Retry and escalation are offered together, not in sequence** *(decided v1.18)*. After the 30-minute
+lock the user sees **both** "try again with a different document" **and** the manual-fallback route on
+the same screen. Retrying is genuinely the cheaper fix — many wrongly-rejected people succeed with a
+second form of ID — but it is not a fix for the case the fallback exists to serve. Someone who has
+failed six times is precisely the person for whom another attempt will not work, so a mandatory
+waiting period before they may reach a human just adds days to a lockout they did not earn. Offer
+both; let the user choose.
+
+**A wrongly-rejected account is never deleted, automatically or on a timer** *(decided v1.18)*. An
+unverified row is inert — `age_verified` is false and every RLS policy behind it holds — so there is
+no benefit to reaping it, and four costs: it makes the false-reject harm permanent, it destroys the
+case the reviewer needs to look at, it is not a lockout (auth is phone OTP, so the same number simply
+signs up again for a fresh `user_id` and a fresh attempt counter), and it cannot be done honestly
+while **OQ-11(d)** is open, because our rows would go and the vendor's inquiry would remain.
+
+### 6.4.1 How a manual override reaches `age_verified` — proposed, pending OQ-2
+
+> ⚠️ **Proposed, not agreed.** The mechanism below is settled on our side; the operational half —
+> the named reviewer, the support address, the SLA number — is still **OQ-2** and still unanswered.
+> Nothing here is a licence to tick the OQ-2 box.
+
+A human decision must reach `age_verified` without any path that inviolable rule 3 forbids. Persona's
+own console supports this directly: per its API reference for `POST /inquiries/:inquiry-id/approve`,
+*"this action will trigger any associated workflows and webhooks."* A reviewer approving in the
+dashboard therefore arrives at `persona-webhook` as an ordinary signed event with status `approved`,
+which is already in `PASSING_STATUSES` and is still subject to the §6.6 item 3 template check. **No
+new writer, no admin endpoint, no client boolean** — the webhook remains the only thing that writes
+`provider_status`, and the reviewer's identity is recorded on Persona's side.
+
+Two ways to use that, and they are not equivalent:
+
+| | Mechanism | Cost |
+|---|---|---|
+| **(a2) — recommended** | The user starts a **fresh** inquiry; `create-inquiry` writes a new `pending` row; the reviewer approves it in the console; the row transitions `pending → approved` down the existing path. | No code change and **no security control relaxed**. Depends on `create-inquiry` (`P2-8.0`), which returns 501 today — so **P2-8.0 is load-bearing for OQ-2**, not only for the happy path. |
+| **(a1) — rejected for now** | The reviewer approves the **existing declined** inquiry. | Requires `persona-webhook` to permit a `declined → approved` transition, which is a deliberate loosening of a replay defence. Needs its own task, argument and tests — not a quiet edit. |
+
+🔴 **Why (a1) is not simply the easier option.** As implemented, it would fail *silently*.
+`persona-webhook/index.ts:199` returns `already_decided` for any row whose `provider_status` is not
+`pending`, and the write at `:214` is a compare-and-set on the same condition. A false-rejected row is
+already `declined`, so the approval would be acknowledged with `200`, the reviewer would see success
+in Persona, the user would stay locked out, and **nothing would log an error**. That code is not
+wrong — it is correct replay protection that never contemplated a *legitimate* second decision. It is
+recorded here so the next person does not discover it by shipping it.
+
+**Vendor outage is explicitly not covered by this route.** §8.3 degrades an outage to this fallback,
+but during an outage the console and the API are the thing that is down, so neither (a2) nor (a1)
+functions. The accepted answer is that verification pauses and affected users are told so — **not** a
+break-glass admin override, which would mean building a tool whose only purpose is bypassing the age
+check in order to work around a few hours of vendor downtime.
+
+⚠️ **The audit trail is currently too thin to audit an override.** `persona-webhook` writes
+`audit_log` with `{ source, passed }` and deliberately no `user_id` and no `inquiry_id` (§5.2.8,
+rule 1). That is right for an automated decision and insufficient for a human one: it cannot say
+*which* verification a reviewer overrode. Carrying `verifications.id` — our own row id, not the
+`inquiry_id` — would close this without breaching rule 1. Not yet implemented.
+
 ### 6.5 What the vendor switch deleted from our scope
 
 Recorded so the effort is not silently re-absorbed, and so nobody rebuilds it:
@@ -1057,6 +1237,83 @@ Per this spec's own rule: these are not filled in with plausible values.
    age requirement confirmed **in the Persona dashboard**, `age_verified = true` means only
    "Persona approved this inquiry". Blocks §12.1 **G2**-adjacent sign-off and belongs with
    **OQ-11**, since the account holding that template is currently developer-owned.
+
+   **Update 2026-08-09 — the checkable half is now checked.** The claim above that "no code in
+   this repo can verify it" conflated two different things:
+
+   - **Whether template X enforces 18+** — a vendor dashboard setting, genuinely invisible from
+     here. Still requires a human to confirm it, once, with evidence.
+   - **Which template answered a given inquiry** — carried in the webhook payload's
+     `relationships` (`inquiry-template` for Dynamic Flow / `itmpl_` ids, `template` for Legacy
+     2.0), and therefore entirely checkable.
+
+   `persona-webhook` now refuses to honour a passing status unless the inquiry's template equals
+   `PERSONA_TEMPLATE_ID` (`_shared/inquiryTemplate.ts`). All three failure modes fail **closed**
+   and are distinguished in the log: `not_configured` (our env is missing the value),
+   `absent_from_payload` (no linkage in the delivery), `mismatch` (a real inquiry from the wrong
+   template). The refusal returns `200 { applied: false, reason: 'template_not_confirmed' }` and
+   leaves the row `pending` — a configuration fault is not fixed by Persona redelivering, and a
+   pending row strands the user on VF-3/VF-4 rather than verifying or declining them wrongly.
+
+   **This does not close the open question, and must not be read as closing it.** The dashboard
+   confirmation is still required. What changed is that it is now required **once** instead of
+   continuously: the configuration can no longer drift away from the confirmed template without
+   the gate slamming shut and saying so.
+
+   **The defect this found, on the day it was written:** `PERSONA_TEMPLATE_ID` pointed at
+   `itmpl_AW8e9aVphL2…` — "Government ID (with autoclassification) and Selfie", an identity-only
+   template with no age requirement — while a separate "KYC + Age Verification: GovID + Selfie"
+   template sat unused in the same account. Exactly the scenario described two paragraphs above,
+   live in dev, and undetectable by any control that existed at the time.
+
+   **The second defect, found the same day while confirming the replacement — read this one.**
+   The intended replacement, `itmpl_AW8e9aVuRLUbNAUrSemPxwgEU156jS` ("KYC + Age Verification:
+   GovID + Selfie"), *did* carry an age check. Its government-ID verification template
+   (`vtmpl_AW8e9aVY8XWiGtU6fdDYnfZBbwSo5W`) had `Age comparison` present **and marked Required**,
+   so it genuinely ran and genuinely had to pass.
+
+   Its **`Default age range` was `Min 13`** — Persona's own default for that check, i.e. a value
+   nobody had ever set. The template would have returned `approved` for a thirteen-year-old.
+
+   The reason this is recorded in the spec rather than a commit message is the sequence of
+   signals, every one of which pointed the right way:
+
+   | Signal | Said | Worth |
+   |---|---|---|
+   | Template name — "KYC + **Age Verification**" | age is checked | nothing |
+   | Vendor solution blurb — "automatically decline users under 18" | 18 is the threshold | nothing |
+   | Flow branching step — `Status equals passed` | verification gates the pass | true, but silent on age |
+   | `Age comparison` present in the check list | age is checked | true |
+   | `Age comparison` marked **Required** | it must pass | true |
+   | `Age comparison` **value** | **13** | the only one that mattered |
+
+   Six signals, five reassuring, one decisive — and the decisive one was behind a collapsed row.
+   **Confirming `min_age` means reading the number.** Nothing short of the number counts: not the
+   template's name, not the presence of the check, not the check being required. A wrong
+   threshold is worse than a missing check, because it looks configured.
+
+   Corrected to `Min 18` on 2026-08-09, and the whole chain then re-read end to end rather than
+   assumed — because correcting the check publishes a NEW verification-template version, and the
+   inquiry template can keep running the old one. Every link was observed in the dashboard:
+
+   | # | Link | Value confirmed |
+   |---|---|---|
+   | 1 | Inquiry template | `itmpl_AW8e9aVuRLUbNAUrSemPxwgEU156jS`, republished 12:12 UTC |
+   | 2 | → `Run government ID verification` step's version | `vtmplv_AW8e9aVX15UJCJdLFSsMBJzthWgiVM` |
+   | 3 | → that version, `Published` | `Age comparison` **Required**, `Min 18` |
+   | 4 | → branching step Route 1 | `Run Government Id Verification - Status equals passed` |
+   | 5 | → `persona-webhook` | honours a pass only from `PERSONA_TEMPLATE_ID` |
+
+   `PERSONA_TEMPLATE_ID` was switched to that template in the same change. **Link 2 is the one to
+   re-check after any future dashboard edit** — a corrected check on a version the flow no longer
+   points at reads as fully configured and changes nothing.
+
+   **Still outstanding, and this is now the only part left:** config confirmed is not behaviour
+   confirmed. The close-out evidence is a **sandbox inquiry run with an under-18 test document,
+   observed to decline** — which tests the gate rather than our reading of its settings. That is
+   blocked until an inquiry can complete end to end (`create-inquiry` returns 501, §6.2 / P2-8.0),
+   and must be repeated against the **production** template, which is a separate object with its
+   own separately-defaulted checks.
 4. **Inquiry resumption.** `onCanceled` → resume semantics and session-token lifetime.
 5. **Data residency and retention at the vendor**, required for §8.6. See **OQ-11**.
 
@@ -1412,7 +1669,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | ID | Question | Blocks | Owner | Severity |
 |---|---|---|---|---|
 | **OQ-1** | When are **physical sample IDs** and a **physical device** available? The PRD assumes ~week 6 of 8 — under a 30-day plan that is after delivery. **Reduced in scope by v1.5:** sample IDs were needed for *our* OCR/face-match tuning, which no longer exists (§6.5). Some sandbox test documents are still required. **The physical device half is untouched and still critical.** | All §4.10 firmware acceptance tests | Client | 🔴 **Critical** |
-| **OQ-2** | What is the **manual-review fallback policy** for legitimate false rejects? Who handles it, through what channel, with what SLA? | §6.4 | Client | 🔴 Critical |
+| **OQ-2** | What is the **manual-review fallback policy** for legitimate false rejects? Who handles it, through what channel, with what SLA? **Still open — but no longer an open-ended question (v1.18).** The engineering half is settled and written up in **§6.4.1**: a reviewer approves in Persona's console, which fires our webhook, so a human decision reaches `age_verified` with no new writer and no client boolean. What remains is purely operational, and is **three strings the client has to supply**: **(a)** a **named person and a named backup** — this cannot sit with us, because approving someone past an age gate is a decision about who the client is willing to admit to their product; **(b)** the **support email address** (email, not an in-app form — a form needs a ticket store and retention policy that no PRD line funds); **(c)** the **SLA**, proposed as *target 1 business day, tell the user 2*, plus the timezone whose business days count. Two riders: **P2-8.0 is now load-bearing for OQ-2**, since the recommended mechanism runs through `create-inquiry`; and a **vendor outage is deliberately not covered** by this route, because the console is down precisely when it would be needed. | §6.4; §6.4.1; §8.3 | Client | 🔴 Critical |
 | **OQ-3** | **Target markets / countries** at launch? Determines accepted ID types, Persona template coverage, whether the vendor is licensed to operate there, and the privacy regime. | §6.6 template config; §8.6 | Client | 🟠 High |
 | **OQ-4** | Who **provisions `K_dev` into OTP** at manufacture, and how is the key manifest securely delivered to us for `device_keys`? **Day 10: the client confirmed age-gated unlock is REQUIRED**, which converts the per-device key from a design assumption into committed firmware scope — OQ-4 is now on the **critical path**, not merely critical, and it is the same factory conversation as OQ-12. **🔴 Day 12: the manufacturer answered directly, and the answer conflicts with the question's premise** — "a unique MAC address is not required... writing a key to each device is not involved." Read plainly, **no per-device secret is written at manufacture at all**; the only per-unit value is the Bluetooth MAC (see the OQ-12 update below). If that stands, there is no `K_dev` for `device_keys` to hold and §4.5's whole trust chain has no hardware anchor as specified. **Not resolved — escalated to the client/product owner for an architecture decision, not closed.** See `docs/hardware/manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md` item 9a and `docs/client-messages/architecture-escalation-2026-08-12.md`. **🔴 Day 13 — the substitute identifier does not hold either.** A second read of `YP65-AT-BLE-module-spec-v1.3-release.pdf` (`docs/hardware/hqd-device-architecture.md` §3.2.2) finds the Bluetooth MAC is **writable by AT command** — `AT+ADDR=334455667788` → `OK`. The MAC was already noted as broadcast rather than secret; it is now also **mutable by anything with UART access to the module**, per the module vendor's own documentation, so two units can be given the same address and one unit can be given another's. The manufacturer's 9b answer offered the MAC as the per-unit identifier *in place of* a provisioned key; that substitute cannot carry per-device identity at all. This does not change the required decision, it removes the fallback that made "do nothing" look survivable. | §5.2.5; the whole §4.5 trust chain | Client + factory | 🔴 **Critical** |
 | **OQ-5** | Is there a **re-verification cadence**, or is `age_verified` permanent once set? (Currently out of scope.) | §5.2.2 | Client | 🟠 High |
@@ -1501,6 +1758,7 @@ Every exit-criterion listed in the phase's TODO file — copied verbatim from th
 | 1.0 | 2026-08-05 | Initial specification. Supersedes `archive/PROJECT_BRIEF-superseded.md`. BLE protocol `v0x01`. Corrected device auth from Ed25519 to AES-128-CMAC following review of the YC1012_JD datasheet. Backend locked to Supabase. Timeline set to 30 days. |
 | 1.1 | 2026-08-05 | **P0-1.0 consistency audit** — see [`audits/P0-1.0-consistency-audit.md`](audits/P0-1.0-consistency-audit.md). Four §2 corrections, no protocol change, `protocolVersion` unchanged at `0x01`. **§2.3 Flow B:** HKDF parameters were wrong — `session_id` belongs in `salt` not `info`, and `info` carries `expires_at` not `session_id`; now matches §4.5/§5.4/§5.2.6. Request/response fields aligned (`serial_hash`, `requested_ttl_days`, `key_generation`). **§2.3 Flow C:** CMAC input is `session_id[0..3]` not the full 16 bytes; `authResponse` is a mandatory two-frame ordered write. **§2.2:** boundary table completed — verification engine exports four fields incl. `outcomeReason`; App→Supabase row now lists every §5.2.2 column; note added fixing `outcome_reason` as deliberately coarse. All four divergences were in §2; §4/§5/§8/§9 already agreed. |
 | 1.2 | 2026-08-06 | **§4 pre-freeze security corrections.** `protocolVersion` **unchanged at `0x01`**: §4 has not yet been handed to the firmware team (OQ-6 open, review Days 3–5) and the freeze is milestone **M2, Day 6** — no implementation of `0x01` exists, so bumping would mint a version nothing speaks. **After M2 this exemption ends** and the header's bump-and-notify rule applies in full. Three defects fixed. **(1) §4.5 `K_sess` was underivable device-side:** `info` bound `user_id` and absolute `expires_at`, neither of which the handshake transmits (step 5a concealed this with an ellipsis). `info` is now `"bluesmoke-session-v1" ‖ keyGeneration` — every HKDF input is in OTP or in frame 1. This supersedes the v1.1 note that `info` carries `expires_at`. `sessionExpiry` now derives from a **monotonic uptime counter**, not wall clock, so no time sync / `SET_TIME` command is needed. **(2) §4.6 cross-session command replay:** the tag covered `bytes[0..11]` only, so a captured `UNLOCK` replayed in any later session whose counter had not passed it. Tag input is now `N ‖ bytes[0..11]`; frame size unchanged at 20 B, ATT MTU budget unaffected. New obligation **F11**. **(3) §4.5 `expiresAtDelta` was unauthenticated** yet set `sessionExpiry`, letting a compromised app self-extend to the 90-day cap; it is now inside the proof CMAC. New acceptance tests **FW-16/17/18**. |
+| 1.18 | 2026-08-23 | **Renumbered from a same-day collision, not new content.** `feature/ble-connectivity` and `stage` each independently advanced this changelog from 1.10 to their own "1.11" on 2026-08-09 — this branch's hardware-findings track (below, through 1.17) and `stage`'s §6.4/§6.4.1 OQ-2 mechanism decision, on completely different topics. Merged 2026-08-23; `stage`'s entry is renumbered 1.18 here (and cross-references at §6.4/§6.4.1 and the OQ-2 row updated from `v1.11` to `v1.18`) rather than renumbering the seven-entry hardware chain that cross-references its own 1.11 repeatedly. **§6.4 extended and §6.4.1 added — the OQ-2 mechanism, decided; the OQ-2 policy, still open.** `protocolVersion` unchanged at `0x01`, §4 untouched, no endpoint behaviour changed. **OQ-2 stays 🔴 open** — this records how a human decision will reach `age_verified`, not who makes it. **The mechanism, verified rather than assumed:** Persona's API reference for `POST /inquiries/:inquiry-id/approve` states that approving *"will trigger any associated workflows and webhooks"*, and `persona-webhook` is status-driven (`PASSING_STATUSES` already contains `approved`, `index.ts:44`), so a console approval reaches us as an ordinary signed event still subject to the §6.6 item 3 template check — **no admin endpoint, no second writer, rule 3 intact by construction**. **Recommended (a2):** approve a *fresh* inquiry, so the row transitions `pending → approved` down the existing path with **no security control relaxed**; this makes **`P2-8.0` load-bearing for OQ-2**, since `create-inquiry` returns 501 today. **(a1) — approving the existing declined inquiry — is recorded as rejected for now and, more importantly, as a silent failure if attempted unchanged:** `index.ts:199` returns `already_decided` for any non-`pending` row and `:214` is a compare-and-set on the same condition, so the reviewer would see success in Persona while the user stayed locked out and nothing logged an error. Correct replay protection that never contemplated a legitimate second decision; needs its own task, not a quiet edit. **Two product decisions taken with it:** retry and escalation are offered **together** after the 30-minute lock rather than in sequence, because the person who has failed six times is exactly the person another attempt will not help; and a wrongly-rejected account is **never auto-deleted**, since the row is inert, deletion destroys the reviewer's case, it is not a lockout (phone OTP — the same number re-registers), and it cannot be done honestly while OQ-11(d) is open. Also records that **§8.3's outage degradation is not actually covered** by this route (the console is down when it is needed) and that the `audit_log` metadata is too thin to audit a human override — carrying `verifications.id` rather than the `inquiry_id` would close that without breaching rule 1. |
 | 1.17 | 2026-08-17 | **Register-only change — no normative content altered, `protocolVersion` unchanged at `0x01`, §4 untouched.** **OQ-13 closes** on the manufacturer's `itronlib` Android SDK (`docs/hardware/manufacturer-supplied-2026-08-17/`) plus full written answers to all 18 blocking BLE questions: real hardware uses characteristic `0xFFF1` only (of the five the module spec describes), a frame format with a previously-unknown ACK byte, and a checksum spanning the header (not the payload alone, correcting what the written reply itself confirmed). Promoted into a new, deliberately non-§4 module, `src/features/ble/h158/h158Protocol.ts` — see that file and `docs/hardware/hqd-device-architecture.md` §11 for why it isn't `protocol.ts`. **Two new open questions registered, both closing the same investigation:** **OQ-16** — the device implements **no authentication of any kind** ("just-work unencrypted mode," no PIN, no bonding); §4.5's entire CMAC handshake design has no firmware counterpart on any transport. **OQ-17** — every unit advertises an **identical Bluetooth name**, and combined with OQ-14 (iOS exposes no MAC), there is no radio-visible per-device identifier for multi-device pairing. **OQ-9 reconfirmed independently** (written reply item 16: an unlocked device stays unlocked across a disconnect) rather than reopened — same finding as Day 12, from a different source. A bring-up spike (`h158Session.ts`, `H158BringUpScreen.tsx`, dev-only) landed alongside this pass to get real bytes flowing to real hardware; it does not touch `protocol.ts`, `auth.ts`, `crypto.ts`, or `tools/mock-peripheral`, all of which remain the §4 implementation, unchanged and not superseded by this pass. |
 | 1.16 | 2026-08-12 | **Register-only change — no normative content altered, `protocolVersion` unchanged at `0x01`, §4 untouched.** Records a **second, fuller read of `YP65-AT-BLE-module-spec-v1.3-release.pdf`**, the PDF v1.15 filed a day earlier. The first pass took the GATT table and stopped, because `pdftotext` **drops the document's Chinese body text entirely** — only Latin tokens and tables survive, so the hardware and AT-command sections appeared empty. They are not. Full write-up in `docs/hardware/hqd-device-architecture.md` §3.2.2, which also states plainly that even the second pass is not exhaustive (the prose is still unread; §8's mechanical drawing is an image no tool on this machine could reach). **Two findings escalate rather than close, and both strengthen asks already in flight** — folded into `docs/client-messages/architecture-escalation-2026-08-12.md`, still drafted and **still not sent**. **(1) OQ-4/OQ-12: the Bluetooth MAC is writable** (`AT+ADDR=334455667788` → `OK`). The manufacturer's 9b answer offered it as the per-unit identifier *in place of* a factory key; it was already broadcast rather than secret, and it is now known to be **mutable by anything with UART access**, so it cannot carry per-device identity — and a `serial_hash` derived from it is neither unique by construction nor stable. **(2) OQ-9: the module has a real-time clock** (`AT+RTCEN=`, `AT+RTCDA=` with a Unix epoch), so the missing auto-lock timer is a **firmware gap, not a hardware limitation** — with the caveat, carried everywhere it is repeated, that the RTC is on the radio while the heater is driven by the PY32, establishing feasibility and not the design. **Three findings close open bench questions** in `docs/hardware/bring-up-checklist-2026-08-10.md`: no service UUID is advertised (default ADV data `02 01 06`, Flags only; name in the scan response), so **`scanner.ts` must filter on the name prefix `YP65-AT`, never on `0xFFF0`**; `AT+ADVEN=0` can disable advertising outright, making a silent board a third explanation rather than a fault; and the UART handle prefix is UART-side only, so HQD's command frames reach the air unchanged. **One new discrepancy, tracked inside OQ-13 rather than as a new row:** the profile documents `YP65` as a **5-pin module**, while the schematic draws a bare `YC1012` QFN12. Also records, in `hqd-device-architecture.md` §5.1 and the checklist's new §3.0b, that **the board physically in our hands photographs as a charge/protection + microphone board** (`AC-H158-V1.01`; pads `B+`/`B−`/`T`, off-board can microphone, no crystal, no trace antenna) — supporting the two-board reading of the `H040`/`H158` question, held as a hypothesis since the photographs are hand-held rather than macro. That makes requirements **item 6 — schematic sheet 2 of 2, the one item the manufacturer did not answer at all — the most consequential outstanding hardware ask.** And §10.1 corrects the bench wiring: the manufacturer's reply calls the blue wire "output positive", the board's silkscreen reads **`T`** (thermistor); use the silkscreen and leave it unconnected. |
 | 1.15 | 2026-08-12 | **Register-only change — no normative content altered, `protocolVersion` unchanged at `0x01`, §4 untouched.** Records the manufacturer's Day-12 reply to `docs/hardware/manufacturer-requirements-2026-08-10.md`, and the BLE profile PDF that surfaced later the same day (both in `docs/hardware/manufacturer-supplied-2026-08-12/`). Updates **OQ-4, OQ-9, OQ-12, OQ-13, OQ-14** with what was answered; adds **OQ-15** (discoverability), registered and closed in the same edit per the OQ-6/OQ-12 lesson that a gap tracked only in a companion doc is a gap nobody chases. **Two answers are escalations, not closures:** OQ-4's answer states no per-device key is written at manufacture ("writing a key to each device is not involved"), which leaves §4.5's `K_dev` with no hardware anchor as specified; OQ-9's answer states no firmware auto-lock timer exists at all — only connection-state (active / 10-minute idle sleep) — which leaves §4.6 `SET_AUTOLOCK_GRACE` with no firmware behaviour to command. Both conflict with CLAUDE.md's inviolable rule 2 and its dead-man-timer authority model and are escalated in `docs/client-messages/architecture-escalation-2026-08-12.md` (drafted, not sent) rather than resolved here. **OQ-13 is mostly resolved**, separately: `YP65-AT-BLE-module-spec-v1.3-release.pdf` gives the real profile — service `0xFFF0`, characteristics `0xFFF1`–`0xFFF5` (not the invented 128-bit `42530001-…` UUID `protocol.ts` currently carries), 185 B MTU, `AT+CONNECT`/`AT+DISCONN` events, confirming the BT chip (now marketed YC8612, same YC1012 silicon) owns the full stack. Still open within OQ-13: which characteristic carries HQD's lock/unlock traffic, and whether the module's PIN pairing can be disabled. Promoting the real UUID into `protocol.ts` is deliberately deferred to its own commit. |

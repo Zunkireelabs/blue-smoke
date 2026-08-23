@@ -4,6 +4,187 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-10 — new machine set up from nothing; P2-8.0 closed, reviewed twice, PR opened
+
+**Branch:** `feature/P2-8.0-server-side-inquiry-creation`, pushed.
+**Landed on `stage`:** PR #13 opened, CI running.
+
+A second machine went from a completely blank state — no Homebrew, no Node, no Ruby past the
+system's ancient 2.6.10, no Xcode beyond Command Line Tools, no git credentials — to the recorded
+2026-08-09 baselines matching exactly (typecheck clean, 501/51, lint 0 errors + 70 warnings,
+bundle:check both platforms), then closed out `P2-8.0`'s last box.
+
+**Gotchas worth stealing, toolchain:**
+
+- `sudo`-requiring installers (Homebrew) fail non-interactively even under the `!` prefix —
+  "stdin is not a TTY" regardless of who runs it. Needs a real Terminal.app window. Same
+  constraint bit `supabase login` and `gh auth login`'s browser flow, exactly as
+  `NEW-MACHINE-SETUP.md` already warned for the Supabase case.
+- System Ruby (2.6.10) cannot install modern CocoaPods — `ffi` itself now requires Ruby ≥ 3.0.
+  Building Ruby from source via `rbenv` failed on the `psych`/`libyaml` extension without
+  Homebrew present. Once Homebrew existed, `brew install cocoapods` pulled its own Ruby and
+  landed on **exactly** `1.17.0`, matching the baseline — not worth hand-building Ruby first.
+- `nvm`-installed Node isn't on `PATH` in fresh non-login shells; symlinking `node`/`npm`/`npx`
+  into `~/.local/bin` (already on `PATH` by default) fixed it for every subsequent shell without
+  needing to source `nvm.sh` each time.
+- `npx supabase link --project-ref <ref>` does **not** prompt for the database password — only
+  `supabase link` (no ref) or a raw `db-url` connection does. Once linked, `supabase db query
+  --linked "..."` executes SQL via the Management API with no DB password at all, which is how the
+  final `verifications` row got confirmed independently in review.
+
+**P2-8.0, closed:** `create-inquiry` now calls Persona (`_shared/personaInquiry.ts`, pure and
+unit-tested, same split as `personaSignature.ts`), writes the pending row, and stops returning
+501. Two things the brief didn't anticipate, both caught in review rather than assumed:
+
+- 🔴 **`meta.session-token` is `null` on every `201` unless `meta.auto-create-inquiry-session:
+  true` is sent on the request.** Not in the brief's §3 shape — found by driving a live sandbox
+  call, confirmed against Persona's own docs before trusting it. Same failure signature as
+  `min_age` and the `already_decided` path: a `201` that looks like success while the one field
+  the app needs to resume is silently absent.
+- The Idempotency-Key (brief §4.3) collapses two concurrent requests into one billable Persona
+  call, but only closes half the race: both callers still race to INSERT the pending row, and the
+  loser hit a bare `verifications_inquiry_id_key` unique-violation as a `500` on the first review
+  pass. Fixed in a follow-up round: `isConcurrentInquiryInsertRace` distinguishes that specific
+  constraint from any other insert failure (including the `id` primary key, which is also a
+  `23505`), and the loser gets the winner's identical response instead of an error for a request
+  Persona had already deduplicated.
+
+**Reviewed, not just reported — this is what actually caught the above.** Every gate was re-run
+independently after each of the two implementation rounds rather than trusted from the report
+(typecheck/test/lint/bundle:check all matched what was claimed both times, 501→525→530 tests).
+The `auto-create-inquiry-session` claim was checked against Persona's live docs before being
+accepted. The final "deployed and verified live" claim — `create-inquiry` `ACTIVE`,
+`verify_jwt: true`, one sandbox `verifications` row at `age_verified: true` / `approved` / `pass`
+— was not accepted from the report either; confirmed directly via `supabase functions list` and
+`supabase db query --linked` once CLI access existed.
+
+**Blocked / needs someone else:** full Xcode (26.6, App Store) was still installing as of this
+entry — `npm run ios` untested on this machine. Command Line Tools alone was enough for
+`pod install`, `bundle:check`, and the Metro-only gates.
+
+## 2026-08-10 — nothing had ever been deployed; the webhook chain is live and authenticated
+
+**Branch:** `feature/P1-3.0-device-scan-and-results`, **not pushed**. Docs only in git; the real
+change of the day was to infrastructure, not code.
+
+**The finding, and how it was found.** While answering a question about whether MCP could set Edge
+Function secrets, I ran `list_edge_functions` against `bluesmoke-dev` to verify rather than assert.
+It returned `[]`. `get_edge_function('persona-webhook')` returned `NotFoundException`. The project
+ref matched `.env` exactly, and all five migrations were applied — so **the database was deployed and
+not one Edge Function ever had been**. There is also no `functions deploy` step anywhere in
+`.github/`, and the app never invokes an Edge Function at all.
+
+**This corrected a story we had been repeating.** "`create-inquiry` returns 501" was true of the code
+and wrong about the system: nobody had ever seen that 501, because the function wasn't deployed and
+nothing called it — a caller would have got a platform 404. And far more importantly,
+`persona-webhook` **had no endpoint**, which is the real reason `verifications` is empty and no dev
+account can verify. The 501 was a symptom we had mistaken for the cause. Today's earlier work — the
+template guard and its 20 tests — was correct code protecting an endpoint that did not exist.
+
+**What is now live**, each verified rather than assumed:
+
+- `persona-webhook` deployed, `ACTIVE`, **`verify_jwt: false`**. Proven by `GET` → `405`: that
+  response can only come from our handler, so the function booted (the two `_shared` imports
+  resolved) *and* gateway JWT checking is genuinely off, which it must be — Persona sends no
+  Supabase JWT, and with it on every delivery would be rejected before the signature check ran.
+- All three secrets set. `PERSONA_TEMPLATE_ID` verified **byte-exact** by comparing Supabase's
+  SHA-256 digest against one computed locally — which also proved the digest is a plain unsalted
+  SHA-256, so the trick works on any future secret whose value we know.
+- Persona webhook created and **Enabled**, Kebab, `2025-12-08`, subscribed to exactly
+  `PASSING_STATUSES ∪ TERMINAL_FAILURE_STATUSES` plus `marked-for-review`.
+- 🔴 **`PERSONA_WEBHOOK_SECRET` proven correct, not merely present.** A locally computed `openssl`
+  HMAC over `` `${t}.{}` `` returned **`400 MISSING_INQUIRY_ID`** rather than `401` — the handler only
+  reaches that line after the signature verifies. So the stored secret matches Persona's byte for
+  byte, and §6.6's scheme validates against a signature computed by something other than our own code.
+
+**Gotchas worth stealing:**
+
+- **A new Persona API key is born with every permission ticked** — including `Access all inquiries`
+  (rule 1: reads ID payloads) and `Create or update inquiry templates`, which can rewrite the very
+  template whose Min 18 check was confirmed yesterday. `persona-webhook`'s guard does not cover that:
+  it verifies *which* template answered, not what that template requires. Narrowed to
+  `Create inquiries` alone.
+- **The Persona webhook was created `Disabled`.** Correct URL, correct events, correct secret, and it
+  would have delivered nothing. Every visible signal said configured.
+- **Two dashboard dropdowns silently shape our parse:** the API version and `Key inflection`. Kebab is
+  mandatory — `inquiryTemplate.ts:44` looks for `inquiry-template`, so a Camel flip returns
+  `absent_from_payload` and refuses every pass. On the API key we pin both via request headers; on the
+  webhook we cannot, because Persona pushes to us. That one is console state we can only observe.
+- **`supabase login` cannot run under the `!` prefix** — non-TTY, so the browser flow fails. Terminal.
+- **Deploying via the MCP tool would have meant retyping 541 lines**, including the HMAC verifier. The
+  CLI reads from disk. Not a convenience call — a mistyped character in `personaSignature.ts` is a
+  security control quietly weakened that still deploys cleanly.
+
+**Still open, and deliberately not closed today:**
+
+- `create-inquiry` is **not deployed** and still returns 501. The app creates its inquiry client-side,
+  so no pending row is written, and `persona-webhook` rightly answers `404 UNKNOWN_INQUIRY` rather
+  than attaching an unknown inquiry to a guessed user. **That is the whole remaining gap**, and it is
+  `P2-8.0`'s last box.
+- ⚠️ **The payload path to `status` is still unconfirmed** (`index.ts:110` says so itself). The
+  signature test used `{}` and stopped at the missing id, so it proved nothing about
+  `data.attributes.payload.data.attributes.status`. Wrong path fails **closed and silently**. Only a
+  real sandbox delivery settles it; it is now a Definition-of-Done line on the P2-8.0 brief.
+- The old **Default API key** still exists in Persona. `Last used at: —`, and its value is legible in
+  a screenshot, so expiring it costs nothing.
+
+---
+
+## 2026-08-09 — OQ-2 mechanism decided; a silent-failure path found in `persona-webhook`
+
+**Branch:** `feature/P1-3.0-device-scan-and-results`, **not pushed**.
+**Landed on `stage`:** nothing. Docs only — spec → v1.11, `USER_FLOWS.md` F6.F.
+
+OQ-2 was a discussion, not a build. It is **still open**, deliberately: the client has named nobody,
+given no address and agreed no SLA, so the `TODO-phase-2.md` box stays unticked. What changed is that
+it is no longer an open-ended question — the engineering half is settled (spec §6.4.1) and the client
+is now being asked to confirm three strings rather than design a policy. Concrete recommendations get
+answered faster than open questions, and every OQ on this project has proved that.
+
+**The thing worth stealing from this session.** I nearly recommended "a reviewer approves in Persona's
+dashboard, the webhook fires, done" on the strength of the vendor documentation alone — which does say
+exactly that, verbatim: `POST /inquiries/:inquiry-id/approve` *"will trigger any associated workflows
+and webhooks."* Reading our own handler afterwards is what caught it. `persona-webhook/index.ts:199`
+returns `already_decided` for any row whose `provider_status` is not `pending`, and the write at `:214`
+is a compare-and-set on the same condition. A false-rejected row is already `declined`. So the
+reviewer approves, Persona fires, we answer `200`, **the user stays locked out, and nothing logs an
+error** — the reviewer's own console shows success. Same silent-failure signature as the OQ-12 salt,
+and the same lesson as `min_age`: the vendor's documentation was accurate and still not the answer,
+because the answer depended on our side of the join. **Read both ends before recommending a mechanism
+that crosses a boundary.**
+
+That code is not a bug. It is correct replay protection that never contemplated a *legitimate* second
+decision, which is exactly what a manual review is. Hence the recommendation went to **(a2)** — approve
+a *fresh* inquiry so the row moves `pending → approved` down the path that already works, relaxing
+nothing. Cost: **`P2-8.0` is now load-bearing for OQ-2**, because `create-inquiry` returns 501 today.
+
+**Sadin's calls, recorded because both were product decisions rather than technical ones:** retry and
+escalation are offered **together** after the 30-minute lock rather than in sequence — the person who
+has failed six times is exactly the person another attempt will not help, so making them wait before
+they may reach a human adds days to a lockout they did not earn. And a wrongly-rejected account is
+**never auto-deleted**: an unverified row is inert, deletion destroys the case the reviewer needs, it
+is not a lockout (phone OTP — the same number re-registers for a fresh `user_id` and a fresh counter),
+and it cannot be done honestly while OQ-11(d) leaves the vendor-side erasure path unowned.
+
+**Parked, each needs its own task — do not fold these into anything:**
+
+- 🔴 **`already_decided` blocks a legitimate re-decision** (`persona-webhook/index.ts:199`, `:214`).
+  Does not block (a2). Live silent-failure path; if anyone ever tries (a1) without touching this, it
+  fails invisibly. Any fix is a deliberate loosening of a replay defence and needs its own argument
+  and tests — never a quiet edit to make something pass.
+- **`audit_log` cannot audit a human override.** The webhook writes `{ source, passed }` and no
+  identifiers (§5.2.8, rule 1). Right for an automated decision, insufficient for a reviewer's one —
+  it cannot say *which* verification was overridden. Carrying `verifications.id` (our row id, **not**
+  the `inquiry_id`) would close it without breaching rule 1.
+- **§8.3's outage degradation does not actually work.** It degrades an outage to the §6.4 fallback,
+  but the console is down precisely when that route is needed. Recorded as accepted-and-uncovered
+  rather than quietly implied to be handled. The alternative is an admin bypass tool, which is not
+  worth building to cover a few hours of vendor downtime.
+- **VF-11 must not hang off F6.D3 alone.** That entry point needs the server-side attempt counter
+  VF-8/9/10 do not have, so the screen would ship unreachable. Noted in `USER_FLOWS.md` F6.F.
+
+---
+
 ## 2026-08-09 (late night) — sign-in blocker solved; the app walks end to end for the first time
 
 **Branch:** `chore/integrate-auth-db-persona`, **not pushed**.

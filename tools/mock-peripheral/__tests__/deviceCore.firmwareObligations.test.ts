@@ -13,7 +13,7 @@ import {
   ProvisioningState,
   ResultCode,
 } from '../../../src/features/ble/protocol';
-import { buildHandshakeFrames, buildLockCommandFrame } from './harness';
+import { buildHandshakeFrames, buildLockCommandFrame, NODE_DEPS } from './harness';
 import { constantTimeEqual } from '../crypto';
 
 const K_DEV = Buffer.alloc(16, 0x55);
@@ -52,6 +52,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
       clock: new FakeClock(0),
       provisioningState: ProvisioningState.ACTIVATED,
       keyGeneration: 9,
+      ...NODE_DEPS,
     });
     const info = core.read('deviceInfo');
     expect(info[DEVICE_INFO_LAYOUT.protocolVersion.offset]).toBe(PROTOCOL_VERSION);
@@ -65,6 +66,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
       kDev: K_DEV,
       clock,
       provisioningState: ProvisioningState.ACTIVATED,
+      ...NODE_DEPS,
     });
     authenticateAndUnlock(core);
     expect(readState(core.read('lockState'))).toBe(LockState.UNLOCKED);
@@ -89,6 +91,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
       kDev: K_DEV,
       clock,
       provisioningState: ProvisioningState.ACTIVATED,
+      ...NODE_DEPS,
     });
     authenticateAndUnlock(core);
     core.disconnect();
@@ -111,6 +114,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
       kDev: K_DEV,
       clock,
       provisioningState: ProvisioningState.ACTIVATED,
+      ...NODE_DEPS,
     });
     authenticateAndUnlock(core);
     core.disconnect();
@@ -127,7 +131,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
 
   test('F6 — 10 consecutive failures escalate to the 5-minute backoff', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
 
     for (let i = 0; i < AUTH_BACKOFF.longThresholdFailures; i += 1) {
       // Once the short (30s) backoff kicks in after failure #5, an attempt
@@ -200,7 +204,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
 
   test('powerCycle — boots LOCKED and resets the auth-failure counter (F1, F6)', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED });
+    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED, ...NODE_DEPS });
     authenticateAndUnlock(core);
     expect(readState(core.read('lockState'))).toBe(LockState.UNLOCKED);
 
@@ -227,7 +231,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
 
   test('failure injection — forceDeadManExpiry fires the countdown on the next tick', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED });
+    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED, ...NODE_DEPS });
     authenticateAndUnlock(core);
     core.disconnect();
     core.forceDeadManExpiry();
@@ -239,7 +243,7 @@ describe('DeviceCore — §4.8 firmware obligations', () => {
 
   test('failure injection — forceNextHandshakeResult(RATE_LIMITED) forces the code without real backoff', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     core.forceNextHandshakeResult('RATE_LIMITED');
     core.connect();
     const nonce = core.read('authChallenge');

@@ -63,10 +63,15 @@ describe('dev-only route guard — H158BringUp stays behind the age gate', () =>
   it('is not reachable by deep link', () => {
     // navigation.tsx's own comment: "a deep link that could reach Home would be a way around
     // the age gate's UI". The same reasoning applies with more force to this route.
+    //
+    // Merged in from `stage` 2026-08-23 (P1-1.0): the `linking` config this test originally
+    // checked was removed outright, not narrowed — the reset-password deep link it existed for
+    // is gone with the reset subsystem it served (a 6-digit code replaced it), leaving the app
+    // with no URL-reachable route at all. That is a strictly stronger guarantee than "excluded
+    // from the linking config", so this asserts there is no `linking` config to register a
+    // route in, rather than asserting on the contents of one that no longer exists.
     const source = navigationSource();
-    const linkingStart = source.indexOf('const linking');
-    const linkingEnd = source.indexOf('};', linkingStart);
-    expect(linkingStart).toBeGreaterThan(-1);
-    expect(source.slice(linkingStart, linkingEnd)).not.toContain(DEV_ROUTE);
+    expect(source).not.toContain('const linking');
+    expect(source).not.toMatch(/<NavigationContainer[^>]*\blinking=/);
   });
 });

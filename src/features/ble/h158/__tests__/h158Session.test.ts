@@ -72,6 +72,8 @@ function buildFakeManager(options: FakeDeviceOptions): BleManagerLike {
 
   return {
     state: async () => 'PoweredOn',
+    startDeviceScan: () => {},
+    stopDeviceScan: () => {},
     isDeviceConnected: async () => true,
     cancelDeviceConnection: async () => device,
     connectToDevice: () => (options.neverSettlesConnect ? neverSettles : Promise.resolve(device)),
@@ -277,6 +279,8 @@ describe('H158Session — the device stays silent on a bad frame, so timeout is 
     };
     const manager: BleManagerLike = {
       state: async () => 'PoweredOn',
+      startDeviceScan: () => {},
+      stopDeviceScan: () => {},
       isDeviceConnected: async () => true,
       cancelDeviceConnection: async () => device,
       connectToDevice: async () => device,

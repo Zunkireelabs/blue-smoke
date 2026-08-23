@@ -44,6 +44,12 @@
     // P1-3.0/P1-7.0 journey test — imports createMockPeripheral, same wall.
     "src/features/ble/__tests__/journey.test.ts",
     // P1-7.0 — appState.test.ts also imports createMockPeripheral, same wall.
-    "src/features/ble/__tests__/appState.test.ts"
+    "src/features/ble/__tests__/appState.test.ts",
+    // P2-6.0 (UI-BUILD-B) — bleSeam.acceptance.test.tsx also imports
+    // tools/mock-peripheral/bleAdapter.ts, same reason as the two above.
+    "src/features/ble/__tests__/bleSeam.acceptance.test.tsx",
+    // P1-3.0 — devicePairingFlow.test.tsx also imports tools/mock-peripheral/bleAdapter.ts and
+    // clock.ts, same reason as the three above.
+    "src/features/devices/__tests__/devicePairingFlow.test.tsx"
   ]
 }

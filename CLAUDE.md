@@ -50,7 +50,8 @@ Check these on **every** change. A breach is an automatic block, not a review co
 
 ## Team & how work is claimed
 
-Three developers — **Sadin, Anish, Hardik** — working independently on feature branches.
+Four developers — **Sadin, Anish, Hardik, Manjila** — working independently on feature branches.
+*(Manjila joined Day 10, 2026-08-09, on app screens and flows.)*
 
 **There is no fixed ownership.** Anyone can pick up any task. Work is claimed dynamically:
 
@@ -72,7 +73,7 @@ Not assignments — a map, so you can tell whose in-flight branch your diff migh
 
 ### ⚠️ Shared files — announce before editing
 
-These cause 90% of merge pain. No owner, so the rule is **single-writer at a time**: tell the other two before you start, not when you open the PR.
+These cause 90% of merge pain. No owner, so the rule is **single-writer at a time**: tell the other three before you start, not when you open the PR.
 
 | File | Why it's contested | Rule |
 |---|---|---|
@@ -119,13 +120,13 @@ feature/P0-3.0-supabase-rls
 fix/P3-3.0-rssi-flapping
 ```
 
-**Rules that matter when three people work apart:**
+**Rules that matter when four people work apart:**
 
 1. **Check `git fetch && git branch -r` before starting a task.** Remote branches are the live claim list. If a `feature/P2-2.0-*` branch exists, that task is taken.
 2. **Push your branch on day one**, empty if need be. That is how you claim the task. An unpushed branch claims nothing.
 3. **Rebase on `stage` every morning.** `git pull --rebase origin stage`. A three-day-old branch is a merge conflict waiting to happen — and with everything landing on `stage`, staying current matters more, not less. (Rebasing on `main` will silently give you a stale base.)
 4. **Small PRs.** One task, one PR. A 2000-line PR nobody has seen in progress is unreviewable and unmergeable.
-5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other two and invisible to the roadmap.
+5. **Push daily**, even if unfinished. Work sitting on a laptop is invisible to the other three and invisible to the roadmap.
 6. **CI green before merge.** No exceptions.
 7. **Tick the TODO box in the same PR** that completes the work. The checkbox is the progress signal; if it lags, the roadmap lies.
 
@@ -157,16 +158,32 @@ machine that no longer exists:
 ```bash
 npm run typecheck        # tsc --noEmit, x3 projects (app, mock, tests)
 npm run lint             # 0 errors; a ruled warning baseline, see below
-npm test                 # 273 tests / 30 suites
+npm test                 # 578 tests / 54 suites
 npm run bundle:check     # iOS + Android Metro bundle — catches what tsc can't
+npm run bundle:check:release  # release-mode bundle; proves the dev BLE mock is absent (P1-3.0)
 npm run ios              # works; `npm run android` has never been run (no JDK)
 npx supabase db push     # migrations
 ```
 
-**`npm run lint` has a ruled warning baseline, currently 70.** It is *not* "≤ 70 forever" — the rule
+⚠️ **`npm run typecheck` does not cover `supabase/functions/**`.** `tsconfig.json` excludes that
+whole subtree, so `tsc` never sees a single Edge Function — verified 2026-08-11. A green typecheck
+is **no evidence at all** about backend changes; only the Jest tests over `_shared/**` and a live
+call against the deployed function are. Do not report "typecheck clean" as though it covered an
+Edge Function diff. The practical consequence: a non-exhaustive `switch` over a shared union in
+that subtree compiles happily and fails at runtime, so if you add a member to a union there, hunt
+down every `switch` over it by hand.
+
+**`npm run lint` has a ruled warning baseline, currently 111.** It is *not* "≤ 111 forever" — the rule
 is **no `eslint-disable`, and no `no-bitwise` outside `src/features/ble`, `crypto`, `byteLayout`**,
 where byte-level work makes bitwise operators unavoidable. Adding a file to those directories may
 legitimately raise the count. Suppressing a warning to hold the number down is a breach.
+
+*Raised 70 → 111 by `P1-3.0` (dev BLE seam), all 41 in `tools/mock-peripheral/byteLayout.ts`:
+removing `Buffer` (a Node global absent from Hermes) meant hand-rolling little-endian reads/writes
+and a base64 codec in `Uint8Array`. The codec was deliberately placed in `byteLayout.ts` rather
+than `bleAdapter.ts` so the bitwise work lands in a file this rule already exempts — in
+`bleAdapter.ts` the same code would have been a breach. Verified file-by-file against a clean
+`stage` worktree: no other file's count moved, and no `eslint-disable` was added.*
 
 **Run the mock BLE peripheral** (`P0-2.5`) for any BLE work — real hardware isn't available until ~Day 26. It implements spec §4 including failure paths. See its README.
 
@@ -224,7 +241,13 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-*(Updated Day 24, 2026-08-23. This block goes stale fastest — distrust it if the date is old. Each
+*(Updated Day 24, 2026-08-23, merging `feature/ble-connectivity`'s hardware-focused block with
+`stage`'s 62-commit-newer auth/UI/UX work — see `docs/session-log/sadin.md`, 2026-08-23. `stage`'s
+own "Current state" block (Day 12, 2026-08-11) was itself obsolete by the time of this merge — its
+top item, the `create-inquiry` idempotency bug, was already fixed and merged on `stage` days ago —
+so it isn't reproduced here; check `TODO-phase-1.md`/`TODO-phase-2.md` for current auth/backend/
+UI status instead of trusting either branch's stale narrative. This block goes stale fastest —
+distrust it if the date is old. Each
 previous version of this block was several days stale by the time anyone refreshed it, and the
 consequence has twice been re-walking ground that was already settled.)*
 
@@ -277,7 +300,9 @@ consequence has twice been re-walking ground that was already settled.)*
   before touching real hardware or writing anything under `src/features/ble/h158/**`.
 - **Environment note:** JDK 17 + Android SDK are now installed on at least one dev machine
   (`android-dev/jdk`, `android-dev/sdk`) — `npm run android` is possible there. This is
-  machine-specific, not a project-wide change; check yours before assuming it.
+  machine-specific, not a project-wide change; check yours before assuming it. As of this merge
+  it's also confirmed on a second (Mac) machine, with a first successful `./gradlew assembleDebug`
+  — see `docs/session-log/sadin.md`, 2026-08-23.
 - **Blocking the whole plan:** **OQ-1** (sample IDs, hardware ~Day 26), **OQ-4** (who burns the
   device root key into OTP at manufacture — now entangled with OQ-16, since there may be nowhere on
   the device to check a key even if one exists), and 🔴 **OQ-12** (the `serial_hash` salt — same

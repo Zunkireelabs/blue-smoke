@@ -147,6 +147,59 @@ being written down, not a new one.
   Auth is currently wired with the account-wide **Auth Token**. Twilio's own console
   recommends a scoped **API Key** instead, since the Auth Token grants full account access —
   worth switching before staging/prod.
+- **Custom SMTP (Resend) configured on dev** (`hejwrhijrztgdysycvto`), 2026-08-09 — this is what
+  unblocked the password-reset email path and the live-HTTP RLS proof below.
+
+  | Setting | Value |
+  |---|---|
+  | Host / port | `smtp.resend.com:465` |
+  | Username | `resend` |
+  | Sender | `noreply@ble.everestdeploy.com` |
+  | Sending domain | `ble.everestdeploy.com` — verified via GoDaddy DNS, Resend Tokyo region |
+  | API key | `supabase-dev`, sending access only |
+  | Providers | Email **on**, Phone **on**, Confirm email **on** |
+
+  **The email rate limit moved 2 → 30/hour on its own.** Enabling custom SMTP raises it
+  automatically; nobody set it. Worth knowing before reading it as someone having widened a limit
+  to make something pass. **The per-user minimum interval was deliberately left at 60 s** as an
+  anti-abuse control — do not lower it to speed up a test.
+
+  **`bluesmoke://reset-password` is allow-listed as a redirect URL, and that allow-list is proven
+  to be honoured** (see the two-send control below). **Site URL is still `http://localhost:3000`,
+  and that is deliberate** — it is a diagnostic, not an oversight. Because the fallback destination
+  is a URL that obviously is not our app, an allow-list mismatch **fails loudly** instead of
+  silently opening the app and looking like success. Changing Site URL to a `bluesmoke://` value
+  would destroy that signal.
+
+  🔴 **`ble.everestdeploy.com` is OUR infrastructure domain, not the client's brand.** Two things
+  follow, neither of them solved:
+  - **Production must send from the client's own brand domain.** A verification or password-reset
+    email arriving from a domain the user has never heard of is a phishing signal, and it is not
+    the client's to control or protect.
+  - **The Resend account and the `supabase-dev` API key are currently owned by one developer's
+    personal account** (created by `hardik.phuel@nepa.global`). That is a single point of failure
+    and a handover problem, not just a naming one.
+
+  ⚠️ **This has no OQ row, and it should.** It is the same *class* of question as **OQ-8** (who owns
+  the Apple/Google developer accounts and signing assets) and depends on the answer to **OQ-7**
+  (brand assets), but **neither OQ covers it** — OQ-7 is logo/palette/app-name/store-copy and OQ-8
+  is app-store accounts. Flagged here rather than mis-cited to an existing row; per spec §13's own
+  note on OQ-12, *a gap recorded only in passing is a gap nobody owns.* Needs registering.
+
+- **Password-reset email proven end to end on dev**, 2026-08-09. Not inferred from configuration —
+  observed: the Resend key's usage counter moved 0 → 1, the Resend **Emails** tab showed
+  **Delivered**, the mail arrived and was opened, and the verify link carried
+  `redirect_to=bluesmoke://reset-password`.
+
+  **Method — a two-send control, because "the email arrived" proves almost nothing on its own.**
+  The same request was sent twice: once **with** `redirect_to` and once **without**. The second
+  fell back to `http://localhost:3000`. That contrast is the only reason the allow-list can be
+  claimed to be *honoured* rather than merely *configured* — a single successful send is equally
+  consistent with the redirect parameter being ignored entirely.
+
+  🔴 **NOT proven: that the deep link opens the app.** That needs a physical device, which this
+  machine does not have. The corresponding box in `TODO-phase-1.md` is deliberately left unticked.
+
 - RLS proof (`supabase/tests/rls_ownership_proof.sql`) run against dev, 2026-08-05, and
   re-run against staging, 2026-08-06 — all 8 checks PASS on both, including the PR #6 hijack
   scenario: a second user's simulated JWT cannot read
@@ -154,9 +207,44 @@ being written down, not a new one.
   self-insert ownership over another user's device (`new row violates row-level security
   policy for table "device_ownership"`), and cannot repoint an ownership row it doesn't own
   via the column-restricted `UPDATE`. See the test file's header for why this uses simulated
-  JWT claims rather than a live signup (SMTP isn't configured yet, so the project's default
-  auth email rate limit throttles scripted signups immediately) and what should supersede it
-  once SMTP is configured.
+  JWT claims rather than live tokens (when it was written, no custom SMTP was configured and the
+  default auth email rate limit throttled scripted signups immediately).
+
+  **Superseded — but kept, deliberately.** `supabase/tests/rls_ownership_proof_live.mjs` now makes
+  the same assertions with two real users' access tokens over HTTP, which is the stronger proof.
+  The SQL version stays because it is the only one that runs with **no network and no service-role
+  key**, and because it wraps in `BEGIN/ROLLBACK` and so leaves nothing behind. Cheap local check;
+  the live version is authoritative.
+- **Live-HTTP RLS proof run against dev, 2026-08-09 — 10/10 PASS** (8 checks + 2 guards), using
+  users A (`60bbe9c9…`) and B (`55b18ad2…`) signed in via
+  `POST /auth/v1/token?grant_type=password`. Fixtures are seeded and torn down service-side either
+  side of the run — steps 1 and 3 of the procedure below.
+
+  **The green run is not the evidence — the pair of runs is.** The proof was deliberately run
+  **once before seeding** as a vacuity control, and the two runs differ exactly where they should:
+
+  | Check | No fixtures | Seeded |
+  |---|---|---|
+  | A sees own `device_ownership` row | FAIL (0 rows) | PASS |
+  | A sees own device via ownership | FAIL (0 rows) | PASS |
+  | B update-attempt on A's ownership row | **INCONCLUSIVE** | PASS |
+  | B's four cross-user read denials | PASS — **vacuously**, nothing existed to see | PASS |
+  | B hijack-insert ownership | PASS | PASS |
+  | Both guards | PASS | PASS |
+
+  Two things that table says and a single green run cannot. First, **A's "sees own row" checks are
+  not vacuous** — they fail when the row is absent, so they are genuinely reading the database.
+  Second, and more useful: **the update check returned INCONCLUSIVE rather than PASS** with no
+  fixture present. An RLS-filtered `PATCH` returns `200 []` — zero rows affected — which a
+  naively-written check scores as "RLS blocked it". It only came out INCONCLUSIVE because the check
+  re-reads the row as A and refuses to conclude anything when the row isn't there. That is
+  precisely the `when others` / "FK error counted as a security pass" bug from the SQL version, in
+  its HTTP form, caught by the guard designed for it.
+
+  ⚠️ Note the row that stays honest about its own weakness: **B's four "cannot see" checks pass
+  even with an empty database.** They only carry meaning once A's rows really exist — which is why
+  the seed step is not optional and why the control run alone would have been misleading in the
+  opposite direction.
 - Vault proof (`supabase/tests/vault_k_dev_proof.sql`) run against dev, 2026-08-05, and
   re-run against staging, 2026-08-06 — all 4 checks PASS on both: a dummy K_dev-sized secret
   wraps via `vault.create_secret()` and unwraps correctly via `vault.decrypted_secrets` as
@@ -166,13 +254,47 @@ being written down, not a new one.
   the storage **mechanism** only — no real `K_dev` exists in any environment yet; that's
   blocked on OQ-4.
 
+## Running the live-HTTP RLS proof
+
+`rls_ownership_proof_live.mjs` is **a three-step procedure, not a self-contained script**, and the
+reason is the proof itself: as user A over the anon key, creating the fixtures is *not permitted* —
+`device_ownership` denies client INSERT (the PR #6 ownership-squat fix) and `verifications` lost its
+INSERT policy in `20260807090000` (the age-gate fix). A script that could seed its own fixtures
+would be evidence those holes were still open. Seeding therefore runs service-side; the
+service-role key never enters this repo or a shell.
+
+1. **Seed** — `rls_ownership_proof_live.seed.sql` via MCP `execute_sql` or the dashboard SQL editor.
+   It ends with four counts; all must be 1 before step 2.
+2. **Assert** — `node supabase/tests/rls_ownership_proof_live.mjs`. Needs `SUPABASE_URL` and
+   `SUPABASE_ANON_KEY` (read from the gitignored `.env`) plus `RLS_PROOF_A_EMAIL`,
+   `RLS_PROOF_B_EMAIL`, `RLS_PROOF_PASSWORD` from the environment. Exit 0 only if every check
+   passes; INCONCLUSIVE exits non-zero too.
+3. **Teardown** — `rls_ownership_proof_live.teardown.sql`. **Not optional.** There is no
+   `ROLLBACK` here, so until it runs, dev carries a device and an `age_verified = true`
+   verification row belonging to no real person.
+
+**The guard is the part worth understanding.** The SQL proof's famous trap was `SET LOCAL` being a
+no-op outside a transaction, silently running every check as the table owner. The HTTP analogue is
+being handed a **service-role** key instead of a user token: it bypasses every policy, so all eight
+checks would report PASS against a wide-open database. Each token is therefore decoded locally and
+asserted to carry `role: "authenticated"` and the expected `sub`, *and* round-tripped through
+`GET /auth/v1/user`. Neither check alone is sufficient — a locally-forged string passes the first,
+and a service key is not caught by the second.
+
+Two more HTTP-specific shapes that would otherwise fake a pass: **an RLS-filtered read is a `200`
+with an empty array, not an error** (so every read asserts status *and* row count), and only
+PostgREST code `42501` counts as an RLS denial — a `409` or an FK error is reported INCONCLUSIVE,
+never PASS. That second rule is inherited directly from the SQL version's `when others` bug.
+
 ## Not yet done (tracked in `docs/project-roadmap-todos/TODO-phase-0.md`, P0-3.0)
 
 - Third Supabase project (prod) — not created yet
 - Auth config: email/password + reset email (dashboard, both projects) — no MCP tool covers
-  this, it's Dashboard/Management-API territory. Also blocked in practice: no custom SMTP is
-  configured, so the default project email sender is rate-limited almost immediately (hit
-  `429 over_email_send_rate_limit` on a single test signup).
+  this, it's Dashboard/Management-API territory. **Done on dev** 2026-08-09, custom SMTP and all
+  (see Applied above); the `429 over_email_send_rate_limit` blocker that used to sit here is gone
+  with it. **Staging and prod remain unconfigured** — staging is a separate deliberate act, not
+  something to do in passing, because it still carries the client-writable `verifications`
+  age-gate hole.
 - Phone + OTP: Twilio Verify as the native provider — **done on dev** (see Applied above,
   2026-08-07); **still to do on staging and prod**, and prod has no project yet
 - Edge Functions `issue-device-session` (§5.4) and `revoke-device-session` (§5.4.1) — not a
@@ -180,6 +302,11 @@ being written down, not a new one.
   server-side `age_verified` check both actually happen; flagging the gap rather than
   building it silently under this task.
 - APNs / FCM credentials for push
-- Once SMTP is configured: replace the RLS proof with a live-HTTP version using two real
-  signups and their actual access tokens
+- ~~Once SMTP is configured: replace the RLS proof with a live-HTTP version using two real
+  signups and their actual access tokens~~ — **unblocked 2026-08-09**, custom SMTP is configured
+  on dev. Written as `supabase/tests/rls_ownership_proof_live.mjs` (+ its seed/teardown SQL).
+  Note the wording above was optimistic in one respect: users A and B are **dashboard-created with
+  Auto Confirm**, so the proof uses two real users' *access tokens*, not two real *signups* — the
+  signup path is not exercised by it, and currently could not be (see the `emailRedirectTo` defect
+  in `docs/session-log/hardik.md`, 2026-08-09)
 - Once OQ-4 is answered: populate `device_keys` with real, Vault-wrapped `K_dev` material

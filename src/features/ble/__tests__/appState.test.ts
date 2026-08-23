@@ -5,6 +5,7 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { K_DEV, validCredentials } from '../../../../tools/mock-peripheral/testCredentials';
 import { createConnectionManager } from '../connection';
 import { createAppStateCoordinator, reconcileConnections, type AppStateLike, type AppStateSubscriptionLike } from '../appState';
@@ -12,7 +13,13 @@ import { createAppStateCoordinator, reconcileConnections, type AppStateLike, typ
 const DEVICE_ID = 'mock-device-0001';
 
 function setup() {
-  return createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), deviceId: DEVICE_ID });
+  return createMockPeripheral({
+    kDev: K_DEV,
+    clock: new FakeClock(0),
+    deviceId: DEVICE_ID,
+    crypto: nodeDeviceCoreCrypto,
+    nonceSource: nodeNonceSource,
+  });
 }
 
 /** The one new test helper the brief calls for — a fake AppStateLike. */

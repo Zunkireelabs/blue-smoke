@@ -44,21 +44,73 @@ export type AuthOutcome = {
 };
 
 export interface AuthClient {
-  signUpWithEmail(email: string, password: string): Promise<AuthResult<AuthOutcome>>;
-  signInWithEmail(email: string, password: string): Promise<AuthResult<AuthOutcome>>;
-  requestPasswordReset(email: string): Promise<AuthResult>;
   /**
-   * Addition beyond the brief's §3.5 interface sketch. The reset-link
-   * deep-link (TODO-phase-1.md P1-1.0: "Deep-link handling for the reset
-   * link on both platforms") lands the user back in the app with a live
-   * recovery session — without a method to actually set the new password,
-   * catching that link accomplishes nothing. Not in the brief because the
-   * brief's interface only covers the six actions it explicitly lists;
-   * flagged here rather than silently left out, per "where the spec is
-   * silent, say so and flag it."
+   * P1-1.0 (email + code, keeping passwords) — password sign-in survives as a
+   * **later credential**, not a competing front door. Email always signs up
+   * or signs in via `requestEmailCode` / `verifyEmailCode` below; this method
+   * is **unrouted** in this PR (no screen calls it yet — PR 2 adds "Use
+   * password instead"). Kept because it already works and re-deriving it
+   * later is pure waste, not because anything reaches it today.
    */
-  confirmPasswordReset(newPassword: string): Promise<AuthResult>;
+  signInWithEmail(email: string, password: string): Promise<AuthResult<AuthOutcome>>;
+  /**
+   * Sets/changes the account's password. Renamed from `confirmPasswordReset`
+   * (P1-1.0): the reset subsystem — request-a-link, "check your email",
+   * confirm — is gone, because the 6-digit code *is* the recovery path now
+   * (sign in with a code, then set a password here). The underlying call
+   * (`supabase.auth.updateUser({ password })`) is unchanged; only the name
+   * was wrong for its new purpose. **Unrouted** in this PR — PR 2's Settings
+   * screen is the only caller.
+   */
+  setPassword(newPassword: string): Promise<AuthResult>;
   requestPhoneOtp(phone: string): Promise<AuthResult>;
   verifyPhoneOtp(phone: string, code: string): Promise<AuthResult<AuthOutcome>>;
+
+  // ── Email codes (spec §1.2.2, team-confirmed 2026-08-09) ─────────────────
+  //
+  // Email sign-up and sign-in are one 6-digit-code path. Two consequences
+  // worth stating at the interface, because both are easy to reintroduce by
+  // accident:
+  //
+  //   1. `requestEmailCode` deliberately sends NO `emailRedirectTo`. Under
+  //      the old link flow that omission was a defect — with Confirm email ON
+  //      the confirmation link fell back to Site URL and stranded the
+  //      account. Codes remove the link entirely, so the defect is fixed by
+  //      construction. Do not "fix" it by adding a redirect: that
+  //      reintroduces the link this decision removed.
+  //   2. There is no separate sign-up method. `requestEmailCode` /
+  //      `verifyEmailCode` serve a brand-new address and a returning one
+  //      identically — see `requestEmailCode`'s own doc for why.
+
+  /**
+   * Confirms a newly signed-up account with the 6-digit code emailed by the
+   * "Confirm sign up" template (Supabase `type: 'signup'`). **Kept but
+   * unrouted**: measured against dev 2026-08-10, a sign-up code verifies
+   * under `type: 'email'` too (see `verifyEmailCode`), so nothing in the app
+   * routes here — `EmailCodeEntryScreen` always verifies with `type: 'email'`.
+   * Costs nothing to keep; do not wire a second path to it.
+   */
+  confirmSignupWithCode(email: string, code: string): Promise<AuthResult<AuthOutcome>>;
+
+  /**
+   * Sends a 6-digit code — the single front door for email, signup and
+   * sign-in alike.
+   *
+   * The underlying call uses `shouldCreateUser: true`, and that is a
+   * security choice rather than a default worth inheriting silently: with
+   * `false`, Supabase errors on an unrecognised address, which tells an
+   * attacker whether an account exists and breaks the no-enumeration rule
+   * every other path in this interface follows. `true` makes signup and
+   * sign-in the same action and keeps the response identical either way.
+   *
+   * The 60 s per-user minimum interval on auth emails is a Supabase
+   * dashboard setting; on dev it was measured **not enforced** (two sends
+   * seconds apart both delivered) — flagged, not fixed, in the PR body.
+   */
+  requestEmailCode(email: string): Promise<AuthResult>;
+
+  /** Verifies the sign-in code (`type: 'email'`) and establishes the session. */
+  verifyEmailCode(email: string, code: string): Promise<AuthResult<AuthOutcome>>;
+
   signOut(): Promise<AuthResult>;
 }

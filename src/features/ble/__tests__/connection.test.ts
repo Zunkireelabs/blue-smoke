@@ -6,6 +6,7 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { K_DEV, validCredentials, wrongCredentials } from '../../../../tools/mock-peripheral/testCredentials';
 import { createConnectionManager, type ConnectionState } from '../connection';
 import type { AuthResponseInput } from '../auth';
@@ -14,7 +15,13 @@ import { ResultCode } from '../protocol';
 const DEVICE_ID = 'mock-device-0001';
 
 function setup() {
-  return createMockPeripheral({ kDev: K_DEV, clock: new FakeClock(0), deviceId: DEVICE_ID });
+  return createMockPeripheral({
+    kDev: K_DEV,
+    clock: new FakeClock(0),
+    deviceId: DEVICE_ID,
+    crypto: nodeDeviceCoreCrypto,
+    nonceSource: nodeNonceSource,
+  });
 }
 
 function statesOf(manager: ReturnType<typeof createConnectionManager>, deviceId: string): ConnectionState[] {

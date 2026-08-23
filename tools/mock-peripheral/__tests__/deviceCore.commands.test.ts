@@ -13,7 +13,7 @@ import {
   ProvisioningState,
   ResultCode,
 } from '../../../src/features/ble/protocol';
-import { buildHandshakeFrames, buildLockCommandFrame } from './harness';
+import { buildHandshakeFrames, buildLockCommandFrame, NODE_DEPS } from './harness';
 
 const K_DEV = Buffer.alloc(16, 0x33);
 const SESSION_ID = Buffer.alloc(16, 0x44);
@@ -64,7 +64,7 @@ function send(
 
 describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
   test('F1 — boots LOCKED with lastLockReason POWER_ON_DEFAULT', () => {
-    const core = new DeviceCore({ kDev: K_DEV, clock: new FakeClock(0) });
+    const core = new DeviceCore({ kDev: K_DEV, clock: new FakeClock(0), ...NODE_DEPS });
     const lockState = core.read('lockState');
     expect(readState(lockState)).toBe(LockState.LOCKED);
     expect(readLastLockReason(lockState)).toBe(LockReason.POWER_ON_DEFAULT);
@@ -72,7 +72,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('UNAUTHENTICATED — lockCommand write with no session', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     core.connect();
     const nonce = core.read('authChallenge'); // never used for a handshake
     const result = send(core, nonce, Buffer.alloc(16, 0), CommandId.LOCK, 1);
@@ -81,7 +81,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('NOT_ACTIVATED — UNLOCK before ACTIVATE, then OK after', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
 
     expect(readResultCode(send(core, nonce, kSess, CommandId.UNLOCK, 1))).toBe(
@@ -97,7 +97,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('re-ACTIVATE once already activated → INVALID_PARAM (documented interpretation)', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED });
+    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     expect(readResultCode(send(core, nonce, kSess, CommandId.ACTIVATE, 1, Buffer.alloc(4)))).toBe(
       ResultCode.INVALID_PARAM,
@@ -106,7 +106,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('SET_AUTOLOCK_GRACE — clamps out-of-range values to INVALID_PARAM', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
 
     const tooLow = Buffer.alloc(7, 0);
@@ -130,7 +130,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('FACTORY_UNPAIR — wrong confirm is INVALID_PARAM, right confirm clears activation', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED });
+    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
 
     const badConfirm = Buffer.alloc(7, 0);
@@ -149,7 +149,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('END_SESSION — locks and drops the session, requiring re-handshake', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     expect(readResultCode(send(core, nonce, kSess, CommandId.END_SESSION, 1))).toBe(ResultCode.OK);
     expect(core.isAuthenticated()).toBe(false);
@@ -158,14 +158,14 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('PING — OK, keepalive', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     expect(readResultCode(send(core, nonce, kSess, CommandId.PING, 1))).toBe(ResultCode.OK);
   });
 
   test('REPLAY — a non-increasing counter is rejected', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     expect(readResultCode(send(core, nonce, kSess, CommandId.LOCK, 5))).toBe(ResultCode.OK);
     expect(readResultCode(send(core, nonce, kSess, CommandId.LOCK, 5))).toBe(ResultCode.REPLAY);
@@ -174,7 +174,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('AUTH_FAILED — a corrupted tag is rejected', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     const frame = buildLockCommandFrame({ kSess, nonce, commandId: CommandId.LOCK, counter: 1 });
     frame[frame.length - 1] ^= 0xff; // flip a tag byte
@@ -184,7 +184,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('F11 — a command captured in one connection fails tag verification in another (FW-16)', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
 
     const first = authenticate(core, clock);
     const capturedFrame = buildLockCommandFrame({
@@ -208,7 +208,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('FAULT — an unrecoverable fault answers every subsequent command with FAULT', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     core.injectFault({ recoverable: false });
     expect(readState(core.read('lockState'))).toBe(LockState.FAULT);
@@ -217,7 +217,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('a recoverable fault locks but does not stick in FAULT state', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     authenticate(core, clock);
     core.injectFault({ recoverable: true });
     const lockState = core.read('lockState');
@@ -228,7 +228,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('BUSY — reachable only via failure injection (no natural trigger in a single-threaded mock)', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock);
     core.forceNextCommandResult(ResultCode.BUSY);
     expect(readResultCode(send(core, nonce, kSess, CommandId.PING, 1))).toBe(ResultCode.BUSY);
@@ -238,7 +238,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('§4.8 F6 — 5 consecutive auth failures trigger a 30s backoff (RATE_LIMITED)', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
 
     for (let i = 0; i < AUTH_BACKOFF.shortThresholdFailures; i += 1) {
       core.connect();
@@ -281,7 +281,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('SESSION_EXPIRED — reported once on the first command after expiry, UNAUTHENTICATED after', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock });
+    const core = new DeviceCore({ kDev: K_DEV, clock, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock, { expiresAtDeltaSeconds: 5 });
 
     clock.advanceMs(6000);
@@ -300,7 +300,7 @@ describe('DeviceCore — §4.6/§4.7 commands and result codes', () => {
 
   test('F5 — session expiry locks immediately even without any command attempt', () => {
     const clock = new FakeClock(0);
-    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED });
+    const core = new DeviceCore({ kDev: K_DEV, clock, provisioningState: ProvisioningState.ACTIVATED, ...NODE_DEPS });
     const { nonce, kSess } = authenticate(core, clock, { expiresAtDeltaSeconds: 5 });
     send(core, nonce, kSess, CommandId.UNLOCK, 1);
     expect(readState(core.read('lockState'))).toBe(LockState.UNLOCKED);

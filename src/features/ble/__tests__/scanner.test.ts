@@ -13,6 +13,7 @@
  */
 import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import type { BleAdvertisementLike, BleScannerLike } from '../BleClientContext';
 import {
   BleAdapterState,
@@ -105,6 +106,8 @@ describe('createDeviceScanner — driven by the mock peripheral', () => {
       clock: new FakeClock(0),
       advertisedRssi: -55,
       manufacturerData: buildManufacturerData(),
+      crypto: nodeDeviceCoreCrypto,
+      nonceSource: nodeNonceSource,
       ...extra,
     });
   }
@@ -560,6 +563,8 @@ describe('createDeviceScanner — DeviceScanFilter (namePrefix)', () => {
       clock: new FakeClock(0),
       advertisedRssi: -55,
       manufacturerData: buildManufacturerData(),
+      crypto: nodeDeviceCoreCrypto,
+      nonceSource: nodeNonceSource,
       ...extra,
     });
   }

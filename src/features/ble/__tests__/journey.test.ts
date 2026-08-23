@@ -29,6 +29,7 @@
  */
 import { createMockPeripheral, type MockBleManager, type MockDevice } from '../../../../tools/mock-peripheral/bleAdapter';
 import { FakeClock } from '../../../../tools/mock-peripheral/clock';
+import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
 import { K_DEV, validCredentials, wrongCredentials } from '../../../../tools/mock-peripheral/testCredentials';
 import { createConnectionManager, type ConnectionManager } from '../connection';
 import { createDeviceScanner, type DeviceScanner } from '../scanner';
@@ -70,6 +71,8 @@ describe('the full scan-to-reconnect journey, walked once in order', () => {
       advertisedRssi: -55,
       manufacturerData: buildManufacturerData(),
       additionalAdvertisers: [{ id: SECONDARY_ID, name: 'BlueSmoke-0002', advertisedRssi: -70 }],
+      crypto: nodeDeviceCoreCrypto,
+      nonceSource: nodeNonceSource,
     });
     manager = peripheral.manager;
     primaryDevice = peripheral.device;
