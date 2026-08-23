@@ -287,6 +287,24 @@ export const LOW_BATTERY_CLEAR_PERCENT = 20; // §4.4 — flags bit2 clears at/a
 // REAL HARDWARE — YP65-AT module (Yichip YC1012 / YC8612)
 // ═══════════════════════════════════════════════════════════════════════════
 //
+// 🔴 SUPERSEDED, 2026-08-23 — see src/features/ble/h158/{h158Protocol.ts,h158Session.ts} for the
+// canonical, hardware-confirmed implementation. Nothing below should be imported or extended.
+//
+// Everything below was built on 2026-08-12, inferred from the YP65-AT module spec and three
+// vendor-supplied frame samples, before any board was on a bench. On 2026-08-23, working
+// independently from the same vendor material, Anish built h158/** and flashed it to real
+// hardware — exercised against the manufacturer's own demo app, every checksum verified by hand
+// (docs/hardware/hqd-device-architecture.md §13.1, on feature/ble-connectivity). The two turned
+// out identical everywhere they overlap: same STX/ETX/checksum, same 0xA1/0xA2 commands, same
+// 0x78/0x87 lock args, the same 0xFFF0/0xFFF1 UUIDs below, and the same advertising-name-not-
+// service-UUID scan workaround (independently rediscovered on both sides). h158/** additionally
+// decodes responses, which this section's now-deleted hqdFrame.ts explicitly did not attempt —
+// see its own header comment, preserved in git history, for why that was deliberate.
+//
+// Kept here rather than deleted — this file is append-only (CLAUDE.md) — because the citations
+// below (module spec section numbers, the scan-trap root cause, connection-parameter negotiation)
+// are still useful reference material for whoever next touches h158/**.
+//
 // Everything above this line describes TECHNICAL_SPEC.md §4: a GATT layout we
 // specified and expected the device to implement. The client's hardware does
 // not work that way and cannot be made to without a firmware change on a chip
