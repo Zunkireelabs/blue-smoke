@@ -4,6 +4,75 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-08-23 — third machine (Mac) picked up Windows's unpushed work; F9 turned out already fixed; two fresh env breaks found
+
+**Branches:** `feature/P1-5.0-multi-device-management` (pushed), `chore/android-jdk-toolchain-setup`
+(pushed), `docs/session-log-2026-08-23` (this entry).
+**Landed:** Neither feature/chore branch has a PR open yet — both are pushed and green, ready for
+review.
+
+**Decided, and why — `feature/P1-3.0-yp65-transport` is the canonical BLE-transport lineage, not
+`feature/P1-7.0-connection-lifecycle`.** The Windows machine had 68 commits ahead / 5 behind the
+latter and deliberately didn't force-push it, worried about discarding remote work. Checked: the 5
+"remote-only" commits on `P1-7.0-connection-lifecycle` are the *same* commits (identical author,
+message, and authored timestamp) as 5 of `P1-3.0-yp65-transport`'s own history — they were rebased
+onto current `stage` there, not overwritten by someone else. `P1-3.0-yp65-transport` is a strict
+superset (same 5 commits, rebased, plus the YP65/HQD frame work) and is current on `stage`;
+`P1-7.0-connection-lifecycle` is 16 `stage` merges stale. Don't build on the old branch; it can
+probably be deleted once someone confirms nothing else points at it.
+
+**Decided, and why — the `.rar`'s `.pkg` (`H158_Test_260814_01_.pkg`) is real and on this machine**,
+at `temp_ss/materials-by-manufacturer/08-23-2026/H158_ProjectFile-V1.3-202608211812/MCU Firmware/`
+(gitignored, not committed — matches how `manufacturer-supplied-2026-08-23/README.md` already
+treats the `.rar`). It didn't show up on the Windows machine. Per today's chat, Anish has since
+flashed it to real hardware and reports it working — his own trace/summary is still coming and is
+what actually lets `hqdFrame.ts`/`protocol.ts`'s `YP65_PROVISIONAL` markings move from "inferred" to
+"confirmed." Don't mark anything confirmed off the `.pkg`'s mere existence.
+
+**Tried and abandoned:** two `metro.config.js` tweaks for the `bundle:check` failure below
+(`unstable_conditionNames` widened to include `require`/`import`; adding `cjs` to `sourceExts`).
+Neither fixed it, both reverted, nothing committed. Root cause is still open — see below.
+
+**Blocked / needs someone else:**
+
+- 🔴 **`npm run bundle:check` and `bundle:check:release` both fail on a clean `npm ci` of `stage`'s
+  own committed lockfile** — Metro can't resolve `@supabase/postgrest-js` from inside
+  `@supabase/supabase-js/dist/index.cjs`, even though the package is genuinely present in
+  `node_modules` with a normal `main`/`exports`. Not caused by anything landed today (never touched
+  `package.json` or Supabase code) and reproduces from a bare checkout + `npm ci`. Whoever last ran
+  `bundle:check` successfully probably had a `node_modules` that predated whatever `supabase-js`
+  version is now locked. Needs real Metro/dependency investigation, not a quick config flag.
+- **F9 does NOT need re-raising the way it was briefed to me.** `PersonaVerificationScreen`,
+  `VerificationPendingScreen`, `CameraPrimingScreen`, `VerifyIntroScreen`, and `TransportErrorScreen`
+  *already* all carry a working sign-out, and the `canceled` stage already has both `Resume` and
+  `Do this later` — landed in `1177c01` ("P2-6.0 — fix the VF-2 stranding trap"), which predates
+  today. What's still real and still unowned: the actual F9 **Profile & Settings** screen (7
+  sections per `USER_FLOWS.md`) — `ProfileScreen.tsx` only has Account + Sign out. `docs/FLOWS.md`
+  §4.1 and `USER_FLOWS.md`'s "Confirmed live, 2026-08-09" callout are themselves stale now and
+  should say so, but I didn't touch them today — flagging instead of quietly rewriting doc history
+  is the whole point of this journal existing.
+- Everything else from the original brief I was handed today, still open and not re-verified by me:
+  P2-1.0's ownership gap (`ROADMAP.md`), `scanner.ts`'s `DEVICE_STALE_AFTER_MS` filter only
+  re-evaluating on a fresh advertisement rather than a timer, the P2-8.0 doc/TODO mismatch in
+  `WORKSTREAM-app-walkthrough-and-design.md`, and the OQ-1/4/6/12 + Persona-confirmation chase list.
+
+**Gotcha worth stealing:**
+
+- `node_modules` on this machine was 3 days stale relative to the checked-out `package.json`/
+  `package-lock.json` — `react-native-linear-gradient` was declared but never installed, so any
+  test importing `GradientGround` failed with a bare "Cannot find module." `npm ci` fixed it
+  outright; would not have been obvious from the error alone that it was an install-freshness
+  problem rather than a real missing dependency.
+- `android/gradlew` is checked in as `100644` (not executable) — silently no-ops the whole build on
+  macOS/Linux instead of erroring loudly. `chmod +x` fixed it; pushed as its own chore commit since
+  it's cross-machine and worth landing regardless of anything else.
+- JDK 17 + the Android SDK both install without `sudo` via `brew install openjdk@17` (formula, not
+  cask — the cask needs an interactive `sudo` installer and fails headless) and
+  `brew install --cask android-commandlinetools`. `./gradlew assembleDebug` then succeeds end to
+  end — first confirmed Android compile on this project.
+
+---
+
 ## 2026-08-10 — new machine set up from nothing; P2-8.0 closed, reviewed twice, PR opened
 
 **Branch:** `feature/P2-8.0-server-side-inquiry-creation`, pushed.
