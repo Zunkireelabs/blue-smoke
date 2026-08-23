@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Card, EmptyState, Screen, Text, tokens } from '@/shared/ui';
-import { useBleManager, useBleScanner } from '@/features/ble/BleClientContext';
+import { BleClientProvider, useBleManager, useBleScanner } from '@/features/ble/BleClientContext';
 import { createDeviceScanner, type DiscoveredDevice, type ScanState } from '@/features/ble/scanner';
 
 import { H158_DEVICE_NAME_PREFIX } from './h158Protocol';
@@ -23,6 +23,20 @@ import { connectH158Session, type H158Session } from './h158Session';
  * where to file a captured trace.
  *
  * Registered behind `__DEV__` in navigation.tsx — see that file's route.
+ *
+ * 🔴 Wrapped in its own `<BleClientProvider>` (no `manager` prop) below, deliberately shadowing
+ * whatever the app-wide provider set. `providers.tsx` §3.3 overrides `BleClientProvider` with
+ * the §4 dev-mock fleet for every `__DEV__` build — correct for `PairDeviceScreen`'s dev testing,
+ * fatal for this screen, whose entire purpose is real hardware. Without this, `useBleManager()`/
+ * `useBleScanner()` here would silently resolve to the mock fleet (`BlueSmoke-0001/2/3`, never
+ * `YP65-AT-*`) and every scan would report "no devices found" regardless of what real hardware is
+ * actually advertising nearby — indistinguishable from an off/out-of-range/wrong-firmware chip
+ * without reading this comment. Found 2026-08-23 the hard way: this screen previously worked
+ * against real hardware because `feature/ble-connectivity`'s `providers.tsx` had no
+ * `BleClientProvider` at all; merging in `stage`'s dev-mock wiring introduced the regression
+ * silently. An unset `manager` prop falls through to `useBleManager()`'s lazily-constructed real
+ * `BleManager` (`BleClientContext.tsx`), same as a release build gets — see that file's own doc
+ * comment on why the real manager is constructed lazily rather than at import time.
  */
 
 interface LogEntry {
@@ -38,6 +52,14 @@ type ConnectionPhase =
   | { kind: 'failed'; detail: string };
 
 export function H158BringUpScreen() {
+  return (
+    <BleClientProvider>
+      <H158BringUpScreenContent />
+    </BleClientProvider>
+  );
+}
+
+function H158BringUpScreenContent() {
   const scannerLike = useBleScanner();
   const manager = useBleManager();
 
