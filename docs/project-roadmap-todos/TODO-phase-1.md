@@ -327,18 +327,42 @@ the app working** — account, profile and verification are all reachable withou
 > Manage multiple paired devices: list all bonded devices, rename them, unpair, and view live
 > connection status and battery level for each.
 
-- [ ] Device list UI showing all bonded devices
-- [ ] Live connection status per device
-- [ ] Battery level from `lockState` byte 2, with `0xFF`-unknown handled (spec §4.4)
-- [ ] Low-battery indicator driven by `flags` bit2, with hysteresis (15% set / 20% clear)
-- [ ] Lock state per device, with a **staleness indicator** (spec §9.3)
-- [ ] Rename device — local + synced to `device_ownership.nickname`
+- [x] Device list UI showing all bonded devices *(`DeviceListScreen.tsx`, `useDeviceStore.ts` —
+      "bonded" is provisional: P1-4.0 pairing is blocked on OQ-12 and P1-6.0 (backend sync, below)
+      has no client wiring yet, so there is no real bonded-device source to hydrate from today. The
+      list itself, and everything it renders, is real and tested against the mock — only the data
+      source is a dev-only seed (`DeviceListDevScreen.tsx`, `__DEV__`-gated) until P1-6.0 lands)*
+- [x] Live connection status per device *(`useDeviceConnection.ts`; two mock peripherals connect/
+      disconnect independently — see `DeviceListScreen.test.tsx`)*
+- [x] Battery level from `lockState` byte 2, with `0xFF`-unknown handled (spec §4.4)
+      *(`src/features/ble/lockState.ts` — new §4.4 read/notify module, 13 tests)*
+- [x] Low-battery indicator driven by `flags` bit2, with hysteresis (15% set / 20% clear)
+      *(the 15/20 hysteresis is computed device-side per §4.4 — confirmed against
+      `deviceCore.battery.test.ts` — so the app reads `flags` bit2 as-is rather than
+      re-implementing the threshold; see `lockState.ts`'s doc comment)*
+- [x] Lock state per device, with a **staleness indicator** (spec §9.3) *(`DeviceListScreen.tsx`'s
+      `LOCK_STATE_STALE_AFTER_MS` — an app-level UX threshold, §9.3 sets none)*
+- [x] Rename device — local + synced to `device_ownership.nickname` *(local half only: renames
+      the in-memory record, tested. The sync half doesn't exist — no client anywhere calls
+      Supabase for a device row yet, that's P1-6.0's job and it's untouched; `PairedDevice.
+      nicknamePendingSync` records the gap honestly rather than pretending to queue a retry)*
 - [ ] Unpair flow: `FACTORY_UNPAIR` command → drop OS bond → revoke session → clear `K_sess`
-- [ ] Unpair confirmation dialog with a clear explanation of consequences
-- [ ] Connect/disconnect per device from the list
-- [ ] Multi-device connection policy defined — how many concurrent connections, and what happens beyond it
-- [ ] Status polling designed for battery efficiency — notify-driven, not polled
-- [ ] Tested with ≥ 2 mock peripherals simultaneously
+      *(local half done and tested — cancels the OS-level connection, drops the local record. The
+      named steps are all `K_sess`-dependent and `K_sess` doesn't exist until OQ-12 clears, same
+      block as P1-4.0's remaining boxes — left unchecked rather than claiming the whole flow)*
+- [x] Unpair confirmation dialog with a clear explanation of consequences *(`Sheet`-based confirm,
+      tested: opening it doesn't remove the device, only confirming does)*
+- [x] Connect/disconnect per device from the list *(tested independently per device)*
+- [x] Multi-device connection policy defined — how many concurrent connections, and what happens
+      beyond it *(`MAX_CONCURRENT_CONNECTIONS = 3` in `useDeviceStore.ts` — not a spec value,
+      documented as a UX choice; beyond the limit `connect()` returns a `'connection-limit'`
+      result rather than queuing silently)*
+- [x] Status polling designed for battery efficiency — notify-driven, not polled *(one
+      `readLockState()` on connect, then `monitorLockState()`'s BLE notify for every change after
+      — no re-poll timer anywhere)*
+- [x] Tested with ≥ 2 mock peripherals simultaneously *(`createMockBleFleet` — both
+      `lockState.test.ts` and `DeviceListScreen.test.tsx` prove independent, non-cross-wired
+      status per device)*
 
 **Assumption:** device exposes battery via the `lockState` characteristic. ✅ *(spec §4.4 byte 2)*
 **Excludes:** sharing a device across multiple accounts.

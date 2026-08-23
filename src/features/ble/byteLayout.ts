@@ -33,3 +33,8 @@ export function readBytes(buffer: Uint8Array, offset: number, length: number): U
 export function readUint24LE(buffer: Uint8Array, offset: number): number {
   return buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16);
 }
+
+/** §4.4 — lockState's secondsSinceStateChange is uint16 LE. */
+export function readUint16LE(buffer: Uint8Array, offset: number): number {
+  return buffer[offset] | (buffer[offset + 1] << 8);
+}

@@ -25,6 +25,7 @@ import { DeviceScanScreen } from '@/features/devices/DeviceScanScreen';
 import { PairingBoundaryScreen } from '@/features/devices/PairingBoundaryScreen';
 import { H158GateScreen } from '@/features/devices/H158GateScreen';
 import { H158PairScreen } from '@/features/devices/H158PairScreen';
+import { DeviceListDevScreen } from '@/features/devices/DeviceListDevScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
@@ -98,6 +99,9 @@ export type RootStackParamList = {
   // Dev-only bring-up spike for the real H158/YP65-AT hardware — see
   // src/features/ble/h158/H158BringUpScreen.tsx. Not §4, not PairDevice.
   H158BringUp: undefined;
+  // P1-5.0 — dev-only device-list harness, seeded with 2 mock peripherals. Registered only
+  // when __DEV__; see DeviceListDevScreen's header doc for why this isn't wired to Home yet.
+  DeviceListDev: undefined;
 };
 
 /**
@@ -318,6 +322,11 @@ export function RootNavigator() {
                 name="H158BringUp"
                 component={H158BringUpScreen}
                 options={{ title: 'H158 bring-up' }}
+              />
+              <Stack.Screen
+                name="DeviceListDev"
+                component={DeviceListDevScreen}
+                options={{ title: 'Devices (dev)' }}
               />
             </Stack.Group>
           )}
