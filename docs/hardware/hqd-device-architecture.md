@@ -787,3 +787,89 @@ control:
    warning still applies.
 5. Only once step 4 passes, run `H158BringUpScreen` (dev-only, behind `__DEV__`) and compare its
    captured hex trace against theirs.
+
+---
+
+## 12. Day 24 (2026-08-23) — the transport is now a written contract, not a reverse-engineering result
+
+§11 derived the framing from the `itronlib` SDK because no protocol document had ever been supplied.
+One has now arrived. **Nothing in §11's conclusions changes** — which is itself the useful result.
+
+### 12.1 What arrived
+
+Inside `H158_ProjectFile-V1.3-202608211812.rar`, archived at
+[`manufacturer-supplied-2026-08-23/`](manufacturer-supplied-2026-08-23/):
+
+- **`H158—CMD Protocol-202608131414.docx`** — the protocol document, cited as the authority in three
+  separate manufacturer replies and never opened by us until now. Transcribed to
+  [`manufacturer-supplied-2026-08-23/H158-CMD-Protocol-202608131414.md`](manufacturer-supplied-2026-08-23/H158-CMD-Protocol-202608131414.md).
+- **`H158_Test_260814_01_.pkg`** — the firmware the manufacturer now directs us to use.
+- **The iOS SDK** (`h158lib`) — closes **OQ-14**, open since Day 11.
+- The correct MCU datasheet, and the v1.4/v1.5 module specs.
+
+### 12.2 The framing is confirmed, from three independent directions
+
+| Claim | Protocol doc | `BleProtocol.kt` (Android) | `BleProtocol.swift` (iOS) |
+|---|---|---|---|
+| `HEAD 0x02` … `TAIL 0x01` | §1 | ✓ | ✓ |
+| `LEN` = CMD + DATA (+ ACK on replies) | §1 | ✓ | ✓ |
+| Checksum = XOR from `head` through `data` | §1, in words | ✓ | ✓ |
+| Lock `0x78` / unlock `0x87` under CMD `0xA1` | §2.1 | ✓ | ✓ |
+| Terminal info = CMD `0xA2`, **no data byte** | §2.2 | ✓ | ✓ |
+| Status data = lock byte, system state, battery | §2.2 | ✓ | ✓ |
+
+The checksum span is the one §11 had to correct against the manufacturer's own written answer. §1 of
+the protocol document now states it explicitly — "从 head 字段 到 data 字段，所有的数据异或的结果" —
+so that correction is no longer an inference from a single SDK.
+
+### 12.3 The complete command set is three commands
+
+The document's table of contents contains only §2.1 (child lock) and §2.2 (terminal information).
+The Day-13 reply's item 11 deferred "a complete list of the commands the device supports" to this
+document; **this is that list.** There is no firmware-version query, no separate battery command
+(battery is byte B3 of terminal information), and — consistent with **OQ-16** — no authentication,
+pairing, or key command of any kind.
+
+This matters for scoping: it is now documented rather than merely observed that the device exposes
+**no command surface on which an authentication handshake could be added without new firmware.**
+
+### 12.4 ACK error codes, previously unknown
+
+The protocol document writes the ACK field as `00 / x0` and never enumerates the failures. The
+Day-13 reply, item 12, does:
+
+| ACK | Meaning |
+|---|---|
+| `0x00` | success |
+| `0x01` | data error |
+| `0x02` | data length error |
+| `0xF1` | unknown command |
+
+**With one asymmetry worth designing around:** a frame with a bad head, tail or checksum gets **no
+reply at all**, not an error ACK. A non-zero ACK therefore always means the frame was structurally
+valid and its *content* was rejected — a bug in what we sent, never line noise, and never something
+to retry unchanged. A silent timeout, conversely, is ambiguous between "malformed frame", "device
+asleep" and "out of range". Now handled distinctly in `h158Protocol.ts`.
+
+### 12.5 What is still not verified
+
+🔴 **Everything above is on paper.** `H158_Test_260814_01_.pkg` has not been flashed. The device we
+have last spoke the undocumented `0x81`/`0x82` framing, which the manufacturer explains as an *older*
+protocol version. Until the bench matrix in
+[`manufacturer-qa-consolidated.md`](manufacturer-qa-consolidated.md) Round 3 is run, the correct
+statement is "three sources agree on what the device *should* send", not "we know what it sends".
+
+Two items the manufacturer did not answer: what `81 00 03 00 00 00` actually meant, and whether
+production units ship needing a PW200 flash before they respond at all. The second is a client and
+factory question, not an engineering one.
+
+### 12.6 OQ-17 got worse, not better
+
+The manufacturer has now answered the device-name question **both ways** — Day 12 item 1 says the
+name carries an appended MAC "to distinguish between devices", Day 13 item 4 says "all devices share
+the same Bluetooth name". Their iOS SDK cannot arbitrate: it prefix-matches and then keys on
+CoreBluetooth's per-install identifier, which works under either answer.
+
+**Settle it on the bench by scanning two units** — the same treatment §11.2 agreed for the blue-wire
+discrepancy. Until then, assume no radio-visible per-unit identity exists, and do not design pairing
+around one.

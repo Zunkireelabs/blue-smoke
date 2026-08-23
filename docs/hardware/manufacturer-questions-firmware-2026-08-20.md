@@ -3,7 +3,25 @@
 **Prepared by the app development team, 2026-08-20.**
 
 > ✅ **SENT — 2026-08-20, by Anish, over Teams, directly to the manufacturer.** Same channel as
-> `manufacturer-questions-ble-connection-2026-08-12.md`. Awaiting reply.
+> `manufacturer-questions-ble-connection-2026-08-12.md`.
+>
+> ✅ **REPLIED — 2026-08-23.** Answers recorded at
+> [`manufacturer-supplied-2026-08-23/manufacturer-reply-2026-08-23.md`](manufacturer-supplied-2026-08-23/manufacturer-reply-2026-08-23.md);
+> summary row-by-row in [`manufacturer-qa-consolidated.md`](manufacturer-qa-consolidated.md) Round 3.
+>
+> **Short version:** the `0x81`/`0x82` framing was an **older** protocol, not a newer one — a version
+> skew between the firmware we flashed and their demo app. Use `H158_Test_260814_01_.pkg`, archived
+> at [`manufacturer-supplied-2026-08-23/`](manufacturer-supplied-2026-08-23/) together with the
+> protocol document, the iOS SDK, and the correct MCU datasheet — all of which were inside the
+> accompanying `.rar` rather than attached to the message.
+>
+> **Two of the questions below were not answered:** what `81 00 03 00 00 00` actually meant (Q3.1/3.2),
+> and whether production units ship needing a PW200 flash before they will respond (Q4 in the list
+> below / 1.3). The second is a client and factory question now, not an engineering one.
+>
+> ⚠️ **Nothing here is verified on hardware yet.** `H158_Test_260814_01_.pkg` has not been flashed as
+> of this writing. Treat every answer as the manufacturer's claim until the bench matrix in the
+> consolidated record's Round 3 section is run.
 
 This is a follow-up to your 2026-08-17 reply, specifically items 2, 6, 7, 12, and 18. We followed
 your PW200 firmware-upgrade instructions (received 2026-08-09 inside `BLE.zip`, `Programming Software

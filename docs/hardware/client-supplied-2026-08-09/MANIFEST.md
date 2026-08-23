@@ -32,10 +32,10 @@ either binaries we must not run or client IP with no readable content.
 | `API/HQD_BLE_Protocol_Commands_Android_EN.md` | ✅ | The protocol document. 3,772 B. |
 | `（PCB schematic）H040BLE-SCH-V1.02.pdf` | ✅ | The schematic. **The most informative file in the archive** — see the write-up. |
 | `Datasheet/（BT chip spec）3.YC1012_JD_Datasheet_V1.0(1).pdf` | ✅ | Bluetooth SoC datasheet — a **silicon** datasheet, not a protocol manual. |
-| `Datasheet/（MCU spec）PY32F030 datasheet Rev.1.4_EN.pdf` | ✅ | MCU datasheet — **but for the wrong part**, see write-up §5. |
-| `Programming Software Guide/…/H158_Test_260708_01.pkg` + `.rar` | ❌ | Encrypted firmware image, 20,399 B. 0 printable strings, all 256 byte values present. Nothing to read; it is the client's IP and belongs in their burner flow, not our git history. |
+| `Datasheet/（MCU spec）PY32F030 datasheet Rev.1.4_EN.pdf` | ✅ | MCU datasheet — **but for the wrong part**, see write-up §5. 🔴 **Superseded** — the manufacturer confirmed on 2026-08-12 (item 5) that this project uses the PY32C642F, not the PY32F030, and supplied the correct datasheet on 2026-08-23: [`../manufacturer-supplied-2026-08-23/PY32C642_Datasheet_V0.5.pdf`](../manufacturer-supplied-2026-08-23/PY32C642_Datasheet_V0.5.pdf). This file is kept because it is what was sent, not because it describes our part. |
+| `Programming Software Guide/…/H158_Test_260708_01.pkg` + `.rar` | ❌ → ✅ | Encrypted firmware image, 20,399 B. 0 printable strings, all 256 byte values present. Nothing to read; it is the client's IP and belongs in their burner flow, not our git history. ⚠️ **This call was reversed on 2026-08-20** — flashing these images is how the device was brought up at all, and the copy of record now lives at [`../manufacturer-supplied-2026-08-20/`](../manufacturer-supplied-2026-08-20/). |
 | PowerWriter installer (~81 MB) | ❌ 🔴 | **Do not run.** It is the firmware burner. Burning may consume a licence credit — see the safety section in [`client-supplied-hardware.md`](../client-supplied-hardware.md) *(currently on the unmerged `docs/hardware-record-client-supplied` branch)*. |
-| `PW200` PowerPoint guide | ❌ | Usage guide for the burner. Same reason. |
+| `PW200` PowerPoint guide | ❌ | Usage guide for the burner. Same reason. 🔴 **This exclusion cost eleven days.** This PowerPoint contained the procedure that made the device respond for the first time; it was not opened until 2026-08-20. Transcribed at [`../manufacturer-supplied-2026-08-20/pw200-instructions-transcript.md`](../manufacturer-supplied-2026-08-20/pw200-instructions-transcript.md). Excluding a binary from git is fine; **not reading it is not.** |
 
 ## 3. Integrity
 

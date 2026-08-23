@@ -1,10 +1,22 @@
 # Manufacturer Q&A — consolidated record
 
 Every question we've sent the manufacturer about the BLE device, and every answer we've received,
-in one place. Three separate rounds exist as their own dated files (linked below, with full text);
-this document is the index and summary so nobody has to reconstruct the timeline from scratch. Today's
-live bench session (2026-08-17, continuing) is recorded at the bottom — **not yet sent** to the
-manufacturer, tracked here so it isn't lost before it is.
+in one place. Three rounds have been sent and all three answered; each exists as its own dated file
+(linked at the bottom, with full text). This document is the index and summary so nobody has to
+reconstruct the timeline from scratch. Bench sessions are interleaved in date order.
+
+*(Last updated 2026-08-23, Round 3 answered.)*
+
+> **Read this first if you are picking the hardware up.** Two habits have repeatedly cost this
+> project days, and both are visible in the rounds below:
+>
+> 1. **Extract and read every archive in full.** `BLE.zip` sat unopened for eleven days holding the
+>    PW200 procedure that unblocked the device; the 2026-08-23 `.rar` held the firmware, the protocol
+>    document, the iOS SDK and the correct MCU datasheet while the covering message appeared to
+>    contain none of them.
+> 2. **When their prose and their shipped artifact disagree, the artifact is right.** This has now
+>    held three times — the checksum span, the lock-state byte mapping, and the 2026-08-21 frame
+>    tables. Their hand-written tables are drafts; their code and their specs are the contract.
 
 ---
 
@@ -88,6 +100,9 @@ Full technical breakdown, consequences, and what's promoted into code: [`hqd-dev
 | Checksum span | N/A | Written reply says payload-only (matches our own original wrong reading); SDK source proves header-inclusive | Resolved — **trust the SDK**, not the written confirmation |
 | Auto-lock / dead-man timer | "No auto-lock function in the firmware" | Reply item 16 (2026-08-17): unlocked state survives disconnect | Consistent across rounds — **confirmed absent**, not contradictory, just restated from a different angle |
 | iOS SDK (item 4) | "Once the Android SDK version is confirmed, we will provide the iOS SDK" | Not re-asked in Round 2 | 🔴 **Still open, still circular.** No commitment on timeline or on whether direct CoreBluetooth is an acceptable fallback. |
+| **Device name / OQ-17** | Round 1 item 1: name is `YP65-AT` "with the MAC address appended as a unique identifier **to distinguish between devices**" | Round 2 item 4: "all devices share the same Bluetooth name" | 🔴 **Directly contradictory, and unresolved as of 2026-08-23.** Decides whether two units can be told apart on iOS at all. Their iOS SDK settles nothing — it prefix-filters, then keys on CoreBluetooth's per-install identifier, which works either way. **Settle on the bench by scanning two units**, as with the blue wire. |
+| iOS SDK (item 4) — *resolved* | "Once the Android SDK version is confirmed, we will provide the iOS SDK" | Delivered 2026-08-23 as `h158lib` | ✅ **Closed.** Swift package + demo + 20 unit tests, at `manufacturer-supplied-2026-08-23/h158lib-ios-sdk/`. |
+| Chip identity — *resolved* | Round 1 item 5: the part is PY32C642F, not PY32F030 | Package markings read `PY32C642F15`; both `.pkg` files specify `PY32F002Bx5` | ✅ **Closed 2026-08-23:** "PY32F002B and PY32C642 are in fact the same chip — only the package marking differs." Correct datasheet now archived. |
 
 ---
 
@@ -221,12 +236,72 @@ text transcript of the previously-unopened PW200 instructions deck).
 
 ---
 
+## Round 3 — sent 2026-08-20 (Day 21), replied 2026-08-23 (Day 24)
+
+**Sent as:** [`manufacturer-questions-firmware-2026-08-20.md`](manufacturer-questions-firmware-2026-08-20.md).
+**Channel:** Teams, direct. **Reply:** [`manufacturer-supplied-2026-08-23/manufacturer-reply-2026-08-23.md`](manufacturer-supplied-2026-08-23/manufacturer-reply-2026-08-23.md).
+
+| # | Asked | Answered? |
+|---|---|---|
+| 1.1/1.2 | Which `.pkg` is current production firmware? Is there a newer one? | ⚠️ Partial — named a **third** image, `H158_Test_260814_01_.pkg`; did not say what ships on production units |
+| 1.3 | Should the as-shipped firmware reply at all, or does every unit need a PW200 upgrade first? | 🔴 **Not answered this round.** Round 2 item 6 implies a flash is required |
+| 2.1/2.2 | Is `0x81`/`0x82` a newer protocol? Send its document | ✅ Yes — it is the **older** side of a version skew, so no such document exists |
+| 2.3 | Which image implements the `02...01` framing? | ✅ `H158_Test_260814_01_.pkg` |
+| 2.4 | Is your demo app older than this firmware? | ✅ Yes — same version skew |
+| 3.1/3.2 | Is `81 00 03 00 00 00` a generic ack, and what does it mean? | 🔴 **Not answered.** Deflected to "update the firmware" |
+| 4.1 | Advertising: 10 minutes, or the seconds we measured? | ✅ 10 min after a button press, 3 min after a disconnect — **on 260814** |
+| 5.1 | `PY32C642F15` markings vs `PY32F002Bx5` in PowerWriter | ✅ Same chip, different package marking. **Closed** |
+
+### What actually arrived — the archive, not the message
+
+🔴 **The reply's load-bearing item was in the `.rar`, not attached to the message.** The instruction
+was "use `H158_Test_260814_01_.pkg` uniformly"; that file exists only inside
+`H158_ProjectFile-V1.3-202608211812.rar`, and on first inspection only the inner iOS zip had been
+extracted locally — which made the firmware look absent. Alongside it, and never previously held:
+
+- **`H158—CMD Protocol-202608131414.docx`** — the protocol document, cited as the authority in three
+  separate replies (Round 2 items 2 and 11, Round 3) and never opened by us until 2026-08-23.
+  Transcribed at [`manufacturer-supplied-2026-08-23/H158-CMD-Protocol-202608131414.md`](manufacturer-supplied-2026-08-23/H158-CMD-Protocol-202608131414.md).
+- **The iOS SDK** — closes Round 1 item 4, open since 2026-08-10.
+- **`PY32C642_Datasheet_V0.5.pdf`** — the correct MCU datasheet, open since Round 1 item 5.
+- The v1.4 and v1.5 module specs (repo previously held v1.3 only).
+
+**This is the second time in two weeks that unopened archive contents cost us time** — `BLE.zip` sat
+unopened for eleven days and contained the PW200 procedure that unblocked the device. Extract every
+manufacturer archive in full and diff its file list before concluding anything is missing.
+
+### What the protocol document settles
+
+- **Checksum**, in their own words: "从 head 字段 到 data 字段，所有的数据异或的结果" — XOR of every
+  byte from `head` through `data`. Confirms the SDK reading and the correction already recorded above.
+- **The complete command set is three commands**: lock, unlock, terminal information. Round 2 item 11
+  deferred "a complete list" to this document; its table of contents has only §2.1 and §2.2. There is
+  no firmware-version query and no separate battery command — battery is byte B3 of terminal info.
+- **Device info TX is `02 01 A2 A1 01`** (CMD `0xA2`, no data byte).
+
+⚠️ **Two errors in the Round 3 prose**, both caught against the document and their Swift source:
+its device-info TX table gives `02 02 A1 A1 01` (CMD `0xA1`), and its Unlock reply checksum gives
+`0x26`, copied from the request row — XOR gives `0x27`. **Third time the artifact has beaten the
+prose.** Treat their hand-written tables as drafts; the document and the shipped code are the contract.
+
+### Still blocking, still theirs
+
+The `0x81` mystery and "which firmware ships on production units" both went unanswered. The second is
+no longer an engineering question — if units ship needing a bench flash before they will talk to a
+phone, that belongs to the client and the factory, not to us.
+
+**Not yet verified on hardware:** every answer above is on paper. `H158_Test_260814_01_.pkg` has not
+been flashed as of this writing.
+
+---
+
 ## Reference — full source documents
 
 | Round | Sent | Reply received | Sent file | Reply file |
 |---|---|---|---|---|
 | 1 | 2026-08-10 | 2026-08-12 | [`manufacturer-requirements-2026-08-10.md`](manufacturer-requirements-2026-08-10.md) | [`manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md`](manufacturer-supplied-2026-08-12/manufacturer-response-2026-08-12.md) |
 | 2 | 2026-08-12 | 2026-08-17 | [`manufacturer-questions-ble-connection-2026-08-12.md`](manufacturer-questions-ble-connection-2026-08-12.md) | [`manufacturer-supplied-2026-08-17/manufacturer-reply-2026-08-17.md`](manufacturer-supplied-2026-08-17/manufacturer-reply-2026-08-17.md) |
+| 3 | 2026-08-20 | 2026-08-23 | [`manufacturer-questions-firmware-2026-08-20.md`](manufacturer-questions-firmware-2026-08-20.md) | [`manufacturer-supplied-2026-08-23/manufacturer-reply-2026-08-23.md`](manufacturer-supplied-2026-08-23/manufacturer-reply-2026-08-23.md) |
 
 Also relevant: [`client-questions-2026-08-09.md`](client-questions-2026-08-09.md) (superseded draft,
 kept for the item-9b salt reasoning that didn't survive into the sent version) and
