@@ -135,7 +135,7 @@ export function H158BringUpScreen() {
 
       {phase.kind === 'idle' && (
         <View style={styles.section}>
-          <ScanSection state={scanState} onSelect={connect} />
+          <ScanSection state={scanState} onSelect={connect} onRetry={() => scanner.start()} />
         </View>
       )}
 
@@ -184,9 +184,11 @@ export function H158BringUpScreen() {
 function ScanSection({
   state,
   onSelect,
+  onRetry,
 }: {
   state: ScanState;
   onSelect: (device: DiscoveredDevice) => void;
+  onRetry: () => void;
 }) {
   switch (state.status) {
     case 'idle':
@@ -194,13 +196,21 @@ function ScanSection({
     case 'blocked':
       return <Text tone="danger">Bluetooth blocked: {state.reason}</Text>;
     case 'failed':
-      return <Text tone="danger">Scan failed: {state.detail}</Text>;
+      return (
+        <View style={styles.deviceList}>
+          <Text tone="danger">Scan failed: {state.detail}</Text>
+          <Button label="Scan again" onPress={onRetry} />
+        </View>
+      );
     case 'noDevicesFound':
       return (
-        <EmptyState
-          title={`No "${H158_DEVICE_NAME_PREFIX}" devices found`}
-          body="Press the device's button once to start advertising — it drops back into sleep after 10 minutes idle."
-        />
+        <View style={styles.deviceList}>
+          <EmptyState
+            title={`No "${H158_DEVICE_NAME_PREFIX}" devices found`}
+            body="Press the device's button once to wake it, then scan again. On firmware 260814 a single press keeps it advertising for 10 minutes; on older images it goes quiet after a few seconds."
+          />
+          <Button label="Scan again" onPress={onRetry} />
+        </View>
       );
     case 'scanning':
     case 'stopped':
@@ -216,6 +226,13 @@ function ScanSection({
               <Button label="Connect" onPress={() => onSelect(device)} />
             </Card>
           ))}
+          {state.status === 'stopped' && (
+            // The 15s scan budget has expired and the radio is off, so this list is frozen —
+            // and because scanner.ts only re-evaluates DEVICE_STALE_AFTER_MS when a fresh
+            // advertisement arrives, a row here may be a device that has since gone to sleep.
+            // If Connect times out (~30s), re-scan before concluding anything about the device.
+            <Button label="Scan again" onPress={onRetry} />
+          )}
         </View>
       );
   }

@@ -38,6 +38,22 @@ export function HomeScreen() {
         <Text style={styles.primaryButtonText}>Pair device</Text>
       </Pressable>
 
+      {__DEV__ && (
+        // The only way to reach H158BringUpScreen on a real build. That route is registered
+        // behind `__DEV__` on this same stack (navigation.tsx), but nothing navigated to it,
+        // so bench sessions were reaching it by hand-editing navigation.tsx — an uncommitted
+        // auth bypass, re-created under time pressure. A button here needs no bypass at all:
+        // you are already signed in and past the age gate by the time this screen mounts.
+        // Stripped from release bundles with the rest of the `__DEV__` branches.
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => navigation.navigate('H158BringUp')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>H158 bring-up (dev)</Text>
+        </Pressable>
+      )}
+
       <Pressable
         style={styles.secondaryButton}
         onPress={() => {
