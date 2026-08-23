@@ -6,6 +6,29 @@ import { tokens } from './tokens';
 export interface GradientGroundProps {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Content rendered on the gradient wash itself, above the sheet — e.g. Home's title/identity
+   * block. Absolutely positioned over the gradient rather than a normal flow sibling, so it
+   * never affects the sheet's `marginTop` math below. Optional and additive: no existing
+   * consumer passes this, so all 16 unchanged.
+   */
+  header?: ReactNode;
+  /** Wash height in points. Defaults to the original 160 — every existing consumer keeps its
+   * current look. Home passes a taller value to fit its title/identity `header` above. */
+  washHeight?: number;
+  /**
+   * Throws a shadow up into the gradient from the sheet's curved top edge. Off by default (the
+   * other 15 consumers are unchanged) — the curve there has no colour contrast to read by once
+   * the gradient's faded this close to white, and this makes it visible without depending on
+   * contrast. See `tokens.elevation.sheetEdge`.
+   */
+  elevatedSheet?: boolean;
+  /**
+   * Gradient stops. Defaults to the original `[groundTop, groundBottom]` pair — every existing
+   * consumer keeps its current look. Home passes a more saturated pair so the band reads clearly
+   * behind its title.
+   */
+  colors?: [string, string];
 }
 
 const HEADER_WASH_HEIGHT = 160;
@@ -20,14 +43,31 @@ const HEADER_WASH_HEIGHT = 160;
  * accurate to how they're used — nothing renders text directly against the gradient; content
  * lives on the sheet it overlaps, per the visual language.
  */
-export function GradientGround({ children, style }: GradientGroundProps) {
+export function GradientGround({
+  children,
+  style,
+  header,
+  washHeight = HEADER_WASH_HEIGHT,
+  elevatedSheet = false,
+  colors = [tokens.color.groundTop, tokens.color.groundBottom],
+}: GradientGroundProps) {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[tokens.color.groundTop, tokens.color.groundBottom]}
-        style={styles.gradient}
+        colors={colors}
+        style={[styles.gradient, { height: washHeight }]}
       />
-      <View style={[styles.sheet, style]}>{children}</View>
+      {header && <View style={styles.header}>{header}</View>}
+      <View
+        style={[
+          styles.sheet,
+          { marginTop: washHeight - tokens.spacing.xxl },
+          elevatedSheet && tokens.elevation.sheetEdge,
+          style,
+        ]}
+      >
+        {children}
+      </View>
     </View>
   );
 }
@@ -42,11 +82,13 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: HEADER_WASH_HEIGHT,
+  },
+  header: {
+    paddingTop: tokens.spacing.xxl,
+    paddingHorizontal: tokens.spacing.xl,
   },
   sheet: {
     flex: 1,
-    marginTop: HEADER_WASH_HEIGHT - tokens.spacing.xxl,
     backgroundColor: tokens.color.surface,
     borderTopLeftRadius: tokens.radii.xl,
     borderTopRightRadius: tokens.radii.xl,

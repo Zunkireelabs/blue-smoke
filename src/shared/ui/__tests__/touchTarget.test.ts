@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import ReactTestRenderer, { act, type ReactTestRenderer as Renderer } from 'react-test-renderer';
+import { BackButton } from '../BackButton';
 import { Button } from '../Button';
 import { ListRow } from '../ListRow';
 import { TextField } from '../TextField';
@@ -51,6 +52,19 @@ describe('interactive primitives meet the minimum touch target', () => {
     const style = StyleSheet.flatten(host.props.style);
 
     expect(style.minHeight).toBeGreaterThanOrEqual(MIN_HIT_AREA);
+  });
+
+  it('BackButton resolves to at least the minimum hit area', () => {
+    let renderer!: Renderer;
+    act(() => {
+      renderer = ReactTestRenderer.create(React.createElement(BackButton, { onPress: () => {} }));
+    });
+
+    const host = findHostByProps(renderer, { accessibilityRole: 'button' });
+    const style = StyleSheet.flatten(host.props.style);
+
+    expect(style.minHeight).toBeGreaterThanOrEqual(MIN_HIT_AREA);
+    expect(style.minWidth).toBeGreaterThanOrEqual(MIN_HIT_AREA);
   });
 
   it('TextField input resolves to at least the minimum height', () => {

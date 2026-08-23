@@ -37,6 +37,13 @@ const ALL_COUNTRIES: CountryCode[] = getCountries();
 interface CountryPickerProps {
   value: CountryCode;
   onChange: (country: CountryCode) => void;
+  /**
+   * `'full'` (default, unchanged) — "United States (+1)" in a full-width bordered row, as the
+   * pre-restyle screen used it. `'compact'` — just "+1 ⌄" in a chip sized to sit beside the
+   * phone field, which is what the reference design puts there. Additive: `'full'` keeps every
+   * existing call site rendering exactly as before.
+   */
+  variant?: 'full' | 'compact';
 }
 
 /**
@@ -54,9 +61,10 @@ function RowSeparator() {
   return <View style={styles.separator} />;
 }
 
-export function CountryPicker({ value, onChange }: CountryPickerProps) {
+export function CountryPicker({ value, onChange, variant = 'full' }: CountryPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const compact = variant === 'compact';
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -74,12 +82,23 @@ export function CountryPicker({ value, onChange }: CountryPickerProps) {
   return (
     <>
       <Pressable
-        style={styles.trigger}
+        style={compact ? styles.triggerCompact : styles.trigger}
         onPress={() => setOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel="Country code"
+        // The visible label shrinks to "+1" in the compact chip; the accessible name must not,
+        // or a screen-reader user hears a bare number with no indication of what it selects.
+        accessibilityLabel={`Country code, ${countryLabel(value)}`}
       >
-        <Text variant="body">{countryLabel(value)}</Text>
+        <Text variant="body">{compact ? `+${getCountryCallingCode(value)}` : countryLabel(value)}</Text>
+        {/* A glyph, not an SVG icon: `contrastCompleteness`'s guard deliberately refuses to
+            treat `fill`/`stroke` as decorative outside BrandMark and illustrations/, so a drawn
+            caret here would need a new contrast classification for what is, visually, a piece of
+            text. Rendering it as text is also what the rest of the kit already does. */}
+        {compact && (
+          <Text variant="body" tone="secondary" accessibilityElementsHidden>
+            ▾
+          </Text>
+        )}
       </Pressable>
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
@@ -129,6 +148,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: tokens.color.border,
     borderRadius: tokens.radii.md,
+    paddingHorizontal: tokens.spacing.md,
+    justifyContent: 'center',
+  },
+  triggerCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+    minHeight: tokens.touchTarget.minHeight,
+    backgroundColor: tokens.color.surface,
+    borderRadius: tokens.radii.lg,
     paddingHorizontal: tokens.spacing.md,
     justifyContent: 'center',
   },

@@ -56,6 +56,14 @@ export interface MockDeviceOptions {
    * advertises none, which the app must still list.
    */
   manufacturerData?: Uint8Array;
+  /**
+   * Delay before this device's advertisement reaches `startDeviceScan`'s listener, milliseconds.
+   * Defaults to 0 — every existing caller's assumption before this option existed (`devFixture.ts`
+   * is the only one that sets it, to stagger its scan fixture so results trickle in the way real
+   * BLE advertisements do, rather than a "several devices" fixture dumping its whole list on
+   * screen in the same tick a real scan never would).
+   */
+  advertiseDelayMs?: number;
 }
 
 /**
@@ -76,6 +84,8 @@ export class MockDevice {
   rssi: number | null;
   /** §4.1 manufacturer data as base64, exactly as ble-plx delivers it. `null` if none. */
   readonly manufacturerData: string | null;
+  /** See `MockDeviceOptions.advertiseDelayMs` — read by `MockBleManager.startDeviceScan`. */
+  readonly advertiseDelayMs: number;
 
   private readonly core: DeviceCore;
   private rssiSeries: number[];
@@ -93,6 +103,7 @@ export class MockDevice {
     this.manufacturerData = options.manufacturerData
       ? Buffer.from(options.manufacturerData).toString('base64')
       : null;
+    this.advertiseDelayMs = options.advertiseDelayMs ?? 0;
   }
 
   async connect(): Promise<MockDevice> {
@@ -236,6 +247,9 @@ export class MockBleManager {
   private adapterState: string;
   private readonly adapterStateListeners = new Set<AdapterStateListener>();
   private activeScan: { serviceUUIDs: string[] | null; listener: ScanListener } | null = null;
+  /** Pending `advertiseDelayMs` arrivals from the in-flight scan — cleared on `stopDeviceScan()`
+   * so a cancelled scan can't still deliver a device after the caller stopped listening. */
+  private scanTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(devices: MockDevice[], radioState: BleRadioState = DEFAULT_RADIO_STATE) {
     this.devices = devices;
@@ -284,17 +298,33 @@ export class MockBleManager {
     if (this.adapterState !== 'PoweredOn') {
       throw new Error(`MockBleManager: cannot scan while adapter is ${this.adapterState}`);
     }
+    // Clears any previous scan's `activeScan`/pending timers first — must run BEFORE the new
+    // `activeScan` is assigned below, not after, or it would wipe out the scan this call is
+    // starting rather than the stale one it's meant to replace.
+    this.stopDeviceScan();
     this.activeScan = { serviceUUIDs, listener };
     if (!this.matchesFilter(serviceUUIDs)) {
       return;
     }
     for (const device of this.devices) {
-      listener(null, device);
+      // `advertiseDelayMs` defaults to 0, delivered synchronously here exactly like before that
+      // option existed — every existing caller (every test, `createMockPeripheral`) sees no
+      // behaviour change. Only a device built with a real delay (`devFixture.ts`'s dev fixture)
+      // arrives async.
+      if (device.advertiseDelayMs <= 0) {
+        listener(null, device);
+      } else {
+        this.scanTimers.push(setTimeout(() => listener(null, device), device.advertiseDelayMs));
+      }
     }
   }
 
   stopDeviceScan(): void {
     this.activeScan = null;
+    for (const timer of this.scanTimers) {
+      clearTimeout(timer);
+    }
+    this.scanTimers = [];
   }
 
   /**
@@ -364,6 +394,8 @@ export interface CreateMockPeripheralOptions extends DeviceCoreConfig {
   additionalAdvertisers?: MockDeviceOptions[];
   /** Defaults to `'PoweredOn'` — every existing caller's assumption before this option existed. */
   radioState?: BleRadioState;
+  /** See `MockDeviceOptions.advertiseDelayMs`. Defaults to 0 (synchronous), same as that option. */
+  advertiseDelayMs?: number;
 }
 
 function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: MockDevice; core: DeviceCore } {
@@ -374,6 +406,7 @@ function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: Moc
     rssiSeries: options.rssiSeries,
     advertisedRssi: options.advertisedRssi,
     manufacturerData: options.manufacturerData,
+    advertiseDelayMs: options.advertiseDelayMs,
   });
   return { device, core };
 }

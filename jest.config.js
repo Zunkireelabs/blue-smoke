@@ -17,6 +17,9 @@ module.exports = {
         '<rootDir>/tools/',
         '<rootDir>/supabase/',
       ],
+      // Fails the test that produced it on any unexpected console.error — see
+      // docs/execution-briefs/UI-BUILD-E-console-error-guard.md.
+      setupFilesAfterEnv: [require.resolve('./tools/jest/failOnConsoleError.js')],
     },
     '<rootDir>/tools/mock-peripheral/jest.config.js',
     '<rootDir>/supabase/functions/jest.config.js',

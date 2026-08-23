@@ -305,8 +305,12 @@ silently under the task.)*
 > Produce the design system (colour, type, components) and wireframes for key screens:
 > onboarding, device pairing, age verification flow, and lock/unlock control.
 
-- [ ] Brand assets received or agreed *(OQ-7 — the token palette is a **placeholder** until these
-      arrive; every colour is swappable in one file by design)*
+- [x] Brand assets received or agreed *(OQ-7 resolved 2026-08-11 — client kept the existing blue
+      palette, we create the logo. `BrandMark` + both splash frames land in `feature/P0-7.0-brand-
+      mark-and-splash`, execution brief `docs/execution-briefs/P0-7.0-brand-mark-and-splash.md`.
+      Mark reissued as geometry v2 — a blue flame, not the withdrawn hexagon-and-bars — after the
+      first pass was found to be a recoloured existing logo. `tokens.ts`'s "placeholder"/
+      "provisional" header comment is corrected in the same PR, not left stale.)*
 - [x] Colour, typography, spacing scales defined *(`src/shared/ui/tokens.ts`, token-first — a guard
       test fails the build on any literal colour outside that file)*
 - [x] Core component library: buttons, inputs, cards, sheets, states *(`Button`, `TextField`,

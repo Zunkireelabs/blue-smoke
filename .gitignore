@@ -161,7 +161,10 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # ══ Scratch / working files ══
-temp_ss/
+# temp_ss/ is deliberately NOT ignored (Sadin, 2026-08-12): it holds the reference auth designs
+# and the splash-to-home screen roster the UI work is built from, and that had to travel to a
+# second machine. Still working material, not a deliverable — and no credentials in it, the
+# roster's dev passwords were redacted when it was committed.
 temp-ss/
 temp/
 tmp/

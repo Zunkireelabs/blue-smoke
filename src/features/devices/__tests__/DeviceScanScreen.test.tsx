@@ -11,6 +11,7 @@ import { BleClientProvider, type BleDeviceLike, type BleManagerLike } from '@/fe
 import { SCAN_TIMEOUT_MS } from '../useDeviceScan';
 import { DeviceScanScreen } from '../DeviceScanScreen';
 import { findByLabel, renderedText } from '@/features/auth/testUtils';
+import { flushSettled } from '@/shared/testing/renderWithEffects';
 
 const Stack = createNativeStackNavigator();
 
@@ -57,7 +58,11 @@ function fakeManager(devices: BleDeviceLike[]): BleManagerLike & { stopCalls: nu
   };
 }
 
-function renderScreen(manager: BleManagerLike) {
+// `RadarSearch` mounts a `BrandMark` while scanning, which probes `AccessibilityInfo.
+// isReduceMotionEnabled()` on mount — same two-microtask flush `OnboardingCarouselScreen.test.tsx`
+// needs for its own `BrandMark` illustrations, or the state update it triggers lands outside any
+// `act` scope and fails the suite's `console.error` guard.
+async function renderScreen(manager: BleManagerLike) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
@@ -78,11 +83,33 @@ function renderScreen(manager: BleManagerLike) {
     );
   });
   // Navigate to DeviceScan for real, so Home is genuinely behind it in the stack — required
-  // for the Cancel/goBack assertions below to mean anything.
-  act(() => {
+  // for the Cancel/goBack assertions below to mean anything. This is also where `RadarSearch`
+  // first mounts, hence the flush.
+  await act(async () => {
     findByLabel(renderer, 'Go').props.onPress();
+    await flushSettled();
   });
   return renderer;
+}
+
+// `RadarSearch` unmounts and remounts a fresh `BrandMark` across a "Scan again" press (scanning
+// stops, then starts again), so this press needs the same flush `renderScreen`'s navigation does.
+async function pressScanAgain(renderer: ReactTestRenderer.ReactTestRenderer) {
+  await act(async () => {
+    findByLabel(renderer, 'Scan again').props.onPress();
+    await flushSettled();
+  });
+}
+
+// When the timeout fires WITH results already found, `RadarSearch` swaps for `StaticDeviceIcon`
+// — a different component, so a fresh `BrandMark` mounts and needs the same flush. (The
+// zero-results timeout doesn't: that early-returns to `noDevicesFound`, which never renders
+// either ring component.)
+async function advanceScanTimeout() {
+  await act(async () => {
+    jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
+    await flushSettled();
+  });
 }
 
 describe('DeviceScanScreen', () => {
@@ -95,14 +122,14 @@ describe('DeviceScanScreen', () => {
     jest.useRealTimers();
   });
 
-  it('DV-3: shows physical instructions while scanning', () => {
-    const renderer = renderScreen(fakeManager([]));
-    expect(renderedText(renderer)).toContain('Looking for your device…');
-    expect(renderedText(renderer)).toContain('Hold your BlueSmoke close');
+  it('DV-3: shows physical instructions while scanning', async () => {
+    const renderer = await renderScreen(fakeManager([]));
+    expect(renderedText(renderer)).toContain('Finding your device');
+    expect(renderedText(renderer)).toContain('Keep your BlueSmoke nearby');
   });
 
-  it('DV-4: found devices are listed with signal strength, and an unknown rssi says so honestly', () => {
-    const renderer = renderScreen(
+  it('DV-4: found devices are listed with signal strength, and an unknown rssi says so honestly', async () => {
+    const renderer = await renderScreen(
       fakeManager([fakeDevice('a', -62), fakeDevice('b', null)]),
     );
     const text = renderedText(renderer);
@@ -112,8 +139,8 @@ describe('DeviceScanScreen', () => {
     expect(text).toContain('Signal unknown');
   });
 
-  it('DV-5: after the timeout with zero results, shows the coaching state, not a diagnostic', () => {
-    const renderer = renderScreen(fakeManager([]));
+  it('DV-5: after the timeout with zero results, shows the coaching state, not a diagnostic', async () => {
+    const renderer = await renderScreen(fakeManager([]));
 
     act(() => {
       jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
@@ -125,68 +152,60 @@ describe('DeviceScanScreen', () => {
     expect(text).not.toMatch(/error|code \d/i);
   });
 
-  it('DV-5: Scan again re-arms scanning, not stuck on the empty state', () => {
-    const renderer = renderScreen(fakeManager([]));
+  it('DV-5: Scan again re-arms scanning, not stuck on the empty state', async () => {
+    const renderer = await renderScreen(fakeManager([]));
     act(() => {
       jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
     });
     expect(renderedText(renderer)).toContain("We couldn't find it");
 
-    act(() => {
-      findByLabel(renderer, 'Scan again').props.onPress();
-    });
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+    await pressScanAgain(renderer);
+    expect(renderedText(renderer)).toContain('Finding your device');
   });
 
-  it('DV-4: once the scan ends with results, it stops claiming to still be looking', () => {
-    // Regression: the spinner and "Looking for your device…" used to persist forever whenever
+  it('DV-4: once the scan ends with results, it stops claiming to still be looking', async () => {
+    // Regression: the spinner and "Finding your device" used to persist forever whenever
     // anything had been found, over a radio the timeout had already switched off.
-    const renderer = renderScreen(fakeManager([fakeDevice('a', -62)]));
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+    const renderer = await renderScreen(fakeManager([fakeDevice('a', -62)]));
+    expect(renderedText(renderer)).toContain('Finding your device');
 
-    act(() => {
-      jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
-    });
+    await advanceScanTimeout();
 
     const text = renderedText(renderer);
-    expect(text).not.toContain('Looking for your device…');
+    expect(text).not.toContain('Finding your device');
     expect(text).toContain('Finished looking');
     // The results it did find are still there — this must not become DV-5.
     expect(text).toContain('BlueSmoke-a');
     expect(text).not.toContain("We couldn't find it");
   });
 
-  it('DV-4: Scan again is offered after a finished scan, and pressing it really re-scans', () => {
-    const renderer = renderScreen(fakeManager([fakeDevice('a', -62)]));
-    act(() => {
-      jest.advanceTimersByTime(SCAN_TIMEOUT_MS);
-    });
+  it('DV-4: Scan again is offered after a finished scan, and pressing it really re-scans', async () => {
+    const renderer = await renderScreen(fakeManager([fakeDevice('a', -62)]));
+    await advanceScanTimeout();
     expect(renderedText(renderer)).toContain('Finished looking');
 
-    act(() => {
-      findByLabel(renderer, 'Scan again').props.onPress();
-    });
+    await pressScanAgain(renderer);
 
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+    expect(renderedText(renderer)).toContain('Finding your device');
   });
 
-  it('Scan again is NOT offered mid-scan — it would discard results still arriving', () => {
-    const renderer = renderScreen(fakeManager([fakeDevice('a', -62)]));
-    expect(renderedText(renderer)).toContain('Looking for your device…');
+  it('Scan again is NOT offered mid-scan — it would discard results still arriving', async () => {
+    const renderer = await renderScreen(fakeManager([fakeDevice('a', -62)]));
+    expect(renderedText(renderer)).toContain('Finding your device');
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'Scan again' })).toHaveLength(0);
   });
 
-  it('Cancel actually leaves the screen — not a button that renders and goes nowhere', () => {
-    const renderer = renderScreen(fakeManager([]));
+  it('Cancel actually leaves the screen — not a button that renders and goes nowhere', async () => {
+    const renderer = await renderScreen(fakeManager([]));
     act(() => {
       findByLabel(renderer, 'Cancel').props.onPress();
     });
     expect(renderedText(renderer)).toContain('ARRIVED HOME');
   });
 
-  it('stops the scan on unmount (navigating away via Cancel)', () => {
+  it('stops the scan on unmount (navigating away via Cancel)', async () => {
     const manager = fakeManager([]);
-    const renderer = renderScreen(manager);
+    const renderer = await renderScreen(manager);
     act(() => {
       findByLabel(renderer, 'Cancel').props.onPress();
     });

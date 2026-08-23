@@ -1,0 +1,430 @@
+<title>BlueSmoke — visual pass plan</title>
+<style>
+  :root {
+    --brand:      #1657D0;
+    --brand-dark: #0E3E9A;
+    --brand-tint: #E8F0FE;
+    --glow:       #22C1F2;
+
+    --page:        #FBFCFE;
+    --surface:     #FFFFFF;
+    --surface-2:   #F4F7FC;
+    --ink:         #0B1A33;
+    --ink-muted:   #55688A;
+    --ink-faint:   #8496B3;
+    --rule:        #DEE7F3;
+    --rule-strong: #C3D2E8;
+    --warn:        #8A5A00;
+    --warn-bg:     #FFF4DB;
+    --good:        #18774D;
+    --good-bg:     #E3F3EB;
+
+    --sans: ui-sans-serif, -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+    --fs-label: 0.6875rem;
+    --fs-sm:    0.8125rem;
+    --fs-base:  0.9375rem;
+    --fs-lg:    1.125rem;
+    --fs-xl:    1.5rem;
+    --fs-2xl:   2.25rem;
+
+    --sp: 8px;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #080F1B; --surface: #0E1829; --surface-2: #14213A;
+      --ink: #E9EFFA; --ink-muted: #9DAFCC; --ink-faint: #6B7F9F;
+      --rule: #1E2E4A; --rule-strong: #2C4066; --brand-tint: #16294D;
+      --warn: #F5C86B; --warn-bg: #33280E; --good: #6FD3A2; --good-bg: #10301F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #080F1B; --surface: #0E1829; --surface-2: #14213A;
+    --ink: #E9EFFA; --ink-muted: #9DAFCC; --ink-faint: #6B7F9F;
+    --rule: #1E2E4A; --rule-strong: #2C4066; --brand-tint: #16294D;
+    --warn: #F5C86B; --warn-bg: #33280E; --good: #6FD3A2; --good-bg: #10301F;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: var(--sans); font-size: var(--fs-base); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1080px; margin: 0 auto;
+    padding: calc(var(--sp) * 7) calc(var(--sp) * 3) calc(var(--sp) * 12);
+    display: flex; flex-direction: column; gap: calc(var(--sp) * 8);
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: var(--fs-label);
+    letter-spacing: .14em; text-transform: uppercase; color: var(--brand); margin: 0;
+  }
+  h1 { font-size: var(--fs-2xl); line-height: 1.1; letter-spacing: -.028em; font-weight: 700; margin: calc(var(--sp)*1.5) 0 0; text-wrap: balance; }
+  h2 { font-size: var(--fs-xl); line-height: 1.15; letter-spacing: -.02em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: var(--fs-lg); letter-spacing: -.012em; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 70ch; }
+  .lede { font-size: var(--fs-lg); color: var(--ink-muted); line-height: 1.5; }
+  .muted { color: var(--ink-muted); }
+  .faint { color: var(--ink-faint); }
+  .sm { font-size: var(--fs-sm); }
+  code, .mono { font-family: var(--mono); font-size: .9em; }
+  code { background: var(--surface-2); padding: .1em .4em; border-radius: 5px; border: 1px solid var(--rule); }
+  section { display: flex; flex-direction: column; gap: calc(var(--sp) * 3); }
+  .sec-head { display: flex; flex-direction: column; gap: calc(var(--sp)*1); }
+  .rule { height: 1px; background: var(--rule); border: 0; margin: 0; }
+  ul { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+  li::marker { color: var(--ink-faint); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: calc(var(--sp)*3);
+    display: flex; flex-direction: column; gap: calc(var(--sp)*2);
+  }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: calc(var(--sp)*3); align-items: start; }
+
+  .callout {
+    border-left: 3px solid var(--brand); background: var(--brand-tint);
+    padding: calc(var(--sp)*2) calc(var(--sp)*3); border-radius: 0 10px 10px 0;
+    display: flex; flex-direction: column; gap: calc(var(--sp)*1);
+  }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  .callout .t { font-weight: 650; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: var(--mono); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .1em;
+       color: var(--ink-faint); font-weight: 500; background: var(--surface-2); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .took { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: calc(var(--sp)*3); }
+  .took .yes { border-top: 3px solid var(--good); }
+  .took .no  { border-top: 3px solid var(--warn); }
+  .tag { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: .08em; text-transform: uppercase; }
+  .tag.y { color: var(--good); }
+  .tag.n { color: var(--warn); }
+
+  /* ── Mock phones ─────────────────────────────────────────────────────── */
+  .mocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: calc(var(--sp)*3); }
+  .mock {
+    width: 100%; max-width: 190px; aspect-ratio: 9/19.5; border-radius: 26px;
+    border: 1px solid var(--rule-strong); overflow: hidden; margin: 0 auto;
+    display: flex; flex-direction: column; padding: 26px 16px 16px;
+    box-shadow: 0 10px 24px -14px rgba(11,26,51,.35);
+  }
+  .mock.onblue  { background: #1657D0; }
+  .mock.ontint  { background: #E8F0FE; }
+  .mock .logo { display: grid; place-items: center; margin-top: 14%; }
+  .mock .logo svg { width: 46px; height: auto; }
+  .mock .word { text-align: center; font-weight: 700; letter-spacing: -.02em; font-size: .82rem; margin-top: 8px; }
+  .mock .spacer { flex: 1; }
+  .mock .ctx { text-align: center; font-size: .5rem; margin-bottom: 7px; }
+  .mock .pill { height: 26px; border-radius: 999px; display: grid; place-items: center; font-size: .55rem; font-weight: 650; }
+  .mock .link { text-align: center; font-size: .55rem; margin-top: 9px; font-weight: 600; }
+  .mock .fine { text-align: center; font-size: .42rem; margin-top: auto; padding-top: 12px; line-height: 1.4; }
+  .onblue .word, .onblue .ctx, .onblue .link { color: #fff; }
+  .onblue .fine { color: rgba(255,255,255,.72); }
+  .onblue .pill { background: #fff; color: #1657D0; }
+  .ontint .word, .ontint .ctx, .ontint .link { color: #0B1A33; }
+  .ontint .fine { color: #55688A; }
+  .ontint .pill { background: #1657D0; color: #fff; }
+  .mockcap { font-family: var(--mono); font-size: var(--fs-label); color: var(--ink-faint); text-align: center; margin-top: 10px; }
+
+  pre.tree {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: calc(var(--sp)*3); overflow-x: auto; font-family: var(--mono);
+    font-size: var(--fs-sm); line-height: 1.7; margin: 0; color: var(--ink);
+  }
+  .mermaid { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: calc(var(--sp)*3); overflow-x: auto; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">BlueSmoke · Day 12 · visual pass</p>
+    <h1>What I understood, and the order I'd do it in.</h1>
+    <p class="lede">Everything from the splash to Home gets a visual pass on one branch, and only
+      then does a single PR go to <code>stage</code>.</p>
+  </header>
+
+  <hr class="rule">
+
+  <!-- ── Understanding ──────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head"><h2>What I understood</h2></div>
+
+    <div class="card">
+      <ul>
+        <li><strong>Nothing merges to <code>stage</code> until the whole journey is done.</strong>
+          Work keeps accumulating on the branch; one PR at the end.</li>
+        <li><strong>The Bumble screenshot is a layout reference only.</strong> Its colours are
+          explicitly out of scope — we use the locked palette.</li>
+        <li><strong>You want to see the plan before I write briefs</strong>, so you can redirect it
+          before effort is spent.</li>
+      </ul>
+    </div>
+
+    <div class="took">
+      <div class="card yes">
+        <span class="tag y">Taken from the reference</span>
+        <ul class="sm">
+          <li><strong>Full-bleed coloured ground</strong> — not white, not a subtle gradient</li>
+          <li><strong>Mark + wordmark stacked and centred</strong> in the upper third</li>
+          <li><strong>Actions anchored to the bottom</strong>, not floated in the middle</li>
+          <li><strong>A large empty middle.</strong> The space is the design</li>
+          <li><strong>Full-width pill buttons</strong>, one primary, one secondary as a plain text link</li>
+          <li><strong>Fine print pinned to the very bottom</strong>, links underlined</li>
+          <li><strong>Back as a floating rounded square</strong>, not a nav-bar chevron</li>
+        </ul>
+      </div>
+      <div class="card no">
+        <span class="tag n">Not taken</span>
+        <ul class="sm">
+          <li><strong>The yellow.</strong> Palette is locked — <code>#1657D0</code>,
+            <code>#0E3E9A</code>, <code>#E8F0FE</code>, <code>#22C1F2</code></li>
+          <li><strong>The black-on-light contrast model.</strong> Bumble's ground is <em>light</em>
+            so its text is dark. Ours is dark, which inverts the whole relationship — see below</li>
+          <li><strong>The wordmark.</strong> We don't have one drawn. Card 1 can carry the flame
+            alone, or "BlueSmoke" set in the UI face</li>
+          <li><strong>Its icon-in-button treatment.</strong> We have no icon set yet</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ── The gating decision ────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>The one decision that gates everything else</h2>
+      <p class="muted">Bumble's ground is a <em>light</em> yellow, so it takes dark text. Our brand
+        blue is dark. Copying the layout therefore forces a choice about which surface the whole
+        app sits on — and it has to be made before any screen is restyled, or they get restyled
+        twice.</p>
+    </div>
+
+    <div class="mocks">
+      <div>
+        <div class="mock onblue">
+          <div class="logo" id="m1"></div>
+          <div class="word">BlueSmoke</div>
+          <div class="spacer"></div>
+          <div class="ctx">Sign in to get started</div>
+          <div class="pill">Continue with email</div>
+          <div class="link">Continue with phone</div>
+          <div class="fine">By continuing you agree to our Terms and Privacy Policy.</div>
+        </div>
+        <p class="mockcap">A · brand ground, white content</p>
+      </div>
+      <div>
+        <div class="mock ontint">
+          <div class="logo" id="m2"></div>
+          <div class="word">BlueSmoke</div>
+          <div class="spacer"></div>
+          <div class="ctx">Sign in to get started</div>
+          <div class="pill">Continue with email</div>
+          <div class="link">Continue with phone</div>
+          <div class="fine">By continuing you agree to our Terms and Privacy Policy.</div>
+        </div>
+        <p class="mockcap">B · tint ground, blue accents</p>
+      </div>
+      <div class="card" style="max-width:none">
+        <h3>My read</h3>
+        <p class="sm"><strong>A</strong> is the confident one and matches the reference's boldness —
+          the brand owns the screen. It costs more: the flame's gradient top
+          (<code>#22C1F2</code>) sits on blue and loses contrast, so the mark inverts to white on
+          these screens, and every existing component needs an on-brand variant.</p>
+        <p class="sm"><strong>B</strong> is far cheaper. <code>#E8F0FE</code> is already a token,
+          existing dark-on-light components work unchanged, and the flame renders in its full
+          gradient. It reads calmer and less distinctive.</p>
+        <p class="sm mono faint">I'd take A for ON + AU, B nowhere — but it's your call and it
+          changes the size of this job.</p>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <p class="t">Whichever you pick, it replaces <code>GradientGround</code> on those screens.</p>
+      <p>That component is in <code>src/shared/ui/**</code> — shared, additive-only by convention.
+        I would <em>add</em> a new ground rather than change it, so nothing already built breaks.</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ── Plan ───────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>The plan</h2>
+      <p class="muted">Batch A exists because of a single hard lesson: restyling 20 screens before
+        the primitives are agreed means restyling them twice.</p>
+    </div>
+
+    <pre class="mermaid">
+flowchart TD
+    A["<b>Batch A — Foundation</b><br/>ground · pill button · dots<br/>floating back · bottom layout<br/><i>src/shared/ui only</i>"]
+    B["<b>Batch B — App icons</b><br/>Step 0b + 0c<br/>iOS AppIcon · Android mipmaps"]
+    C["<b>Batch C — Onboarding</b><br/>ON-1 · ON-2 · ON-3"]
+    D["<b>Batch D — Auth</b><br/>AU-1 · 5 · 6 · 7 · 12 · 13 · 14"]
+    E["<b>Batch E — Verification</b><br/>VF-1 · ON-5 · VF-2/3/5/6/12 · VF-7"]
+    F["<b>Batch F — Home</b><br/>Home + header"]
+    G(["<b>ONE PR → stage</b>"])
+
+    A --> C --> D --> E --> F --> G
+    A -.-> B -.-> G
+
+    style A fill:#E8F0FE,stroke:#1657D0,stroke-width:2px,color:#0B1A33
+    style G fill:#1657D0,stroke:#0E3E9A,stroke-width:2px,color:#FFFFFF
+    style B fill:#F4F7FC,stroke:#C3D2E8,color:#0B1A33
+    style C fill:#FFFFFF,stroke:#C3D2E8,color:#0B1A33
+    style D fill:#FFFFFF,stroke:#C3D2E8,color:#0B1A33
+    style E fill:#FFFFFF,stroke:#C3D2E8,color:#0B1A33
+    style F fill:#FFFFFF,stroke:#C3D2E8,color:#0B1A33
+    </pre>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Batch</th><th>Surfaces</th><th>What it is</th><th>Needs from you</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="num"><strong>A</strong></td>
+            <td class="num">—</td>
+            <td class="sm">The ground, a pill Button variant, a dot page indicator, a floating back
+              button, and a bottom-anchored screen layout. All additive in <code>src/shared/ui</code>.
+              <strong>Nothing visible changes yet.</strong></td>
+            <td class="sm">The A/B ground decision</td>
+          </tr>
+          <tr>
+            <td class="num"><strong>B</strong></td>
+            <td class="num">2</td>
+            <td class="sm">Step 0b/0c — iOS <code>AppIcon.appiconset</code>, Android mipmaps +
+              adaptive icons, on the inverted lockup. The Pillow script already does the geometry.
+              Independent of everything else.</td>
+            <td class="sm">Nothing — or "skip, client logo is coming"</td>
+          </tr>
+          <tr>
+            <td class="num"><strong>C</strong></td>
+            <td class="num">3</td>
+            <td class="sm">ON-1/2/3. Imagery per card, dot indicator replacing the literal
+              "1 of 3", swipe-to-advance.</td>
+            <td class="sm">🔴 Imagery direction — see below</td>
+          </tr>
+          <tr>
+            <td class="num"><strong>D</strong></td>
+            <td class="num">7</td>
+            <td class="sm">AU-1 gets the reference layout most directly. The five form screens get
+              the pill/bottom-anchor treatment; AU-6 is a sheet.</td>
+            <td class="sm">Nothing further</td>
+          </tr>
+          <tr>
+            <td class="num"><strong>E</strong></td>
+            <td class="num">6</td>
+            <td class="sm">The verification surround. Persona's own capture UI is vendor-owned and
+              untouchable.</td>
+            <td class="sm">Nothing further</td>
+          </tr>
+          <tr>
+            <td class="num"><strong>F</strong></td>
+            <td class="num">1</td>
+            <td class="sm">Home and its header. Smallest batch — it's one screen with a device
+              list that is mostly empty state today.</td>
+            <td class="sm">Nothing further</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ── Branching ──────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head"><h2>Branching, given nothing merges until the end</h2></div>
+    <pre class="tree">stage ────────────────────────────────────────────────────────►  (untouched)
+   │
+   └─ feature/P0-7.0-brand-mark-and-splash   ← already pushed, 5 commits
+        ├─ batch A commits    (shared/ui primitives)
+        ├─ batch B commits    (app icons)
+        ├─ batch C commits    (onboarding)
+        ├─ batch D commits    (auth)
+        ├─ batch E commits    (verification)
+        └─ batch F commits    (home)
+                                    │
+                                    └──►  ONE PR  ──►  stage</pre>
+
+    <div class="callout warn">
+      <p class="t">Two things I'd flag about this shape, then do it your way.</p>
+      <p><strong>It's against the house rule.</strong> CLAUDE.md says one task, one PR, and warns
+        that "a 2000-line PR nobody has seen in progress is unreviewable". This will be a large
+        diff. That's an accepted trade for not half-restyling the app on <code>stage</code>.</p>
+      <p><strong>The branch name will understate it.</strong> It says
+        <code>brand-mark-and-splash</code>; it will contain the whole visual pass. P0-7.0 is
+        genuinely the right task — its four open wireframe boxes are exactly onboarding, pairing,
+        verification and lock — so I'd keep the branch and say so in the PR body rather than
+        churn a pushed branch.</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ── Asks ───────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head"><h2>What I need before Batch A</h2></div>
+    <div class="pair">
+      <div class="card">
+        <h3>1 · Ground: A or B</h3>
+        <p class="sm">Brand-blue ground with white content, or tint ground with blue accents. This
+          decides how much work every later batch is, so it can't be deferred.</p>
+      </div>
+      <div class="card">
+        <h3>2 · Onboarding imagery</h3>
+        <p class="sm">The carousel is three text-only cards today. Illustration? Photography? The
+          flame alone at three scales? Or ship it typographic and skip imagery entirely — which is
+          fastest and, with a full-bleed ground, defensible.</p>
+      </div>
+      <div class="card">
+        <h3>3 · Batch B: now or later</h3>
+        <p class="sm">App icons are ~1 hour on top of the existing Pillow script. Worth it if
+          anything goes to TestFlight; skippable if the client's logo lands first.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p class="t">One boundary I'll write into every brief.</p>
+      <p>The onboarding copy is load-bearing and must not be reworded by a visual pass. Card 2
+        deliberately never implies <em>the app</em> does the locking — the firmware dead-man timer
+        does, and that is an inviolable rule. Card 3 deliberately says the partner answers "yes or
+        no" rather than claiming an age was verified as 18+, because nothing in our code can
+        confirm the vendor template actually checks age. Both readings are load-bearing, both are
+        easy to "improve" into something false.</p>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  var OUTER = 'M52 4 C56 16 58 24 58 32 C60 44 74 50 77 63 C80 80 66 93 50 93 ' +
+              'C34 93 20 80 23 63 C26 50 40 44 42 32 C42 24 48 14 52 4 Z';
+  var INNER = 'M50.4 47.2 C52.2 52.7 53.1 56.4 53.1 60.1 C54.1 65.6 60.5 68.4 61.9 74.3 ' +
+              'C63.3 82.2 56.8 88.1 49.5 88.1 C42.1 88.1 35.7 82.2 37 74.3 ' +
+              'C38.4 68.4 44.9 65.6 45.8 60.1 C45.8 56.4 48.5 52.7 50.4 47.2 Z';
+
+  function flame(outer, inner, gid) {
+    var grad = outer === 'grad';
+    return '<svg viewBox="0 0 100 100" role="img" aria-label="BlueSmoke">' +
+      (grad ? '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+                '<stop offset="0" stop-color="#22C1F2"/><stop offset="1" stop-color="#1657D0"/>' +
+              '</linearGradient></defs>' : '') +
+      '<path d="' + OUTER + '" fill="' + (grad ? 'url(#' + gid + ')' : outer) + '"/>' +
+      '<path d="' + INNER + '" fill="' + inner + '"/></svg>';
+  }
+
+  // A: brand ground -> the mark inverts to white, knockout in brand.
+  document.getElementById('m1').innerHTML = flame('#FFFFFF', '#1657D0', 'ga');
+  // B: tint ground -> the mark keeps its full gradient, knockout in the tint.
+  document.getElementById('m2').innerHTML = flame('grad', '#E8F0FE', 'gb');
+</script>

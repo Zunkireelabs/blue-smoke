@@ -75,11 +75,32 @@ function devDeviceOptions(overrides: Partial<CreateMockPeripheralOptions> = {}):
  * §3.2 — "several devices" and "weak RSSI device" in one fixture (`dev-mock-0003`'s -91 dBm).
  * "No devices found" needs no fixture — see `createMockBleFleet([])`'s doc comment; this array
  * isn't used for that state. Edit this array locally to drive a different scan shape.
+ *
+ * Staggered via `advertiseDelayMs`, not all delivered in the same tick — a real scan's results
+ * trickle in as advertisements are actually received, and `DeviceScanScreen`/`useDeviceScan` are
+ * built around that (a device found at second 2 is in the list, and selectable, at second 2; see
+ * `useDeviceScan.ts`'s own doc comment). Weaker RSSI arrives later, standing in for a weaker/
+ * more-intermittent real advertisement — not a spec threshold, just this fixture's own ordering.
  */
 const DEV_SCAN_DEVICES: CreateMockPeripheralOptions[] = [
-  devDeviceOptions({ deviceId: 'dev-mock-0001', deviceUidSuffixHex: '0001', rssiSeries: [-52] }),
-  devDeviceOptions({ deviceId: 'dev-mock-0002', deviceUidSuffixHex: '0002', rssiSeries: [-68] }),
-  devDeviceOptions({ deviceId: 'dev-mock-0003', deviceUidSuffixHex: '0003', rssiSeries: [-91] }),
+  devDeviceOptions({
+    deviceId: 'dev-mock-0001',
+    deviceUidSuffixHex: '0001',
+    rssiSeries: [-52],
+    advertiseDelayMs: 5000,
+  }),
+  devDeviceOptions({
+    deviceId: 'dev-mock-0002',
+    deviceUidSuffixHex: '0002',
+    rssiSeries: [-68],
+    advertiseDelayMs: 8000,
+  }),
+  devDeviceOptions({
+    deviceId: 'dev-mock-0003',
+    deviceUidSuffixHex: '0003',
+    rssiSeries: [-91],
+    advertiseDelayMs: 12000,
+  }),
 ];
 
 /** All five states `readBluetoothGateState` distinguishes — see bleAdapter.ts's `BleRadioState`. */

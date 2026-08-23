@@ -13,6 +13,7 @@ import { listSourceFiles, readSourceFile } from '../sourceFiles';
 const LITERAL_COLOR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(/;
 
 const RESTYLED_SCREENS = [
+  'src/app/BootSplashScreen.tsx',
   'src/features/auth/AuthMethodChoiceScreen.tsx',
   'src/features/auth/EmailCodeRequestScreen.tsx',
   'src/features/auth/EmailCodeEntryScreen.tsx',

@@ -170,7 +170,7 @@ describe('useDeviceScan', () => {
 
   it('stops claiming to scan once the radio is off — the status ends at the timeout, with results', () => {
     // Regression: the timeout stopped the radio but left status on 'scanning' whenever anything
-    // had been found, so DV-3 showed a spinner and "Looking for your device…" forever over a
+    // had been found, so DV-3 showed a spinner and "Finding your device" forever over a
     // dead scan. A user waiting on a second device would have waited indefinitely.
     const fake = createFakeManager();
     const { getState } = renderHook(fake.manager);

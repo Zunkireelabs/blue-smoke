@@ -1,11 +1,10 @@
 import { Platform } from 'react-native';
 
 /**
- * PROVISIONAL neutral palette — OQ-7 (brand assets) is unanswered (spec §13). Every visual
+ * The BlueSmoke palette — OQ-7 (brand assets) resolved 2026-08-11 (spec §13). Every visual
  * value in `src/shared/ui/**` and any screen built on it must come from this file and nowhere
- * else (enforced by `__tests__/tokenOnlyGuard.test.ts`), so that when brand assets land, the
- * reskin is an edit to this file alone. Nothing below is a brand decision — it's a grayscale
- * placeholder chosen only to be legible and AA-compliant.
+ * else (enforced by `__tests__/tokenOnlyGuard.test.ts`), so a reskin stays an edit to this file
+ * alone.
  *
  * Structure: a raw `neutral` scale (never imported directly outside this file) feeds a
  * `lightTheme` of semantic tokens. A second theme (e.g. `darkTheme`) would be another object
@@ -41,19 +40,30 @@ const red = {
 } as const;
 
 /**
- * Approved palette (Sadin, 2026-08-09 — execution brief §3). Exact values, not to be
- * substituted; do not add a colour here that is not one of these seven without asking (OQ-7,
- * brand assets, is still open — this is direction, not the final brand).
+ * Approved palette (Sadin, 2026-08-09 — execution brief §3, extended 2026-08-11 for the
+ * P0-7.0 flame mark). Exact values, not to be substituted; do not add a colour here without
+ * asking.
  */
 const brandRaw = {
   base: '#1657D0',
   dark: '#0E3E9A',
   tint: '#E8F0FE',
+  // P0-7.0 geometry v2 — the eighth brand colour, and decorative-only: the top stop of the
+  // flame mark's gradient, nowhere else. Never a text colour — see `EXEMPT_TOKENS` in
+  // contrastCompleteness.test.ts.
+  glow: '#22C1F2',
 } as const;
 
 const groundRaw = {
   top: '#DCE9FB',
   bottom: '#FFFFFF',
+  // Home screen only — a more saturated wash (opt-in via `GradientGround`'s `colors` prop, the
+  // other 15 consumers are unaffected) so the band reads clearly behind the "BlueSmoke" title.
+  // The bottom stop stays a light tint rather than fading to pure white so the sheet's curved
+  // top edge still has real colour contrast to read against, not just `elevation.sheetEdge`'s
+  // shadow.
+  topStrong: '#9FC7F5',
+  bottomTint: '#F2F7FE',
 } as const;
 
 const successRaw = {
@@ -102,8 +112,16 @@ const semanticColor = {
   brand: brandRaw.base,
   brandDark: brandRaw.dark,
   brandTint: brandRaw.tint,
+  // P0-7.0 geometry v2 — BrandMark's gradient top stop only. Decorative-only, never text.
+  brandGlow: brandRaw.glow,
   groundTop: groundRaw.top,
   groundBottom: groundRaw.bottom,
+  groundTopStrong: groundRaw.topStrong,
+  groundBottomTint: groundRaw.bottomTint,
+  // Home's sheet fill — a hair off pure `surface` white so the gradient's curved top edge has
+  // a real colour seam to read against, distinct from `groundBottomTint` above so the seam is
+  // a visible step, not a blend.
+  surfaceTint: '#F7FBFF',
   success: successRaw.text,
   successBg: successRaw.background,
 } as const;
@@ -153,6 +171,22 @@ const elevation = {
     },
     default: {
       elevation: 2,
+    },
+  }),
+  // Home redesign (reference-devices-list.md) — `GradientGround`'s sheet overlaps only the
+  // last `spacing.xxl` of the gradient wash, where it's already faded almost to `groundBottom`
+  // (white), the same as the sheet's own fill — so the curved top corners have no colour
+  // contrast to read by. A negative offset throws the shadow up into the gradient instead of
+  // down like `card`, so the curve reads regardless of what colour is behind it.
+  sheetEdge: Platform.select({
+    ios: {
+      shadowColor: neutral[900],
+      shadowOffset: { width: 0, height: -2 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+    },
+    default: {
+      elevation: 4,
     },
   }),
 } as const;
@@ -315,6 +349,14 @@ export const contrastPairs: ReadonlyArray<{
     bgToken: 'brandTint',
     fg: semanticColor.link,
     bg: semanticColor.brandTint,
+    size: 'body',
+  },
+  {
+    name: 'textPrimary on surfaceTint',
+    fgToken: 'textPrimary',
+    bgToken: 'surfaceTint',
+    fg: semanticColor.textPrimary,
+    bg: semanticColor.surfaceTint,
     size: 'body',
   },
   {
