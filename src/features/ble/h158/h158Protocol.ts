@@ -35,11 +35,23 @@ export const H158_SERVICE_UUID = '0000fff0-0000-1000-8000-00805f9b34fb';
 // H158 firmware only ever uses FFF1 for both directions (reply Q1).
 export const H158_PIPE_CHARACTERISTIC_UUID = '0000fff1-0000-1000-8000-00805f9b34fb';
 
-// reply Q4 — identical on every unit; there is no per-device name to filter
-// on beyond this prefix. reply Q5 / module spec — the device advertises its
-// name in the scan response, NOT the FFF0 service UUID, so scanning must
-// filter by name, not by service (unlike scanner.ts's §4.1 radio-level UUID
-// filter for the spec device).
+// reply Q5 / module spec — the device advertises its name in the scan
+// response, NOT the FFF0 service UUID, so scanning must filter by name, not by
+// service (unlike scanner.ts's §4.1 radio-level UUID filter for the spec
+// device). A prefix match is therefore correct either way, and matches the
+// manufacturer's own SDKs (BleScanner.kt, BleScanner.swift:93-96).
+//
+// 🔴 OQ-17 — do NOT read this constant as "the whole advertised name". The
+// manufacturer has answered that question both ways and the contradiction is
+// unresolved as of 2026-08-23:
+//   2026-08-12 item 1: the name is `YP65-AT` "with the MAC address appended as
+//     a unique identifier to distinguish between devices".
+//   2026-08-13 item 4: "all devices share the same Bluetooth name".
+// Their iOS SDK settles nothing — it prefix-filters and then keys devices on
+// CoreBluetooth's per-install `peripheral.identifier`, which works under either
+// answer. Whether two units can be told apart at all is decidable on the bench
+// by scanning two of them; until that is done, assume nothing here identifies a
+// specific unit. See docs/hardware/manufacturer-supplied-2026-08-23/MANIFEST.md §5.
 export const H158_DEVICE_NAME_PREFIX = 'YP65-AT';
 
 // ── frame constants ──────────────────────────────────────────────────────────
@@ -63,6 +75,21 @@ export const H158_FRAME_TAIL = 0x01;
  * Their written answer to item 10 confirmed a payload-only reading, which
  * these two examples disprove — the SDK source is authoritative here, not
  * the written reply. See MANIFEST.md §4.
+ *
+ * Ratified 2026-08-23. The protocol document itself finally arrived
+ * (docs/hardware/manufacturer-supplied-2026-08-23/H158-CMD-Protocol-202608131414.md)
+ * and §1 states the rule in the manufacturer's own words — "从 head 字段 到
+ * data 字段，所有的数据异或的结果", the XOR of every byte from `head` through
+ * `data`. Their iOS SDK (BleProtocol.swift:42,72) computes the same thing. So
+ * this layout is no longer inferred from one SDK: it is the written contract,
+ * agreed by two independent implementations.
+ *
+ * ⚠️ The 2026-08-21 Q&A prose contradicts that document in two places and is
+ * wrong in both — its device-info TX frame (`02 02 A1 A1 01`, CMD 0xA1) and its
+ * Unlock reply checksum (`0x26`, copied from the request row; XOR gives 0x27).
+ * `terminalInfoCommand()` below emits `02 01 A2 A1 01` per §2.2 and the SDKs.
+ * Third time the artifact has beaten the prose — prefer the document and the
+ * shipped code over any hand-written table.
  */
 export const H158Command = {
   CHILD_LOCK: 0xa1, // BleProtocol.kt:30 — lock/unlock command AND status echo (see parseStatusReply)
@@ -70,9 +97,47 @@ export const H158Command = {
 } as const;
 export type H158Command = (typeof H158Command)[keyof typeof H158Command];
 
+/**
+ * Reply ACK codes.
+ *
+ * The protocol document (H158-CMD-Protocol-202608131414 §2.1, §2.2) writes the
+ * ACK field only as `00 / x0` and never enumerates the error values; the SDKs
+ * likewise only test for success. The specific codes come from the
+ * manufacturer's 2026-08-13 written reply, item 12 —
+ * docs/hardware/manufacturer-supplied-2026-08-17/manufacturer-reply-2026-08-17.md.
+ *
+ * Note the asymmetry that item 12 draws, because it decides what a caller can
+ * infer from silence: a frame whose head, tail or checksum is wrong gets **no
+ * reply at all**, not an error ACK. A non-zero ACK therefore always means the
+ * frame was structurally valid and the *content* was rejected — so it is a bug
+ * in what we sent, never line noise, and must not be retried unchanged.
+ */
 export const H158Ack = {
   SUCCESS: 0x00, // BleProtocol.kt:33
+  DATA_ERROR: 0x01, // reply Q12 — 数据错误
+  DATA_LENGTH_ERROR: 0x02, // reply Q12 — 数据长度错误
+  UNKNOWN_COMMAND: 0xf1, // reply Q12 — 未知命令
 } as const;
+export type H158Ack = (typeof H158Ack)[keyof typeof H158Ack];
+
+const ACK_LABELS: Record<number, string> = {
+  [H158Ack.SUCCESS]: 'success',
+  [H158Ack.DATA_ERROR]: 'data error',
+  [H158Ack.DATA_LENGTH_ERROR]: 'data length error',
+  [H158Ack.UNKNOWN_COMMAND]: 'unknown command',
+};
+
+/**
+ * Describe an ACK byte. Unknown values are reported as such rather than folded
+ * into a generic failure — the manufacturer has revised this protocol at least
+ * once already (the 0x81/0x82 firmware, see
+ * docs/hardware/manufacturer-supplied-2026-08-23/), so an unrecognised ACK is
+ * more likely a newer firmware than a corrupt byte, and the distinction is
+ * worth surfacing to whoever reads the log.
+ */
+export function h158AckLabel(ack: number): string {
+  return ACK_LABELS[ack] ?? `unrecognised ACK 0x${ack.toString(16).padStart(2, '0')}`;
+}
 
 // BleProtocol.kt:35-36 — CHILD_LOCK command payload.
 export const ChildLockValue = {
@@ -223,7 +288,13 @@ export interface H158Status {
 
 export type H158StatusParseResult =
   | { ok: true; status: H158Status }
-  | { ok: false; reason: string };
+  /**
+   * `ack` is present only when the frame was well-formed and the device
+   * actively rejected it, so callers can branch on the specific code
+   * (H158Ack.DATA_ERROR vs UNKNOWN_COMMAND vs …) rather than on the reason
+   * string. Absent for shape failures, where no ACK was meaningfully read.
+   */
+  | { ok: false; reason: string; ack?: number };
 
 /**
  * BleConnectionManager.kt:346-361 — a status reply arrives under CMD
@@ -241,7 +312,11 @@ export function parseH158StatusReply(frame: H158ParsedFrame): H158StatusParseRes
     return { ok: false, reason: `not a status-shaped reply: cmd=0x${frame.cmd.toString(16)}` };
   }
   if (frame.ack !== H158Ack.SUCCESS) {
-    return { ok: false, reason: `status reply ACK=0x${frame.ack.toString(16)}, expected 0x00` };
+    return {
+      ok: false,
+      reason: `status reply rejected: ${h158AckLabel(frame.ack)}`,
+      ack: frame.ack,
+    };
   }
   if (frame.data.length < 3) {
     return { ok: false, reason: `status data too short: ${frame.data.length} bytes, need at least 3` };
@@ -268,7 +343,8 @@ export interface H158ChildLockAck {
 
 export type H158ChildLockAckParseResult =
   | { ok: true; ack: H158ChildLockAck }
-  | { ok: false; reason: string };
+  /** See H158StatusParseResult for why `ack` is optional here. */
+  | { ok: false; reason: string; ack?: number };
 
 /**
  * The ordinary CHILD_LOCK reply shape: a single byte echoing the COMMAND
@@ -285,7 +361,11 @@ export function parseH158ChildLockAck(frame: H158ParsedFrame): H158ChildLockAckP
     return { ok: false, reason: `expected CMD 0xA1, got 0x${frame.cmd.toString(16)}` };
   }
   if (frame.ack !== H158Ack.SUCCESS) {
-    return { ok: false, reason: `child lock reply ACK=0x${frame.ack.toString(16)}, expected 0x00` };
+    return {
+      ok: false,
+      reason: `child lock rejected: ${h158AckLabel(frame.ack)}`,
+      ack: frame.ack,
+    };
   }
   if (frame.data.length === 0) {
     return { ok: false, reason: 'child lock reply has no data' };

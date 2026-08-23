@@ -8,12 +8,14 @@
  */
 import {
   ChildLockValue,
+  H158Ack,
   H158Command,
   H158LockStateByte,
   H158SystemState,
   childLockCommand,
   decodeH158Frame,
   encodeH158Frame,
+  h158AckLabel,
   h158SystemStateLabel,
   parseH158ChildLockAck,
   parseH158StatusReply,
@@ -212,6 +214,74 @@ describe('parseH158StatusReply', () => {
   test('a CHILD_LOCK reply with only 1 data byte is NOT status-shaped (falls to the ack parser instead)', () => {
     const frame: H158ParsedFrame = { cmd: H158Command.CHILD_LOCK, ack: 0x00, data: bytes(ChildLockValue.LOCK) };
     expect(parseH158StatusReply(frame).ok).toBe(false);
+  });
+});
+
+// ── ACK error codes ──────────────────────────────────────────────────────────
+
+/**
+ * The codes come from the manufacturer's 2026-08-13 reply, item 12. CLAUDE.md
+ * requires every result code be handled distinctly, so these assert that each
+ * one is *distinguishable* by the caller — not merely that parsing failed.
+ */
+describe('h158AckLabel', () => {
+  test.each([
+    [H158Ack.SUCCESS, 'success'],
+    [H158Ack.DATA_ERROR, 'data error'],
+    [H158Ack.DATA_LENGTH_ERROR, 'data length error'],
+    [H158Ack.UNKNOWN_COMMAND, 'unknown command'],
+  ])('0x%s → %s', (value, label) => {
+    expect(h158AckLabel(value)).toBe(label);
+  });
+
+  test('an unrecognised ACK is named as such, not folded into a known code', () => {
+    // 0x7F is not in reply Q12's list. Reporting it verbatim is what lets a
+    // future firmware revision be spotted from a log rather than mistaken for
+    // one of the four documented failures.
+    expect(h158AckLabel(0x7f)).toBe('unrecognised ACK 0x7f');
+  });
+
+  test('every documented code has a distinct label — no two collapse together', () => {
+    const labels = [
+      H158Ack.SUCCESS,
+      H158Ack.DATA_ERROR,
+      H158Ack.DATA_LENGTH_ERROR,
+      H158Ack.UNKNOWN_COMMAND,
+    ].map(h158AckLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe('ACK codes reach the caller', () => {
+  test.each([
+    [H158Ack.DATA_ERROR, 'data error'],
+    [H158Ack.DATA_LENGTH_ERROR, 'data length error'],
+    [H158Ack.UNKNOWN_COMMAND, 'unknown command'],
+  ])('parseH158StatusReply surfaces 0x%s distinctly', (ack, label) => {
+    const frame: H158ParsedFrame = { cmd: H158Command.TERMINAL_INFO, ack, data: bytes(0x31, 0x00, 0x50) };
+    const result = parseH158StatusReply(frame);
+    expect(result).toEqual({ ok: false, reason: `status reply rejected: ${label}`, ack });
+  });
+
+  test.each([
+    [H158Ack.DATA_ERROR, 'data error'],
+    [H158Ack.DATA_LENGTH_ERROR, 'data length error'],
+    [H158Ack.UNKNOWN_COMMAND, 'unknown command'],
+  ])('parseH158ChildLockAck surfaces 0x%s distinctly', (ack, label) => {
+    const frame: H158ParsedFrame = { cmd: H158Command.CHILD_LOCK, ack, data: bytes(ChildLockValue.LOCK) };
+    const result = parseH158ChildLockAck(frame);
+    expect(result).toEqual({ ok: false, reason: `child lock rejected: ${label}`, ack });
+  });
+
+  test('a shape failure carries no ack — only a device rejection does', () => {
+    // Distinguishes "the device said no" from "this was never a valid reply",
+    // which is the difference between a bug in our command and a bug in our
+    // framing. reply Q12: a malformed frame gets NO reply at all, so a decode
+    // failure can never be a device rejection.
+    const wrongCmd: H158ParsedFrame = { cmd: 0xa3, ack: H158Ack.SUCCESS, data: bytes(0x31, 0x00, 0x50) };
+    const result = parseH158StatusReply(wrongCmd);
+    expect(result.ok).toBe(false);
+    expect(result).not.toHaveProperty('ack');
   });
 });
 
