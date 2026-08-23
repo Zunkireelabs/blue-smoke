@@ -2,6 +2,88 @@
 
 Newest first. Conventions in [`README.md`](README.md).
 
+## 2026-08-23 (later the same day) — H158 firmware verified on real hardware, UI handoff written up
+
+**Branches:** `feature/ble-connectivity`
+
+**Landed:** `docs/hardware/manufacturer-qa-consolidated.md` (Round 3 bench confirmation),
+`docs/hardware/hqd-device-architecture.md` §13 (hardware confirmation + UI handoff),
+`manufacturer-questions-firmware-2026-08-20.md` (verified banner), `CLAUDE.md` Current state. No code
+changes this entry — this was the bench session the earlier entry today said hadn't happened yet.
+
+### The bench session
+
+Flashed `H158_Test_260814_01_.pkg` via PW200. Two things worth writing down that aren't in the
+manufacturer's deck, reconfirmed from 08-20: the USB-C adapter only seats correctly one way round,
+and the battery has to stay connected through programming. Neither bit us this time — both were
+already known.
+
+Tested against the manufacturer's own `com.itorn.hqd.ble` demo app, not our code — deliberate, per
+§11.4's bring-up order, so a result can't be blamed on our implementation before the firmware itself
+is trusted. All three documented commands, captured straight from the phone:
+
+```
+TX 02 01 A2 A1 01        (Read Status)
+RX 02 05 A2 00 30 00 64 F1 01
+
+TX 02 02 A1 78 D9 01     (Lock)
+RX 02 03 A1 00 78 D8 01
+
+TX 02 02 A1 87 26 01     (Unlock)
+RX 02 03 A1 00 87 27 01
+```
+
+Checked every checksum by hand rather than trusting the app's summary line — all three correct:
+`F1`, `D8`, `27`. Status decode checks out too: `30 00 64` → unlocked, power-on, 100%, matching what
+the app displayed.
+
+**Head `0x02`, tail `0x01`, on every reply.** The `0x81`/`0x82` framing that blocked this project for
+three days is gone on this firmware. Three independent sources — the protocol document, the Android
+SDK, the iOS SDK — now agree with a fourth: the real device.
+
+### The Unlock checksum dispute is settled, in our favour
+
+Flagged this the moment the 08-21 reply arrived, before any device was on the bench: their written
+table gave the Unlock reply checksum as `0x26`, which looked copy-pasted from the request row above
+it, and XOR-from-header gives `0x27`. Real hardware just returned `0x27`. Worth restating the general
+lesson this confirms a fourth time: **derive from their code, don't transcribe their prose.**
+
+### What's still open
+
+- Only one flash, one session. The 08-20 standard — two independent flashes before fully trusting a
+  result — hasn't been repeated. Given how cleanly every checksum landed, I'd call this a
+  nice-to-have for the written record rather than a doubt about the result, but it's not done.
+- **Not yet tested against our own app.** Everything above used the manufacturer's demo app on
+  purpose. Running `H158BringUpScreen` against this same device is the next physical step, and
+  nobody's done it yet.
+- OQ-17 picked up one data point, not a resolution: the demo app showed `YP65-AT  13:7F:AC:00:00:0C`
+  — Android's native MAC read next to the name. That's not proof of what the advertised *name string*
+  itself contains, which is what actually decides OQ-17 and is why iOS can't see it. Still open.
+
+### Handoff for whoever wires this into product UI
+
+The user asked directly for this to be written up so Sadin and others can pick up UI integration
+without re-deriving what's already known. Put it in `hqd-device-architecture.md` §13.2/§13.3 rather
+than only here, since that's the file that already carries "the full technical analysis and
+consequences" per its own description in the consolidated Q&A doc.
+
+Short version of what's there: `h158Protocol.ts` and `h158Session.ts` are stable, tested, and now
+hardware-confirmed — reuse them, don't re-derive them. `H158BringUpScreen.tsx` is a working
+reference for the scan/connect/command pattern, but it's a dev spike, not something to extend into
+production. **No production pairing screen exists for H158** — `PairDeviceScreen.tsx` is built for
+the unrelated §4 GATT transport. `src/features/lock/` is empty, one `.gitkeep`. And the one thing
+that must not get silently designed around: **the device has no authentication and no dead-man
+timer**, so whatever "pairing" means for it, it isn't a cryptographic bond — that's a product decision
+for the client, not a default to pick while wiring up a screen. Full reasoning and citations in
+§13.3, not repeated here.
+
+### Shared files touched
+
+`CLAUDE.md`, `docs/**`. Not `protocol.ts`, `auth.ts`, `crypto.ts`, `scanner.ts`, `navigation.tsx`,
+or the mock. Mention the `CLAUDE.md` edit in the PR body per the announce rule.
+
+---
+
 ## 2026-08-23 — the manufacturer's protocol document arrives, three days late and inside an archive nobody opened
 
 **Branches:** `feature/ble-connectivity`

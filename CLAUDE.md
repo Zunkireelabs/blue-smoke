@@ -238,12 +238,18 @@ consequence has twice been re-walking ground that was already settled.)*
   MCU datasheet, and `H158_Test_260814_01_.pkg` at
   [`docs/hardware/manufacturer-supplied-2026-08-23/`](docs/hardware/manufacturer-supplied-2026-08-23/).
   Read [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§12**.
-- ⚠️ **None of that is verified on hardware.** `H158_Test_260814_01_.pkg` has **not been flashed**.
-  The bench device last spoke the undocumented `0x81`/`0x82` framing, which the manufacturer explains
-  as an *older* protocol version. The honest statement is "three sources agree on what the device
-  should send", not "we know what it sends". The bench matrix to run is in
+- ✅ **VERIFIED ON HARDWARE — same day, 2026-08-23.** `H158_Test_260814_01_.pkg` was flashed and
+  tested against the manufacturer's own demo app: Read Status, Lock and Unlock all reproduced exactly
+  as documented, every checksum correct by hand, no `0x81`/`0x82` framing anywhere. **This is real,
+  not just documented.** Full byte tables in
   [`docs/hardware/manufacturer-qa-consolidated.md`](docs/hardware/manufacturer-qa-consolidated.md)
-  Round 3. **Run it before trusting any of the above against a real unit.**
+  Round 3, and [`hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§13**, which
+  also has a **handoff for whoever wires this into product UI** — read §13.2 and §13.3 before
+  starting: most of the transport code already exists (`h158Protocol.ts`, `h158Session.ts`,
+  `H158BringUpScreen.tsx` as a reference), but no production pairing/lock screen exists yet, and the
+  device still has zero authentication — §13.3 is a required read before that screen ships, not
+  optional context. Not yet done: a second independent flash, and running this against **our own**
+  app rather than only the manufacturer's demo.
 - 🔴 **OQ-17 is now a contradiction, not an answer.** The manufacturer has said both that the
   advertised name carries a per-device MAC suffix (Day 12) *and* that "all devices share the same
   Bluetooth name" (Day 13). Their iOS SDK cannot arbitrate. **This is decidable by scanning two

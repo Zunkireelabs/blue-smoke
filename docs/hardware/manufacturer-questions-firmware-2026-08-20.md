@@ -19,9 +19,11 @@
 > and whether production units ship needing a PW200 flash before they will respond (Q4 in the list
 > below / 1.3). The second is a client and factory question now, not an engineering one.
 >
-> ⚠️ **Nothing here is verified on hardware yet.** `H158_Test_260814_01_.pkg` has not been flashed as
-> of this writing. Treat every answer as the manufacturer's claim until the bench matrix in the
-> consolidated record's Round 3 section is run.
+> ✅ **VERIFIED ON HARDWARE — 2026-08-23, same day.** `H158_Test_260814_01_.pkg` flashed and tested
+> against the manufacturer's own demo app. Read Status, Lock and Unlock all reproduced exactly as the
+> protocol document describes — no `0x81`/`0x82` framing, every checksum correct by hand. Full byte
+> tables in [`manufacturer-qa-consolidated.md`](manufacturer-qa-consolidated.md) Round 3. **The
+> firmware fix is real, not just documented.**
 
 This is a follow-up to your 2026-08-17 reply, specifically items 2, 6, 7, 12, and 18. We followed
 your PW200 firmware-upgrade instructions (received 2026-08-09 inside `BLE.zip`, `Programming Software

@@ -851,17 +851,15 @@ valid and its *content* was rejected — a bug in what we sent, never line noise
 to retry unchanged. A silent timeout, conversely, is ambiguous between "malformed frame", "device
 asleep" and "out of range". Now handled distinctly in `h158Protocol.ts`.
 
-### 12.5 What is still not verified
+### 12.5 What was not yet verified — see §13, now resolved
 
-🔴 **Everything above is on paper.** `H158_Test_260814_01_.pkg` has not been flashed. The device we
-have last spoke the undocumented `0x81`/`0x82` framing, which the manufacturer explains as an *older*
-protocol version. Until the bench matrix in
-[`manufacturer-qa-consolidated.md`](manufacturer-qa-consolidated.md) Round 3 is run, the correct
-statement is "three sources agree on what the device *should* send", not "we know what it sends".
+*(This section originally said "everything above is on paper." It no longer is — §13 has the
+confirmation. Left in place because the sequencing is the point: verify against the vendor's own app
+before trusting anything, which is exactly what §13 did.)*
 
-Two items the manufacturer did not answer: what `81 00 03 00 00 00` actually meant, and whether
-production units ship needing a PW200 flash before they respond at all. The second is a client and
-factory question, not an engineering one.
+Two items the manufacturer did not answer, still open: what `81 00 03 00 00 00` actually meant, and
+whether production units ship needing a PW200 flash before they respond at all. The second is a
+client and factory question, not an engineering one.
 
 ### 12.6 OQ-17 got worse, not better
 
@@ -873,3 +871,105 @@ CoreBluetooth's per-install identifier, which works under either answer.
 **Settle it on the bench by scanning two units** — the same treatment §11.2 agreed for the blue-wire
 discrepancy. Until then, assume no radio-visible per-unit identity exists, and do not design pairing
 around one.
+
+---
+
+## 13. Day 24 (2026-08-23), same day — verified on real hardware, and a handoff for whoever wires this into product UI
+
+§12 was written before any device was on the bench. Later the same day, one was.
+
+### 13.1 The firmware fix is real
+
+`H158_Test_260814_01_.pkg` flashed via PW200, tested against the manufacturer's own
+`com.itorn.hqd.ble` demo app — deliberately not our code, so this isolates firmware from
+implementation, per §11.4's bring-up order. Read Status, Lock and Unlock all exercised; every reply
+captured and every checksum verified by hand, not just eyeballed against the app's summary:
+
+| Command | TX | RX | Checksum |
+|---|---|---|---|
+| Read Status | `02 01 A2 A1 01` | `02 05 A2 00 30 00 64 F1 01` | `F1` ✓ |
+| Lock | `02 02 A1 78 D9 01` | `02 03 A1 00 78 D8 01` | `D8` ✓ |
+| Unlock | `02 02 A1 87 26 01` | `02 03 A1 00 87 27 01` | `27` ✓ |
+
+Head `0x02`, tail `0x01`, on every single reply — the `0x81`/`0x82` framing that blocked this
+project for three days is gone on this firmware. The Unlock checksum also settles the one
+discrepancy §12.2 flagged in the manufacturer's own prose: their table said `0x26`; hardware says
+`0x27`, matching the correction derived from their Swift source before any device confirmed it.
+**Three independent sources now agree, and hardware is the fourth: the protocol document, the
+Android SDK, the iOS SDK, and the real device.**
+
+Not yet done: a second independent flash (the 08-20 standard), and confirming this against **our
+own app** rather than only the manufacturer's. Full detail and the OQ-17 caveat from this session:
+[`manufacturer-qa-consolidated.md`](manufacturer-qa-consolidated.md), the 2026-08-23 entry under
+Round 3.
+
+### 13.2 Handoff — what exists, ready to build on
+
+For whoever picks up wiring the H158 into an actual user-facing screen (Sadin, Hardik, or anyone
+else). Read this before writing new BLE code for this device — most of what you need already
+exists and is tested.
+
+**Reusable, stable, confirmed on hardware today:**
+
+- **`src/features/ble/h158/h158Protocol.ts`** — the complete frame codec: encode, decode, all three
+  commands (lock, unlock, terminal info), status parsing, and ACK error codes (`H158Ack` /
+  `h158AckLabel`). Pure functions, no I/O. This is the codec — do not write a second one.
+- **`src/features/ble/h158/h158Session.ts`** — connect → discover → subscribe → send, as a typed
+  `H158Session` interface (`readStatus()`, `setChildLock()`, `dispose()`), every stage with an
+  explicit timeout per CLAUDE.md's rule. This is the thing to call from a screen; you should not
+  need to touch GATT primitives directly.
+- **`src/features/ble/h158/H158BringUpScreen.tsx`** — a complete, working reference UI: scan → device
+  list → connect → Read Status / Lock / Unlock, with a live hex log of every frame. It is a
+  **reference to copy patterns from, not a screen to extend into production** — it's dev-only,
+  registered behind `__DEV__`, deliberately plain. Its scan/connect/retry wiring is the pattern a
+  real screen should follow.
+- **`createDeviceScanner()` in `scanner.ts`**, used with `filter: { serviceUuids: null, namePrefix:
+  H158_DEVICE_NAME_PREFIX }` — H158 doesn't advertise a service UUID, only a name, and the bring-up
+  screen already does this correctly.
+
+**What does not exist yet — this is real, unscoped work, not an oversight:**
+
+- 🔴 **No production pairing screen for H158.** `PairDeviceScreen.tsx` exists but is built for the
+  spec §4 GATT device (`protocol.ts`, `auth.ts`) — a different transport entirely, still valid for
+  whenever the client decides on device authentication (see §12.1, §13.3 below). Whether H158 gets
+  its own screen, or `PairDeviceScreen` grows a transport branch, is a design decision nobody has
+  made — it is not written down anywhere in this repo.
+- 🔴 **`src/features/lock/` is empty** — a single `.gitkeep`, nothing else. The entire proximity
+  lock/unlock UI (pillar 3 of the product) is unbuilt. This is Phase 3 territory
+  (`docs/project-roadmap-todos/TODO-phase-3.md`, 0/128 boxes done as of this writing), not something
+  this session's hardware confirmation unblocks by itself.
+- **No account/device binding exists for H158.** The Supabase schema (spec §5) was designed around
+  §4's `device_ownership` + `K_sess` flow, which assumes bonding and a device-held key — neither of
+  which H158 has. Binding an H158 unit to a verified account needs its own design, not a reuse of
+  the §4 schema.
+
+### 13.3 🔴 Read this before designing anything user-facing
+
+**The H158 has no authentication and no dead-man timer.** OQ-16: "just-work unencrypted mode," no
+PIN, no bonding, no CMAC counterpart anywhere in the firmware. OQ-9: an unlocked device stays
+unlocked across a disconnect, indefinitely, with no firmware timer.
+
+This is not a caveat about code quality — it changes what a "pairing" or "lock" screen can honestly
+claim. Our app can require a verified, signed-in user before it will *send* a lock/unlock command,
+and that satisfies inviolable rules 2 and 3 for **our server's** authority. It does nothing for the
+**device's**: `A1 78` unlocks it for anyone in range holding any generic BLE tool who knows its name,
+regardless of what our app does or doesn't check first. A screen that shows a padlock icon and the
+word "Secured" is making a claim the hardware cannot back up.
+
+Concretely, before shipping anything: what does "pair this device" even mean for a device with no
+bonding at all? Almost certainly just "the app remembers this device for this account" — a purely
+app-side, spoofable association, not a cryptographic pairing. **That is a product decision for the
+client, not an engineering default to pick silently** — see CLAUDE.md's "authority model" section and
+OQ-16's row in `TECHNICAL_SPEC.md` §13. Design the UI to match what's actually true, not what the
+original §4 design assumed would be true.
+
+### 13.4 Reading order for anyone picking this up
+
+1. This section, then §11 (how the real transport was discovered) and §12 (the protocol document
+   arriving and being ratified) — the reasoning, not just the conclusion.
+2. [`manufacturer-qa-consolidated.md`](manufacturer-qa-consolidated.md) — the full question-and-answer
+   history, so a question doesn't get asked a fourth time.
+3. `h158Protocol.ts` and `h158Session.ts` doc comments — both cite exactly which manufacturer reply
+   or SDK line justifies each constant and each design choice.
+4. `H158BringUpScreen.tsx` as a pattern reference, not a starting point to extend.
+5. §13.3 above, again, before any screen ships.

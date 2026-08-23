@@ -290,8 +290,40 @@ The `0x81` mystery and "which firmware ships on production units" both went unan
 no longer an engineering question — if units ship needing a bench flash before they will talk to a
 phone, that belongs to the client and the factory, not to us.
 
-**Not yet verified on hardware:** every answer above is on paper. `H158_Test_260814_01_.pkg` has not
-been flashed as of this writing.
+### ✅ 2026-08-23 (Day 24), later the same day — verified on real hardware
+
+`H158_Test_260814_01_.pkg` was flashed via PW200 and tested with the manufacturer's own
+`com.itorn.hqd.ble` demo app (not our code, so this isolates the firmware). All three documented
+commands were exercised and every byte checked by hand:
+
+| Command | TX | RX | Checksum |
+|---|---|---|---|
+| Read Status | `02 01 A2 A1 01` | `02 05 A2 00 30 00 64 F1 01` | `02^05^A2^00^30^00^64 = F1` ✓ |
+| Lock | `02 02 A1 78 D9 01` | `02 03 A1 00 78 D8 01` | `02^03^A1^00^78 = D8` ✓ |
+| Unlock | `02 02 A1 87 26 01` | `02 03 A1 00 87 27 01` | `02^03^A1^00^87 = 27` ✓ |
+
+**Every byte matches the protocol document and `h158Protocol.ts` exactly.** No `0x81`/`0x82` framing
+anywhere — head `0x02`, tail `0x01`, on every reply. The status decode checks out too: `30 00 64` →
+unlocked, power-on, 100% battery, which is what the demo app displayed.
+
+🔴 **This also settles the disputed Unlock checksum**, flagged when the 08-21 reply first arrived:
+their written table gave `0x26`, copied from the request row above it; real hardware returns `0x27`,
+confirming the correction made against their own `BleProtocol.swift` before any device was on the
+bench. **Their document was wrong; the derivation from their code was right.**
+
+One data point on OQ-17, not conclusive either way: the demo app's device list showed
+`YP65-AT  13:7F:AC:00:00:0C` — Android's native BLE MAC read, displayed alongside the name. This is
+not proof of what the *advertised name string* itself contains (that's what OQ-17 actually turns on,
+and iOS can't read a MAC to compare) — it only confirms Android exposes a MAC, which was already
+known. **OQ-17 is still open.**
+
+**Not yet done:** this was one flash, one session. The 08-20 standard — reproduce across two
+independent flashes before fully trusting a result — has not been repeated. Given how cleanly every
+checksum landed, that's a nice-to-have for the written record, not a reason to doubt the result.
+
+**Also not yet done:** confirming any of this against **our own app** — everything above used the
+manufacturer's demo app to isolate the firmware from our code, per the architecture doc's bring-up
+order. That is the next step, not yet run as of this writing.
 
 ---
 
