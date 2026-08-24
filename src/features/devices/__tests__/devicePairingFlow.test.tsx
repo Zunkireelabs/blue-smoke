@@ -1,34 +1,59 @@
 /**
- * P1-3.0 — end-to-end press-and-assert coverage for F7.1-F7.5, same philosophy as
- * `auth/__tests__/deadEndExits.test.tsx`: proving a CTA GOES somewhere, not just that it
+ * End-to-end press-and-assert coverage for Home's real "Pair a device" button, same philosophy
+ * as `auth/__tests__/deadEndExits.test.tsx`: proving a CTA GOES somewhere, not just that it
  * renders. Walks the real, composed screens (not a hand-rolled stand-in for any of them) from
- * `HomeScreen`'s "Pair a device" through to the hard boundary at device selection, against the
- * real mock peripheral (`tools/mock-peripheral`) per CLAUDE.md's BLE testing rule.
+ * `HomeScreen`'s "Pair a device" through to a connected H158 device.
+ *
+ * 2026-08-24 — retargeted from the §4 mock-protocol chain (`DevicePairingGateScreen.tsx` →
+ * `DeviceScanScreen.tsx` → `PairingBoundaryScreen.tsx`) to the real-hardware H158 chain
+ * (`H158GateScreen.tsx` → `H158PairScreen.tsx`): Home's live button now points there (see
+ * `HomeScreen.tsx`'s `PairingModal.onContinue` and `TODO-phase-1.md`'s 2026-08-24 update). The
+ * §4 chain stays registered in `navigation.tsx` and independently covered by
+ * `DevicePairingGateScreen.test.tsx`/`DeviceScanScreen.test.tsx`/`BluetoothGateScreen.test.tsx` —
+ * this file no longer duplicates that coverage, since Home's CTA no longer reaches it.
  */
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { createMockPeripheral } from '../../../../tools/mock-peripheral/bleAdapter';
-import { FakeClock } from '../../../../tools/mock-peripheral/clock';
-import { nodeDeviceCoreCrypto, nodeNonceSource } from '../../../../tools/mock-peripheral/crypto';
-import { BleClientProvider, type BleManagerLike } from '@/features/ble/BleClientContext';
+import {
+  BleClientProvider,
+  type BleAdvertisementLike,
+  type BleDeviceLike,
+  type BleManagerLike,
+} from '@/features/ble/BleClientContext';
 import { HomeScreen } from '../HomeScreen';
-import { DevicePairingPrimingScreen } from '../DevicePairingPrimingScreen';
-import { DevicePairingGateScreen } from '../DevicePairingGateScreen';
-import { DeviceScanScreen } from '../DeviceScanScreen';
-import { PairingBoundaryScreen } from '../PairingBoundaryScreen';
+import { H158GateScreen } from '../H158GateScreen';
+import { H158PairScreen } from '../H158PairScreen';
+import { __resetH158ConnectionStoreForTests } from '@/features/ble/h158/useH158ConnectionStore';
 import { findByLabel, renderedText } from '@/features/auth/testUtils';
 
 const Stack = createNativeStackNavigator();
 
-// `useDeviceScan`'s 20s timeout is a REAL, un-mocked timer in these tests — left running past
-// the test that scheduled it, it's exactly the dangling-timer class that once hung a whole jest
-// run (see transportErrorAndPending.test.tsx's own note on this). Unmounting fires the hook's
-// cleanup, clearing it.
+// Granted by default — none of these tests exercise the runtime-permission-ungranted case
+// itself (that's `BluetoothGateScreen.test.tsx`'s job); this just keeps `readBluetoothGateState`
+// falling through to the adapter-state mapping these tests actually assert on.
+let checkSpy: jest.SpyInstance;
+beforeEach(() => {
+  checkSpy = jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
+});
+afterEach(() => {
+  checkSpy.mockRestore();
+});
+
+// `createDeviceScanner`'s scan timeout is a REAL, un-mocked timer in these tests — left running
+// past the test that scheduled it, it's exactly the dangling-timer class that once hung a whole
+// jest run (see transportErrorAndPending.test.tsx's own note on this). Unmounting fires the
+// scanner's own dispose-on-unmount cleanup, clearing it.
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
+// `HomeScreen`'s hero now reads `useProfile()` (display-name greeting), which needs a real
+// `QueryClientProvider` ancestor — same pattern as `ProfileScreen.test.tsx`. No session is set
+// here, so `useProfile`'s query stays `enabled: false` (userId is null) and never actually hits
+// the network; this client exists only so the hook doesn't throw for lack of context.
+const clients: QueryClient[] = [];
 
 afterEach(() => {
   for (const renderer of renderers.splice(0)) {
@@ -36,23 +61,108 @@ afterEach(() => {
       renderer.unmount();
     });
   }
+  for (const client of clients.splice(0)) {
+    client.clear();
+  }
+  __resetH158ConnectionStoreForTests();
 });
 
+function buildFakeDevice(advertisement: BleAdvertisementLike): BleDeviceLike {
+  const device: BleDeviceLike = {
+    id: advertisement.id,
+    name: advertisement.name,
+    rssi: advertisement.rssi,
+    discoverAllServicesAndCharacteristics: async function (this: void) {
+      return device;
+    },
+    readCharacteristicForService: async () => {
+      throw new Error('not used by this test');
+    },
+    writeCharacteristicWithResponseForService: async () => {
+      throw new Error('not used by this test');
+    },
+    monitorCharacteristicForService: () => ({ remove: () => {} }),
+  };
+  return device;
+}
+
+/**
+ * A minimal `BleManagerLike` that also duck-types `BleScannerLike` (structural cast in
+ * `useBleScanner()`) — same double-duty shape `scanner.test.ts`'s `fakeScanner()` and
+ * `DeviceScanScreen.test.tsx`'s `fakeManager()` each cover one half of; H158PairScreen needs
+ * both halves at once, since it drives `createDeviceScanner` (needs `onStateChange`) and
+ * `connectH158Session` (needs the connect/discover/subscribe trio) from the same object.
+ *
+ * Supports firing the scan listener with more than one advertisement at once, so a test can
+ * cover two H158 units discovered simultaneously (per the hardware notes, two physical units can
+ * share one advertised name) — `connectToDevice`/`cancelDeviceConnection` look their target up
+ * by id rather than always returning a single fixed device, so pressing a specific chip/row
+ * connects to the correct one.
+ */
+function buildH158FakeManagerWithDevices(advertisements: BleAdvertisementLike[]): BleManagerLike {
+  const devices = advertisements.map(buildFakeDevice);
+  const findDevice = (id: string): BleDeviceLike => {
+    const device = devices.find((candidate) => candidate.id === id);
+    if (!device) {
+      throw new Error(`buildH158FakeManagerWithDevices: no fake device registered for id ${id}`);
+    }
+    return device;
+  };
+
+  return {
+    state: async () => 'PoweredOn',
+    // Not part of `BleManagerLike`'s declared shape — added for `useBleScanner()`'s structural
+    // cast, same as the real `BleManager`/`MockBleManager` (see `BleClientContext.tsx`).
+    onStateChange(listener: (state: string) => void, emitCurrentState?: boolean) {
+      if (emitCurrentState) {
+        listener('PoweredOn');
+      }
+      return { remove: () => {} };
+    },
+    startDeviceScan: (_serviceUUIDs, _options, listener) => {
+      advertisements.forEach((advertisement) => listener(null, advertisement as unknown as BleDeviceLike));
+    },
+    stopDeviceScan: () => {},
+    connectToDevice: async (id: string) => findDevice(id),
+    isDeviceConnected: async () => true,
+    cancelDeviceConnection: async (id: string) => findDevice(id),
+  } as BleManagerLike;
+}
+
+function buildH158FakeManager(advertisement: BleAdvertisementLike): BleManagerLike {
+  return buildH158FakeManagerWithDevices([advertisement]);
+}
+
 function renderFlow(manager: BleManagerLike) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.push(queryClient);
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <BleClientProvider manager={manager}>
+      <QueryClientProvider client={queryClient}>
         <NavigationContainer>
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="BluetoothPriming" component={DevicePairingPrimingScreen} />
-            <Stack.Screen name="BluetoothGate" component={DevicePairingGateScreen} />
-            <Stack.Screen name="DeviceScan" component={DeviceScanScreen} />
-            <Stack.Screen name="DevicePairingBoundary" component={PairingBoundaryScreen} />
+            <Stack.Screen name="H158Gate">
+              {/* H158GateScreen reuses BluetoothGateScreen directly, no nested provider of its own
+                  — it reads whatever manager `BleClientProvider` supplies here, same as the real
+                  app reads whatever `AppProviders` supplies. */}
+              {() => (
+                <BleClientProvider manager={manager}>
+                  <H158GateScreen />
+                </BleClientProvider>
+              )}
+            </Stack.Screen>
+            <Stack.Screen name="H158Pair">
+              {/* H158PairScreen deliberately shadows whatever's above it in real navigation (see
+                  its own header comment) — `testManager` is the escape hatch that exists solely so
+                  this test can inject a fake `BleManagerLike` instead of the real, native-backed
+                  `BleManager`, which throws under Jest. */}
+              {() => <H158PairScreen testManager={manager} />}
+            </Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
-      </BleClientProvider>,
+      </QueryClientProvider>,
     );
   });
   renderers.push(renderer);
@@ -75,16 +185,14 @@ async function openPairingDialog(renderer: ReactTestRenderer.ReactTestRenderer) 
   });
 }
 
-describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
-  const K_DEV = Uint8Array.from({ length: 16 }, (_, i) => 0x30 + i);
-
-  it('Pair a device -> priming -> gate -> scan -> select -> the honest not-yet-implemented boundary', async () => {
-    const { manager } = createMockPeripheral({
-      kDev: K_DEV,
-      clock: new FakeClock(0),
-      deviceId: 'mock-device-0001',
-      crypto: nodeDeviceCoreCrypto,
-      nonceSource: nodeNonceSource,
+describe('Home -> real H158 pairing, through to a connected device', () => {
+  it('Pair a device -> gate -> scan -> select -> connected, with the no-lock-code disclosure shown', async () => {
+    const manager = buildH158FakeManager({
+      id: 'h158-mock-0001',
+      name: 'YP65-AT-TEST01',
+      localName: null,
+      rssi: -55,
+      manufacturerData: null,
     });
     const renderer = renderFlow(manager);
 
@@ -93,28 +201,161 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     expect(renderedText(renderer)).toContain('We need Bluetooth to pair');
 
     await press(renderer, 'Continue');
-    // The gate resolves against the mock's `state()` ('PoweredOn') and replaces to DeviceScan,
-    // which shows this same "Finding your device" copy for its real scan.
-    expect(renderedText(renderer)).toContain('Finding your device');
+    // The gate resolves against the fake manager's `state()` ('PoweredOn') and replaces to
+    // H158Pair, which shows its own scanning UI for the real scan.
+    expect(renderedText(renderer)).toContain('Connect your BlueSmoke');
 
-    // The mock's single device advertises `BLE_SERVICE_UUID` and is found synchronously.
-    expect(renderedText(renderer)).toContain('BlueSmoke-');
+    // The fake manager's single advertisement matches H158_DEVICE_NAME_PREFIX and is found
+    // synchronously.
+    expect(renderedText(renderer)).toContain('YP65-AT-TEST01');
 
-    await press(renderer, 'BlueSmoke-0000');
-    // Never a fake success or a fake progress screen (CLAUDE.md / the brief's hard boundary).
-    // Note: react-native-screens keeps every pushed screen mounted, so `renderedText` here
-    // includes Home's and the priming screen's copy too ("Pair a device" etc.) — this asserts
-    // the exact boundary copy landed, rather than a blanket substring check that the earlier
-    // screens' own legitimate text would trip.
-    expect(renderedText(renderer)).toContain("Pairing isn't finished in this build yet");
+    // The results card only appears once the scan itself stops (not mid-scan) — the ring chip
+    // is the only way to connect while still actively scanning.
+    await press(renderer, 'Connect to YP65-AT-TEST01');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(renderedText(renderer)).toContain('Connected');
+    // §13.3's no-auth reality, surfaced honestly rather than any "Secured"/padlock claim.
+    expect(renderedText(renderer)).toContain('This device has no lock code');
   });
 
-  it('"Not now" on the priming screen returns to the device list, not a dead end', async () => {
-    const { manager } = createMockPeripheral({
-      kDev: K_DEV,
-      clock: new FakeClock(0),
-      crypto: nodeDeviceCoreCrypto,
-      nonceSource: nodeNonceSource,
+  it('the radar chip is a second way to trigger the same connect as its list row', async () => {
+    const manager = buildH158FakeManager({
+      id: 'h158-mock-0005',
+      name: 'YP65-AT-TEST05',
+      localName: null,
+      rssi: -50,
+      manufacturerData: null,
+    });
+    const renderer = renderFlow(manager);
+
+    await openPairingDialog(renderer);
+    await press(renderer, 'Continue');
+    // Both the `ListRow` (label: the bare device name) and `DeviceRadar`'s chip (label: "Connect
+    // to <name>" — distinct on purpose, see `DeviceRadar.tsx`'s `RadarDeviceChip` doc comment)
+    // are present for the same found device.
+    expect(renderedText(renderer)).toContain('YP65-AT-TEST05');
+
+    // Press the CHIP, not the row — proves the chip reaches the exact same connected state via
+    // its own `onSelectDevice` call, not a separate/divergent code path.
+    await press(renderer, 'Connect to YP65-AT-TEST05');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(renderedText(renderer)).toContain('Connected');
+    expect(renderedText(renderer)).toContain('This device has no lock code');
+  });
+
+  it('two H158 units found at once (sharing one advertised name) both connect correctly, no crash', async () => {
+    const manager = buildH158FakeManagerWithDevices([
+      { id: 'h158-mock-0006-a', name: 'YP65-AT-TEST06', localName: null, rssi: -50, manufacturerData: null },
+      { id: 'h158-mock-0006-b', name: 'YP65-AT-TEST06', localName: null, rssi: -70, manufacturerData: null },
+    ]);
+    const connectSpy = jest.spyOn(manager, 'connectToDevice');
+    const renderer = renderFlow(manager);
+
+    await openPairingDialog(renderer);
+    await press(renderer, 'Continue');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // Both units get their own chip (distinct ids -> distinct slots, no overlap/duplicate-key
+    // crash) even though they share one advertised name — the results card itself is still
+    // hidden here (scan hasn't stopped yet), so the chips are what's actually rendered.
+    // `Pressable` matches more than once per instance here (its own composite fiber plus the
+    // internal host `View`(s) it renders, none of which carry a real `onPress`) — filtering for
+    // an actual function is what narrows this down to exactly one match per chip, same idea as
+    // `touchTarget.test.ts`'s `findHostByProps` narrowing composite-vs-host matches, just picking
+    // the opposite side (the pressable itself, not its host).
+    const chips = renderer.root
+      .findAllByProps({ accessibilityLabel: 'Connect to YP65-AT-TEST06' })
+      .filter((instance) => typeof instance.props.onPress === 'function');
+    expect(chips).toHaveLength(2);
+
+    // Connecting via the SECOND unit's chip must reach the second unit's id, not silently
+    // connect to whichever device happened to render first.
+    await act(async () => {
+      await chips[1].props.onPress();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(connectSpy).toHaveBeenCalledWith('h158-mock-0006-b');
+    expect(renderedText(renderer)).toContain('Connected');
+  });
+
+  it('Disconnect drops the GATT link and Home stops showing the device as connected', async () => {
+    const manager = buildH158FakeManager({
+      id: 'h158-mock-0003',
+      name: 'YP65-AT-TEST03',
+      localName: null,
+      rssi: -50,
+      manufacturerData: null,
+    });
+    const cancelSpy = jest.spyOn(manager, 'cancelDeviceConnection');
+    const renderer = renderFlow(manager);
+
+    await openPairingDialog(renderer);
+    await press(renderer, 'Continue');
+    await press(renderer, 'Connect to YP65-AT-TEST03');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(renderedText(renderer)).toContain('Connected');
+
+    await press(renderer, 'Disconnect');
+
+    // The manager-level disconnect (not the optional `BleDeviceLike.cancelConnection`) is what
+    // actually drops the link — see `H158PairScreen.tsx`'s `disconnect` callback.
+    expect(cancelSpy).toHaveBeenCalledWith('h158-mock-0003');
+    // `disconnect` pops back to Home, and `useH158ConnectionStore` no longer has a device.
+    expect(renderedText(renderer)).toContain('No devices paired');
+  });
+
+  it("Done leaves the device connected, and Home's connected card resumes the same controls", async () => {
+    const manager = buildH158FakeManager({
+      id: 'h158-mock-0004',
+      name: 'YP65-AT-TEST04',
+      localName: null,
+      rssi: -55,
+      manufacturerData: null,
+    });
+    const renderer = renderFlow(manager);
+
+    await openPairingDialog(renderer);
+    await press(renderer, 'Continue');
+    await press(renderer, 'Connect to YP65-AT-TEST04');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(renderedText(renderer)).toContain('Connected');
+
+    // "Done" only navigates back — it never disconnects (`H158Session.dispose()`'s own doc
+    // comment: that's not its job). Home should show the device as connected, not empty.
+    await press(renderer, 'Done');
+    expect(renderedText(renderer)).toContain('YP65-AT-TEST04');
+    expect(renderedText(renderer)).not.toContain('No devices paired');
+
+    // Tapping the connected card re-enters H158Gate -> H158Pair, which now resumes straight into
+    // the connected controls from `useH158ConnectionStore` instead of re-scanning for a device
+    // that's already connected.
+    await press(renderer, 'YP65-AT-TEST04, connected. Open device.');
+    expect(renderedText(renderer)).toContain('Connected');
+    expect(renderedText(renderer)).toContain('Disconnect');
+  });
+
+  it('"Not now" on the pairing dialog returns to the device list, not a dead end', async () => {
+    const manager = buildH158FakeManager({
+      id: 'h158-mock-0002',
+      name: 'YP65-AT-TEST02',
+      localName: null,
+      rssi: -60,
+      manufacturerData: null,
     });
     const renderer = renderFlow(manager);
 
@@ -125,7 +366,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     expect(renderedText(renderer)).toContain('No devices paired');
   });
 
-  it('F7.E1 — Bluetooth off resolves to ON-9 through the real composed flow, not a rebuilt copy of it', async () => {
+  it('Bluetooth off resolves to ON-9 through the real composed gate, not a rebuilt copy of it', async () => {
     const offManager: BleManagerLike = {
       state: async () => 'PoweredOff',
       startDeviceScan: () => {
@@ -146,10 +387,10 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
     await press(renderer, 'Continue');
 
     expect(renderedText(renderer)).toContain('Bluetooth is off');
-    expect(renderedText(renderer)).not.toContain('Finding your device');
+    expect(renderedText(renderer)).not.toContain('Connect your BlueSmoke');
   });
 
-  it('F7.E2 — permission denied (Android) resolves to ON-7 through the real composed flow', async () => {
+  it('permission denied (Android) resolves to ON-7 through the real composed gate', async () => {
     const originalOS = Platform.OS;
     Platform.OS = 'android';
     try {
@@ -173,7 +414,7 @@ describe('F7.1-F7.5 — device pairing, Home through the hard boundary', () => {
       await press(renderer, 'Continue');
 
       expect(renderedText(renderer)).toContain('We need permission to continue');
-      expect(renderedText(renderer)).not.toContain('Finding your device');
+      expect(renderedText(renderer)).not.toContain('Connect your BlueSmoke');
     } finally {
       Platform.OS = originalOS;
     }

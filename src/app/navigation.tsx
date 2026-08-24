@@ -23,6 +23,8 @@ import { DevicePairingPrimingScreen } from '@/features/devices/DevicePairingPrim
 import { DevicePairingGateScreen } from '@/features/devices/DevicePairingGateScreen';
 import { DeviceScanScreen } from '@/features/devices/DeviceScanScreen';
 import { PairingBoundaryScreen } from '@/features/devices/PairingBoundaryScreen';
+import { H158GateScreen } from '@/features/devices/H158GateScreen';
+import { H158PairScreen } from '@/features/devices/H158PairScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
@@ -85,6 +87,11 @@ export type RootStackParamList = {
   // feature/ble-connectivity's own pairing screen (scanner.ts/BleScannerLike-based) — registered
   // but currently unreferenced; see the merge-finding comment where it's registered below.
   PairDevice: undefined;
+  // Real-hardware H158 pairing, reached from Home's live "Pair a device" button — see
+  // H158GateScreen.tsx/H158PairScreen.tsx. Parallel to the §4 BluetoothGate/DeviceScan chain
+  // above, not a replacement for it; that one still stops at DevicePairingBoundary (OQ-12).
+  H158Gate: undefined;
+  H158Pair: undefined;
   // Dev-only screen gallery (see src/features/devgallery). Registered only when __DEV__.
   ScreenGallery: undefined;
   ScreenPreview: { id: string };
@@ -285,6 +292,11 @@ export function RootNavigator() {
             component={PairDeviceScreen}
             options={{ title: 'Pair device' }}
           />
+          {/* Real H158 hardware chain — Home's live "Pair a device" button lands here (see
+              HomeScreen.tsx's PairingModal onContinue). No native header, matching the gate's
+              own leaf screens (GradientGround-based, no nav bar). */}
+          <Stack.Screen name="H158Gate" component={H158GateScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="H158Pair" component={H158PairScreen} options={{ headerShown: false }} />
           {/*
             Dev-only. `__DEV__` is statically false in a release build, so these routes are not
             merely hidden — they are absent from the navigator, which is the same guarantee the

@@ -202,6 +202,18 @@ the app working** — account, profile and verification are all reachable withou
 > `DeviceScan`/`DevicePairingBoundary`). Both are now merged and both are registered in
 > `navigation.tsx`; Home's "Pair a device" button currently points at the `stage` flow. Needs a
 > team decision on which is canonical — not made here.
+>
+> **Update, 2026-08-24:** neither of the above two is what Home's live button points to any more.
+> Both implement spec §4 (mock-only — real H158 hardware doesn't advertise that service at all, see
+> `docs/hardware/hqd-device-architecture.md` §11-§13), and the `stage` flow dead-ends by design at
+> `PairingBoundaryScreen` (OQ-12). A third, parallel chain — `H158GateScreen.tsx` → `H158PairScreen.tsx`
+> (registered as `H158Gate`/`H158Pair`) — now owns Home's "Pair a device" button instead, and talks
+> to real H158 hardware end to end (scan → connect → lock/unlock) via `h158Session.ts`, the same API
+> `H158BringUpScreen.tsx` already proved out. It is **local-only**: no `devices`/`device_ownership`
+> row is written, only an on-device "last connected" flag (`h158DeviceStorage.ts`) — real
+> server-side ownership is out of scope until the client decides what "pairing" means for hardware
+> with no authentication (§13.3). The two §4 implementations above stay registered and untouched for
+> this task's own boxes/tests; this is a fourth flow, not a resolution of the team decision above.
 
 **Assumption:** device advertises the agreed BLE service UUID.
 **Excludes:** support for non-Blue-Smoke BLE peripherals.
