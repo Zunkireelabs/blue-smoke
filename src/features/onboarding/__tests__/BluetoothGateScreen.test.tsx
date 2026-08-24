@@ -47,11 +47,17 @@ async function renderGate(manager: BleManagerLike, onResolved = jest.fn()) {
 // outlives the test and fires after Jest's environment has torn down ("Cannot log after tests are
 // done"). Fake timers file-wide sidestep that: a pending fake timer is simply discarded when
 // `jest.useRealTimers()` runs, never firing for real.
+// Granted by default across the whole file — every existing case below exercises the
+// adapter-state mapping that runs after this check, not the check itself. See the dedicated
+// "ungranted runtime permission" test for the one case that overrides this.
+let checkSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.useFakeTimers();
+  checkSpy = jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
 });
 afterEach(() => {
   jest.useRealTimers();
+  checkSpy.mockRestore();
 });
 
 describe('BluetoothGateScreen — real-state selector', () => {
@@ -148,6 +154,22 @@ describe('BluetoothGateScreen — real-state selector', () => {
     // The re-read still happened, so a state that changed underneath us is still picked up.
     expect(onResolved).toHaveBeenCalledTimes(1);
     requestSpy.mockRestore();
+  });
+
+  // Regression, 2026-08-24, reproduced on real Android hardware: the BLE adapter's power state
+  // (`manager.state()`) is independent of this app's own runtime permission grant — a device
+  // with Bluetooth switched on but BLUETOOTH_SCAN/BLUETOOTH_CONNECT never granted reported
+  // `PoweredOn`, so this gate resolved and handed off to a scan that immediately failed with
+  // "Device is not authorized to use BluetoothLE". ON-7 must render here, not resolve straight
+  // through, whenever the runtime permission itself is missing — regardless of adapter state.
+  it('an ungranted runtime BLE permission on Android renders ON-7, even when the adapter reports PoweredOn', async () => {
+    Platform.OS = 'android';
+    checkSpy.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    const { renderer, onResolved } = await renderGate(fakeManager('PoweredOn'));
+
+    expect(renderedText(renderer)).toContain('We need permission to continue');
+    expect(onResolved).not.toHaveBeenCalled();
   });
 
   it('re-checks on AppState foreground — a fixed permission is picked up without a manual retry', async () => {

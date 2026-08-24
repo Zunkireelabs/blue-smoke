@@ -117,6 +117,9 @@ const EXEMPT_TOKENS: Readonly<Record<string, string>> = {
   groundTopStrong: "BrandMark's `groundColor` at Home's header (P0-7.0 follow-up) — matches the "
     + "inner flame knockout to CurtainGround's gradient top stop so the mark reads seamlessly "
     + 'there, the same non-text shape-fill role as the `surface` entry above.',
+  homeWashStop1: "BrandMark's `groundColor` at Home's header (full-screen brand wash) — matches "
+    + "the inner flame knockout to CurtainGround's new gradient top stop on Home, same non-text "
+    + 'shape-fill role as the `groundTopStrong` entry above.',
 };
 
 /** The destructured form (`const { color } = tokens; color.surface`) produces a different

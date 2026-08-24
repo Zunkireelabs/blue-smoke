@@ -66,6 +66,29 @@ const groundRaw = {
   bottomTint: '#F2F7FE',
 } as const;
 
+/**
+ * Home's full-height wash — replaces `groundTopStrong`/`groundBottomTint` for Home only (via
+ * `CurtainGround`'s `washColors`/`washLocations` props), everywhere else keeps the pale default.
+ * Seven-stop vertical gradient, exact brand blue at top fading to a near-white tint at the
+ * bottom, matched hex-for-hex to an approved design reference. `stop1` reuses `brandRaw.base`
+ * rather than repeating the literal so the two values can never drift apart.
+ */
+const homeWashRaw = {
+  stop1: brandRaw.base,
+  stop2: '#1D69DD',
+  stop3: '#3D8BE9',
+  stop4: '#79AEEE',
+  stop5: '#AFCDF4',
+  stop6: '#D5E4FA',
+  stop7: '#E8EFFB',
+} as const;
+
+/**
+ * Fractional stop positions (`react-native-linear-gradient`'s `locations` prop) for
+ * `homeWashRaw`'s seven colours, in the same order — matches the approved reference 1:1.
+ */
+export const HOME_WASH_LOCATIONS = [0, 0.18, 0.35, 0.52, 0.7, 0.85, 1] as const;
+
 const successRaw = {
   /**
    * Darkened from the brief's `#1E8E5A` (Sadin, 2026-08-09 — review correction).
@@ -118,6 +141,13 @@ const semanticColor = {
   groundBottom: groundRaw.bottom,
   groundTopStrong: groundRaw.topStrong,
   groundBottomTint: groundRaw.bottomTint,
+  homeWashStop1: homeWashRaw.stop1,
+  homeWashStop2: homeWashRaw.stop2,
+  homeWashStop3: homeWashRaw.stop3,
+  homeWashStop4: homeWashRaw.stop4,
+  homeWashStop5: homeWashRaw.stop5,
+  homeWashStop6: homeWashRaw.stop6,
+  homeWashStop7: homeWashRaw.stop7,
   // Home's sheet fill — a hair off pure `surface` white so the gradient's curved top edge has
   // a real colour seam to read against, distinct from `groundBottomTint` above so the seam is
   // a visible step, not a blend.
@@ -324,6 +354,20 @@ export const contrastPairs: ReadonlyArray<{
     bgToken: 'textPrimary',
     fg: semanticColor.textInverse,
     bg: semanticColor.textPrimary,
+    size: 'body',
+  },
+  {
+    // Home's header icon chip (`IconChip` in `HomeScreen.tsx`): `textInverse` used as a
+    // `backgroundColor`, dimmed via the `opacity` *style* property (same trick as the
+    // `textInverse on textPrimary` pair above) rather than an rgba() color — so this is
+    // `textInverse` with no bgToken entry, not a literal white-on-white render. General-purpose,
+    // same reasoning as that pair: whatever this chip's actual fill ends up being, dark text/an
+    // icon reads fine on a light chip.
+    name: 'textPrimary on textInverse',
+    fgToken: 'textPrimary',
+    bgToken: 'textInverse',
+    fg: semanticColor.textPrimary,
+    bg: semanticColor.textInverse,
     size: 'body',
   },
   // P0-7.0 additions — one entry per new fg/bg token this round's primitives introduce.

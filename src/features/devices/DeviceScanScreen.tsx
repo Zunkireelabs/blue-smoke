@@ -4,7 +4,17 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import { BrandMark, Button, ListRow, Text, tokens } from '@/shared/ui';
+import { BrandMark, Button, HOME_WASH_LOCATIONS, ListRow, Text, tokens } from '@/shared/ui';
+
+const HOME_WASH_COLORS = [
+  tokens.color.homeWashStop1,
+  tokens.color.homeWashStop2,
+  tokens.color.homeWashStop3,
+  tokens.color.homeWashStop4,
+  tokens.color.homeWashStop5,
+  tokens.color.homeWashStop6,
+  tokens.color.homeWashStop7,
+];
 import type { RootStackParamList } from '@/app/navigation';
 import { useDeviceScan, type ScannedDevice } from './useDeviceScan';
 import { DEVICES_CURTAIN_TOP_RATIO } from './HomeScreen';
@@ -169,7 +179,7 @@ function RadarSearch({
         style={[styles.radarRing, { borderWidth: innerRingBorderWidth, transform: [{ scale: coreScale }], opacity: coreOpacity }]}
       />
       <View style={[styles.radarRing, styles.radarRingStatic]} />
-      <BrandMark size={44} groundColor={tokens.color.groundTopStrong} />
+      <BrandMark size={44} groundColor={tokens.color.homeWashStop1} />
     </View>
   );
 }
@@ -186,7 +196,7 @@ function StaticDeviceIcon() {
   return (
     <View style={styles.radar}>
       <View style={[styles.radarRing, styles.radarRingStatic]} />
-      <BrandMark size={44} groundColor={tokens.color.groundTopStrong} />
+      <BrandMark size={44} groundColor={tokens.color.homeWashStop1} />
     </View>
   );
 }
@@ -319,18 +329,15 @@ export function DeviceScanScreen() {
   if (status === 'noDevicesFound') {
     return (
       <View style={styles.root}>
-        <LinearGradient
-          colors={[tokens.color.groundTopStrong, tokens.color.groundBottomTint]}
-          style={styles.gradient}
-        />
+        <LinearGradient colors={HOME_WASH_COLORS} locations={[...HOME_WASH_LOCATIONS]} style={styles.gradient} />
         <View style={[styles.topRow, { paddingTop: insets.top + tokens.spacing.md, paddingLeft: insets.left + tokens.spacing.lg }]}>
           <BackChevron onPress={goBack} />
         </View>
         <View style={styles.centered}>
-          <Text variant="title" style={styles.centerText}>
+          <Text variant="title" tone="inverse" style={styles.centerText}>
             We couldn&apos;t find it
           </Text>
-          <Text variant="body" tone="secondary" style={styles.centerText}>
+          <Text variant="body" tone="inverse" style={styles.centerText}>
             A few things to check: is it charged, is it within arm&apos;s reach, and is it already
             paired to another phone?
           </Text>
@@ -359,14 +366,10 @@ export function DeviceScanScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Same wash as Home/CurtainGround (`groundTopStrong` → `groundBottomTint`), so this reads
-          as a continuation of Home's gradient rather than a different screen's own colour. No
-          curtain card while there's nothing to put on one — it appears below once a device is
-          found. */}
-      <LinearGradient
-        colors={[tokens.color.groundTopStrong, tokens.color.groundBottomTint]}
-        style={styles.gradient}
-      />
+      {/* Same wash as Home/CurtainGround (`homeWashStop1..7`), so this reads as a continuation of
+          Home's gradient rather than a different screen's own colour. No curtain card while
+          there's nothing to put on one — it appears below once a device is found. */}
+      <LinearGradient colors={HOME_WASH_COLORS} locations={[...HOME_WASH_LOCATIONS]} style={styles.gradient} />
 
       {/* No native header (see `navigation.tsx`) — own back control, same reasoning as Home's. */}
       <View
@@ -394,11 +397,12 @@ export function DeviceScanScreen() {
       >
         <Text
           variant="title"
+          tone="inverse"
           style={[styles.scanTitle, { paddingLeft: insets.left + tokens.spacing.lg, paddingRight: insets.right + tokens.spacing.lg }]}
         >
           {isScanning ? 'Finding your device' : 'Finished looking'}
         </Text>
-        <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
+        <Text variant="body" tone="inverse" style={[styles.centerText, styles.subtitle]}>
           {isScanning
             ? 'Keep your BlueSmoke nearby and switched on.'
             : "Don't see your device? Bring it closer and scan again."}

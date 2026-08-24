@@ -2,7 +2,7 @@ import { Text as RNText, StyleSheet, type TextProps as RNTextProps } from 'react
 import { tokens } from './tokens';
 
 type Variant = 'title' | 'body' | 'label' | 'caption';
-type Tone = 'primary' | 'secondary' | 'inverse' | 'danger' | 'link';
+export type Tone = 'primary' | 'secondary' | 'inverse' | 'danger' | 'link';
 
 export interface TextProps extends RNTextProps {
   variant?: Variant;

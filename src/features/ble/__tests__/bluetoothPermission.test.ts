@@ -25,8 +25,18 @@ function bleResults(
 
 describe('readBluetoothGateState', () => {
   const originalOS = Platform.OS;
+  let checkSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    // Granted by default — most existing cases below exercise the adapter-state mapping below
+    // this check, not the check itself (see the two `checkSpy.mockResolvedValueOnce(false)`
+    // cases for that).
+    checkSpy = jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
+  });
+
   afterEach(() => {
     Platform.OS = originalOS;
+    checkSpy.mockRestore();
   });
 
   it('maps PoweredOn/PoweredOff/Unsupported the same on every platform', async () => {
@@ -51,6 +61,27 @@ describe('readBluetoothGateState', () => {
   it('Unauthorized resolves to deniedOnce on Android — the OS genuinely allows a re-prompt', async () => {
     Platform.OS = 'android';
     expect(await readBluetoothGateState(fakeManager('Unauthorized'))).toBe('deniedOnce');
+  });
+
+  // Regression, 2026-08-24, reproduced on real hardware: `manager.state()` reports the BLE
+  // adapter's power state, which is independent of this app's own runtime permission grant —
+  // it returned `PoweredOn` with BLUETOOTH_SCAN/BLUETOOTH_CONNECT both ungranted (never even
+  // prompted), and the gate let the user straight through to a scan that immediately failed
+  // with "Device is not authorized to use BluetoothLE". This locks in the fix: an ungranted
+  // runtime permission must report `deniedOnce` regardless of what the adapter itself reports.
+  it('an ungranted runtime BLE permission on Android reports deniedOnce even when the adapter is PoweredOn', async () => {
+    Platform.OS = 'android';
+    checkSpy.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    expect(await readBluetoothGateState(fakeManager('PoweredOn'))).toBe('deniedOnce');
+  });
+
+  it('does not check runtime permissions at all on iOS — there is no such API there', async () => {
+    Platform.OS = 'ios';
+    checkSpy.mockResolvedValue(false);
+
+    expect(await readBluetoothGateState(fakeManager('PoweredOn'))).toBe('poweredOn');
+    expect(checkSpy).not.toHaveBeenCalled();
   });
 });
 

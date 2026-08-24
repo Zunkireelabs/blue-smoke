@@ -39,6 +39,29 @@ const ANDROID_BLE_PERMISSIONS = [
  * it is — that distinction is surfaced through the *return value of asking*, not a status read.
  */
 export async function readBluetoothGateState(manager: BleManagerLike): Promise<BluetoothGateState> {
+  // 🔴 2026-08-24 fix — checked BEFORE `manager.state()` on Android. `state()` reports the
+  // adapter's power state (`BluetoothAdapter.getState()`), which is a system-wide fact
+  // independent of this app's own runtime permission grants: it reports `PoweredOn` whenever
+  // Bluetooth is switched on, whether or not BLUETOOTH_SCAN/BLUETOOTH_CONNECT were ever granted
+  // to this app. Manifest-declaring those two (`AndroidManifest.xml`) is necessary but not
+  // sufficient — Android 12+ treats them as dangerous, runtime-requestable permissions, and
+  // nothing was ever checking/requesting them before this gate declared itself resolved. Found
+  // on real hardware: `manager.state()` returned `PoweredOn` with both permissions
+  // `granted=false` (never even prompted), and the very next `startDeviceScan()` call threw
+  // "Device is not authorized to use BluetoothLE" — a scan-time failure for a gate that had
+  // already said "you're through." Reported as `deniedOnce`, the same state Android's own
+  // `Unauthorized` adapter value already maps to below — same recovery screen (ON-7), whose
+  // "Try again" already calls `requestAndroidBluetoothPermission()` to trigger the real OS
+  // dialog and (if answered `never_ask_again`) correctly upgrades to `permanentlyDenied`.
+  if (Platform.OS === 'android') {
+    const granted = await Promise.all(
+      ANDROID_BLE_PERMISSIONS.map((permission) => PermissionsAndroid.check(permission)),
+    );
+    if (!granted.every(Boolean)) {
+      return 'deniedOnce';
+    }
+  }
+
   const state = await manager.state();
   switch (state) {
     case 'PoweredOn':
