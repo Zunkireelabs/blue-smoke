@@ -5,6 +5,7 @@ import { RootNavigator } from './navigation';
 import { useAppReadyStore } from './stores/useAppReadyStore';
 import { initSessionListener } from './stores/useSessionStore';
 import { initOnboardingListener } from './stores/useOnboardingStore';
+import { initAppUpdateCheck } from '@/features/app-update/initAppUpdateCheck';
 
 export function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -13,6 +14,7 @@ export function App() {
   useEffect(() => {
     initSessionListener();
     initOnboardingListener();
+    initAppUpdateCheck();
   }, []);
 
   if (!isReady) {
