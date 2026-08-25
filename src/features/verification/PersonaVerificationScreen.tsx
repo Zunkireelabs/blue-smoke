@@ -9,8 +9,16 @@ import { Button, GradientGround, Text, tokens } from '@/shared/ui';
 import { SignOutButton } from '@/features/auth/SignOutButton';
 import type { RootStackParamList } from '@/app/navigation';
 import { getPersonaConfig } from './personaConfig';
+import { getSupabaseClient } from '@/shared/lib/supabaseClient';
 
 type Stage = 'starting' | 'pending' | 'canceled' | 'error' | 'not_configured';
+
+interface CreateInquiryResponse {
+  inquiryId: string;
+  sessionToken: string;
+  templateId: string;
+  reused?: boolean;
+}
 
 /**
  * VF-2 (F6.4, `SCREEN_MAP.md`) — Persona's SDK host, and (via its `canceled`/`error`/
@@ -26,7 +34,7 @@ type Stage = 'starting' | 'pending' | 'canceled' | 'error' | 'not_configured';
  * mount. `launch()` is a separate function Resume/Try again call directly, so a deliberate
  * user-initiated retry is never blocked by it.
  *
- * Uses Inquiry.fromTemplate(...).build().start() (a modal launch via a plain NativeModules
+ * Uses Inquiry.fromInquiry(...).build().start() (a modal launch via a plain NativeModules
  * call), not the inline <PersonaInquiryView> component. PersonaInquiryView is registered with
  * requireNativeComponent — the old-architecture way to register a custom native view — and
  * react-native-persona has no Fabric/codegen support even in its latest release (its own
@@ -35,6 +43,19 @@ type Stage = 'starting' | 'pending' | 'canceled' | 'error' | 'not_configured';
  * layer doesn't reliably cover custom native views with custom children — confirmed by a hard
  * native crash on mount with PersonaInquiryView. The modal `.start()` path only calls a plain
  * native module method, which the interop layer handles fine.
+ *
+ * 🔴 2026-08-24 fix — `launch()` now calls the `create-inquiry` Edge Function (spec §6.2,
+ * P2-8.0, already deployed) and resumes the SDK via `Inquiry.fromInquiry(inquiryId)
+ * .sessionToken(...)` instead of building a fresh client-side inquiry via `fromTemplate`.
+ * The old client-side-only inquiry was never recorded server-side, so `persona-webhook` could
+ * never find a matching `verifications` row to update (it 404s and writes nothing on an
+ * unknown inquiry_id, by design — it must not guess which user an inquiry belongs to) — every
+ * completed inquiry left the user stuck on "Confirming your verification…" forever, since
+ * `useVerificationStatus` polls a row that was never created. `getPersonaConfig()` is kept as
+ * a client-side pre-flight only (fails fast into `not_configured` if this build has no
+ * `PERSONA_TEMPLATE_ID` inlined at all, before spending a network round trip) — the actual
+ * template id and environment used for the inquiry now come from the server response, which is
+ * scoped by the Edge Function's own (server-side) `PERSONA_TEMPLATE_ID`.
  */
 export function PersonaVerificationScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -43,9 +64,11 @@ export function PersonaVerificationScreen() {
   const autoStarted = useRef(false);
 
   const launch = useCallback(() => {
-    let config;
     try {
-      config = getPersonaConfig();
+      // Presence-only check — this build must at least have a template id inlined to be worth
+      // a network round trip. The value itself isn't used below; the server-created inquiry
+      // carries its own template/environment scoping.
+      getPersonaConfig();
     } catch (err) {
       setErrorMessage((err as Error).message);
       setStage('not_configured');
@@ -53,13 +76,24 @@ export function PersonaVerificationScreen() {
     }
 
     setStage('starting');
-    Inquiry.fromTemplate(config.templateId)
-      .environment(config.environment)
-      .onComplete(() => setStage('pending'))
-      .onCanceled(() => setStage('canceled'))
-      .onError(() => setStage('error'))
-      .build()
-      .start();
+
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.functions.invoke<CreateInquiryResponse>('create-inquiry');
+
+      if (error || !data) {
+        setStage('error');
+        return;
+      }
+
+      Inquiry.fromInquiry(data.inquiryId)
+        .sessionToken(data.sessionToken)
+        .onComplete(() => setStage('pending'))
+        .onCanceled(() => setStage('canceled'))
+        .onError(() => setStage('error'))
+        .build()
+        .start();
+    })().catch(() => setStage('error'));
   }, []);
 
   useEffect(() => {

@@ -11,4 +11,7 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['babel-jest', { configFile: require.resolve('./babel.config.js') }],
   },
+  // Fails the test that produced it on any unexpected console.error — see
+  // docs/execution-briefs/UI-BUILD-E-console-error-guard.md.
+  setupFilesAfterEnv: [require.resolve('../jest/failOnConsoleError.js')],
 };

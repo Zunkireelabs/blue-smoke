@@ -12,6 +12,11 @@ import { findByLabel, renderedText } from '../testUtils';
 
 const Stack = createNativeStackNavigator();
 
+// `NavigationContainer` schedules a timer inside its `useLinking` effect that
+// only clears on unmount — leaving a renderer mounted past its test leaks a
+// real open handle (Jest hangs, then OOMs, once enough of these pile up).
+let activeRenderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
 function renderChoice() {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
@@ -25,10 +30,18 @@ function renderChoice() {
       </NavigationContainer>,
     );
   });
+  activeRenderer = renderer;
   return renderer;
 }
 
 describe('AuthMethodChoiceScreen', () => {
+  afterEach(() => {
+    act(() => {
+      activeRenderer?.unmount();
+    });
+    activeRenderer = undefined;
+  });
+
   it('renders both methods, neither pre-selected', () => {
     const renderer = renderChoice();
     const text = renderedText(renderer);

@@ -1,17 +1,23 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AsYouType, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js/min';
-import { Button, Screen, Text, TextField, tokens } from '@/shared/ui';
+import { AuthScaffold, Button, Text, TextField, tokens } from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
 import { CountryPicker } from './CountryPicker';
 import { phoneE164Schema } from './schemas';
+import { AUTH_MODE_COPY, DEFAULT_AUTH_MODE } from './authMode';
 
 /**
  * P1-1.0 Method B, step 1 (spec §1.2.1) — phone number input with a
  * country-code picker, validated via `libphonenumber-js`.
+ *
+ * Restyled 2026-08-12 to the reference auth design, and promoted to the auth stack's front
+ * door: AU-1's separate "Email or Phone?" chooser is gone, and the choice is now the "or
+ * continue with → Email" button below. Nothing about the submit path changed — same
+ * `AsYouType` formatting, same two-stage validation, same `requestPhoneOtp` call.
  *
  * No default country is specified anywhere in the spec — this is a UI
  * concern, not client geo-detection, which this task doesn't build. 'US'
@@ -40,6 +46,9 @@ const MAX_SUBSCRIBER_DIGITS = 15;
 export function PhoneInputScreen() {
   const authClient = useAuthClient();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'PhoneInput'>>();
+  const mode = route.params?.mode ?? DEFAULT_AUTH_MODE;
+  const copy = AUTH_MODE_COPY[mode];
   const [country, setCountry] = useState<CountryCode>('US');
   const [phoneText, setPhoneText] = useState('');
   const [status, setStatus] = useState<Status>('idle');
@@ -89,7 +98,7 @@ export function PhoneInputScreen() {
         return;
       }
 
-      navigation.navigate('OtpVerify', { phone: e164.data });
+      navigation.navigate('OtpVerify', { phone: e164.data, mode });
     } catch {
       // supabaseAuthClient's contract is that no method throws — this is
       // defence in depth, so the screen can never strand itself even if
@@ -103,26 +112,36 @@ export function PhoneInputScreen() {
   const isSubmitting = status === 'submitting';
 
   return (
-    <Screen scroll>
-      <Text variant="title" style={styles.title}>
-        Enter your phone number
-      </Text>
-
-      <Text variant="label" tone="secondary" style={styles.label}>
-        Country
-      </Text>
-      <CountryPicker value={country} onChange={handleCountryChange} />
-
-      <View style={styles.field}>
-        <TextField
-          label="Phone number"
-          value={phoneText}
-          onChangeText={handleChangeText}
-          keyboardType="phone-pad"
-          autoComplete="tel"
-          editable={!isSubmitting}
-          accessibilityLabel="Phone number"
+    <AuthScaffold
+      topLink={
+        <Button
+          variant="textLink"
+          label={copy.switchLabel}
+          // `setParams`, not `navigate`: the two modes are the same screen wearing different
+          // copy, so pushing a second copy of it onto the stack would give the user a back
+          // button that appears to undo a sign-in choice that was never made.
+          onPress={() => navigation.setParams({ mode: copy.switchTo })}
         />
+      }
+    >
+      <Text variant="title" style={styles.heading}>
+        {copy.heading}
+      </Text>
+
+      <View style={styles.row}>
+        <CountryPicker value={country} onChange={handleCountryChange} variant="compact" />
+        <View style={styles.field}>
+          <TextField
+            placeholder="Enter your phone number"
+            value={phoneText}
+            onChangeText={handleChangeText}
+            keyboardType="phone-pad"
+            autoComplete="tel"
+            editable={!isSubmitting}
+            accessibilityLabel="Phone number"
+            style={styles.input}
+          />
+        </View>
       </View>
 
       {formError && (
@@ -131,29 +150,69 @@ export function PhoneInputScreen() {
         </Text>
       )}
 
-      <View style={styles.button}>
-        <Button label="Send code" onPress={onSubmit} disabled={isSubmitting} loading={isSubmitting} />
+      <View style={styles.primaryAction}>
+        <Button
+          label="Send verification code"
+          shape="block"
+          onPress={onSubmit}
+          disabled={isSubmitting}
+          loading={isSubmitting}
+        />
       </View>
-    </Screen>
+
+      <Text variant="body" tone="secondary" style={styles.divider}>
+        or continue with
+      </Text>
+
+      <Button
+        variant="onBrand"
+        shape="block"
+        label="Email"
+        onPress={() => navigation.navigate('EmailCodeRequest', { mode })}
+      />
+
+      <Text variant="caption" tone="secondary" style={styles.legal}>
+        {copy.legal}
+      </Text>
+    </AuthScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    marginBottom: tokens.spacing.lg,
+  heading: {
+    textAlign: 'center',
+    marginBottom: tokens.spacing.xl,
   },
-  label: {
-    marginTop: tokens.spacing.md,
-    marginBottom: tokens.spacing.xs,
+  row: {
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
   },
   field: {
-    marginTop: tokens.spacing.xs,
+    // The country chip sizes to its content; the number field takes everything left over.
+    flex: 1,
+  },
+  input: {
+    backgroundColor: tokens.color.surface,
+    borderRadius: tokens.radii.lg,
+    // `TextField`'s default outline reads as a stray box on the reference's tinted sheet, where
+    // the white fill is what separates a field from its ground. Overridden here rather than
+    // changed in `TextField` itself — every screen not yet restyled still sits on a white
+    // background and needs the border to be visible at all.
+    borderWidth: 0,
   },
   formError: {
-    marginTop: tokens.spacing.lg,
-    textAlign: 'center',
+    marginTop: tokens.spacing.sm,
   },
-  button: {
+  primaryAction: {
+    marginTop: tokens.spacing.lg,
+  },
+  divider: {
+    textAlign: 'center',
     marginTop: tokens.spacing.xl,
+    marginBottom: tokens.spacing.md,
+  },
+  legal: {
+    textAlign: 'center',
+    marginTop: tokens.spacing.lg,
   },
 });

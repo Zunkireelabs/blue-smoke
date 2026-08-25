@@ -7,8 +7,11 @@
 > multiple BLE devices. By the end of this phase a user can register, sign in, discover and bond
 > devices, and see live device status that survives reconnects and app backgrounding.
 
-**Progress:** 0 / 8 tasks · **20 / 91 sub-tasks** *(audited Day 9, 2026-08-08: `P1-1.0` 15 ·
-`P1-2.0` 1 · `P1-4.0` 4. Was `15 / 91`, which pre-dated all of P1-4.0.)*
+**Progress:** 0 / 8 tasks · **32 / 91 sub-tasks** *(Day 10, 2026-08-10: `P1-7.0` +1 (3/12 —
+app-state transitions handled, on top of Day 10's earlier auto-reconnect-with-backoff and
+re-handshake-on-reconnect), `P1-2.0` +1 (2/9 — permission state re-checked on app foreground).
+Previously `30 / 91`, Day 10 (2026-08-09): `P1-3.0` +8 (8/9 — everything except the ≥2-Android-OEM
+hardware box), `P1-7.0` +2 (2/12). Audited Day 9: `P1-1.0` 15 · `P1-2.0` 1 · `P1-4.0` 4.)*
 
 > **Denominator corrected — it was never 77.** Counting the boxes under the eight PRD tasks gives
 > **91**: `P1-1.0` 17 · `2.0` 9 · `3.0` 9 · `4.0` 13 · `5.0` 12 · `6.0` 11 · `7.0` 12 · `8.0` 8.
@@ -128,7 +131,8 @@ the app working** — account, profile and verification are all reachable withou
       call for `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` — but nothing calls it yet (Phase D), CAMERA
       is Persona's own SDK's concern not ours, and Android has still never been compiled on this
       project (no JDK) so none of this has actually been run. Leaving unticked rather than
-      claiming something unrun.)*
+      claiming something unrun. `feature/ble-connectivity`'s `PairDeviceScreen.tsx`, merged in
+      2026-08-23, is in the same state — declares the manifest entries, no runtime request flow)*
 - [x] **Denial recovery path** — explanation + deep link to Settings *(P1-2.0, ON-8/ON-9 —
       `Linking.openSettings()`, real, tested; not a placeholder button)*
 - [x] "Permanently denied" state handled distinctly from "denied once" *(P1-2.0 — `BluetoothGateScreen`
@@ -136,7 +140,8 @@ the app working** — account, profile and verification are all reachable withou
       `BluetoothGateScreen.test.tsx` against real iOS/Android state strings, not a shared
       component behind a variant prop. iOS never reaches ON-7 — see that file's own note on why)*
 - [x] Permission state re-checked on app foreground *(P1-2.0 — `BluetoothGateScreen`'s `AppState`
-      listener, tested)*
+      listener, tested. `PairDeviceScreen.tsx`'s own `AppStateCoordinator` does the equivalent for
+      that parallel implementation — see the P1-3.0 merge-finding note below)*
 - [ ] **No dead ends** — verified by walking every denial combination *(**mostly done; one gap, and
       it is Android.** Both original blockers are gone: P1-3.0 gave these screens a real trigger
       (`Home` → "Pair a device" → ON-4 → gate), and the signed-in session walks fine now. On
@@ -163,19 +168,52 @@ the app working** — account, profile and verification are all reachable withou
 > selection, filtering to the project's GATT service.
 
 - [x] Scan **filtered on the service UUID** (spec §4.1) — never present arbitrary peripherals
-- [ ] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1) — deliberately
-      skipped this round: DV-4 only requires signal strength (decision recorded in
-      `DeviceScanScreen.tsx`), and `0xFF`-unknown battery handling has no UI to attach to without
-      it. Revisit alongside DV-9 (P1-5.0), which actually needs battery.
-- [x] Discovered-device list UI with signal strength indication
+      *(`src/features/ble/scanner.ts`; the UUID itself is unconfirmed against hardware — 🔴 OQ-13,
+      see `docs/hardware/hqd-device-architecture.md` §8 — but the filtering behaviour is built and
+      tested against the mock regardless of what that value turns out to be)*
+- [x] Manufacturer data parsed for pre-connect state hint + battery (spec §4.1)
+      *(`parseAdvertisement()`; `stateHintRaw`/`flagsRaw` are parsed and carried, never interpreted
+      — §4.1 defines no encoding for either, see the spec gap noted in `scanner.ts` and
+      `PairDeviceScreen.tsx`. `DeviceScanScreen.tsx` — the parallel P1-3.0 implementation merged
+      2026-08-23, see the note below — deliberately skips this: DV-4 only requires signal strength,
+      and `0xFF`-unknown battery has no UI to attach to without it; that box is revisited at P1-5.0)*
+- [x] Discovered-device list UI with signal strength indication *(`PairDeviceScreen.tsx`; also
+      `DeviceScanScreen.tsx` — see the merge note below)*
 - [x] Scan timeout + explicit "no devices found" state with troubleshooting help
+      *(`ScanState.noDevicesFound`, `PairDeviceScreen.tsx`)*
 - [x] Bluetooth-off state detected and handled with a prompt to enable
-- [x] Duplicate-advertisement handling; stable list ordering
-- [x] Scan stopped on screen exit — no battery leak
-- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors — cannot be attempted;
-      Android has never been compiled on this project (no JDK/ANDROID_HOME), unchanged from
-      Phase 0/1's state. Not specific to this task.
-- [x] Tested against the mock peripheral
+      *(`ScanBlockedReason.bluetoothOff`, `PairDeviceScreen.tsx`; recovers automatically when
+      Bluetooth is switched back on, no re-tap needed)*
+- [x] Duplicate-advertisement handling; stable list ordering *(`scanner.ts` — discovery order,
+      deliberately not RSSI order; see the mutation-verify note in that file)*
+- [x] Scan stopped on screen exit — no battery leak *(`useFocusEffect`/`useEffect` in
+      `PairDeviceScreen.tsx`, tested)*
+- [ ] Android OEM scan-reliability differences tested on ≥ 2 vendors *(still needs physical
+      hardware — OQ-1, ~Day 26 — but "Android has never been compiled" is no longer true as of
+      2026-08-23: JDK 17 + the Android SDK are installed and `./gradlew assembleDebug` succeeds,
+      see `docs/session-log/sadin.md`. Compiling is no longer what blocks this box; a device is)*
+- [x] Tested against the mock peripheral *(`scanner.test.ts` 29 tests, `PairDeviceScreen.test.tsx`
+      7 tests, all against `tools/mock-peripheral`)*
+
+> **Merge finding, 2026-08-23:** two independent pairing-flow implementations exist —
+> `PairDeviceScreen.tsx` (`feature/ble-connectivity`, this task's boxes above) and
+> `DevicePairingPrimingScreen.tsx` → `BluetoothGateScreen.tsx` → `DeviceScanScreen.tsx` →
+> `PairingBoundaryScreen.tsx` (`stage`, registered as `BluetoothPriming`/`BluetoothGate`/
+> `DeviceScan`/`DevicePairingBoundary`). Both are now merged and both are registered in
+> `navigation.tsx`; Home's "Pair a device" button currently points at the `stage` flow. Needs a
+> team decision on which is canonical — not made here.
+>
+> **Update, 2026-08-24:** neither of the above two is what Home's live button points to any more.
+> Both implement spec §4 (mock-only — real H158 hardware doesn't advertise that service at all, see
+> `docs/hardware/hqd-device-architecture.md` §11-§13), and the `stage` flow dead-ends by design at
+> `PairingBoundaryScreen` (OQ-12). A third, parallel chain — `H158GateScreen.tsx` → `H158PairScreen.tsx`
+> (registered as `H158Gate`/`H158Pair`) — now owns Home's "Pair a device" button instead, and talks
+> to real H158 hardware end to end (scan → connect → lock/unlock) via `h158Session.ts`, the same API
+> `H158BringUpScreen.tsx` already proved out. It is **local-only**: no `devices`/`device_ownership`
+> row is written, only an on-device "last connected" flag (`h158DeviceStorage.ts`) — real
+> server-side ownership is out of scope until the client decides what "pairing" means for hardware
+> with no authentication (§13.3). The two §4 implementations above stay registered and untouched for
+> this task's own boxes/tests; this is a fourth flow, not a resolution of the team decision above.
 
 **Assumption:** device advertises the agreed BLE service UUID.
 **Excludes:** support for non-Blue-Smoke BLE peripherals.
@@ -346,14 +384,26 @@ the app working** — account, profile and verification are all reachable withou
 > Manage the BLE connection across app states: automatic reconnect after drops and correct
 > behaviour when the app is backgrounded or relaunched.
 
-- [ ] Auto-reconnect with exponential backoff and a cap
-- [ ] **Re-handshake required on every reconnect** — a session never survives a disconnect (spec §4.5)
+- [x] Auto-reconnect with exponential backoff and a cap *(`src/features/ble/connection.ts`, tested
+      in `connection.test.ts`)*
+- [x] **Re-handshake required on every reconnect** — a session never survives a disconnect (spec §4.5)
+      *(`connection.ts` calls `createAuthHandshake()` fresh on every attempt, initial and reconnect;
+      proven by `connection.test.ts`'s "an abrupt disconnect triggers a full new handshake" test,
+      which asserts the credentials callback runs a second time, not once)*
 - [ ] iOS: state restoration via `CBCentralManagerOptionRestoreIdentifierKey`
 - [ ] iOS: background mode `bluetooth-central` configured and working
 - [ ] Android: foreground service (type `connectedDevice`) with a clear persistent notification
 - [ ] Android: battery-optimisation exemption requested with an honest explanation
 - [ ] Connection parameters applied per spec §4.9, incl. the 4000 ms supervision timeout
-- [ ] App-state transitions handled: foreground ↔ background ↔ relaunch
+- [x] App-state transitions handled: foreground ↔ background ↔ relaunch *(`src/features/ble/appState.ts`'s
+      `createAppStateCoordinator()` collapses RN's `active`/`background`/`inactive`/unrecognised
+      states into the two phases the app has policy for — `inactive` is transient, never
+      backgrounding — plus `reconcileConnections()` for the foreground repair path; 15 tests in
+      `appState.test.ts`. Verified against the injected `AppStateLike` seam, not a physical device —
+      §4's four native-config boxes above stay open. **"Relaunch" here means cold start** — the
+      initial phase is read from `currentState` and pinned by tests 1–3. It does **not** mean BLE
+      state restoration, which is the separate `CBCentralManagerOptionRestoreIdentifierKey` box
+      above and is still open)*
 - [ ] All BLE operations have explicit timeouts — **no unbounded awaits** (spec §9.3)
 - [ ] Findings from the `P0-4.5` spike applied
 - [ ] **Force-quit behaviour documented honestly** — and confirmed harmless because the firmware dead-man timer is authoritative (spec §7.1)

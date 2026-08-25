@@ -161,8 +161,10 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # ══ Scratch / working files ══
+# temp_ss/ was tracked from 2026-08-12 (Sadin) as working material for the UI redesign, but
+# got pushed to origin/feature/ble-connectivity along with stray screenshots that were never
+# meant to leave a laptop. Reversed 2026-08-25 (Sadin): now ignored going forward.
 temp_ss/
-temp-ss/
 temp/
 tmp/
 scratch/
@@ -170,3 +172,7 @@ scratch/
 *.bak
 ~$*.xlsx
 ~$*.docx
+
+# Stray screenshots dropped at repo root during ad-hoc UI review
+/image.png
+/image copy*.png

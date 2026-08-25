@@ -1,16 +1,11 @@
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
-import {
-  createNativeStackNavigator,
-  type NativeStackNavigationProp,
-} from '@react-navigation/native-stack';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-
-import { AuthMethodChoiceScreen } from '@/features/auth/AuthMethodChoiceScreen';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { BootSplashScreen } from '@/app/BootSplashScreen';
+import type { AuthMode } from '@/features/auth/authMode';
 import { EmailCodeRequestScreen } from '@/features/auth/EmailCodeRequestScreen';
 import { EmailCodeEntryScreen } from '@/features/auth/EmailCodeEntryScreen';
 import { PhoneInputScreen } from '@/features/auth/PhoneInputScreen';
 import { OtpEntryScreen } from '@/features/auth/OtpEntryScreen';
-import { PasswordSignInScreen } from '@/features/auth/PasswordSignInScreen';
 import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import { OnboardingCarouselScreen } from '@/features/onboarding/OnboardingCarouselScreen';
 import { VerifyIntroScreen } from '@/features/verification/VerifyIntroScreen';
@@ -22,16 +17,19 @@ import {
   type VerificationState,
 } from '@/features/verification/useVerificationStatus';
 import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
+import { PairDeviceScreen } from '@/features/devices/PairDeviceScreen';
+import { H158BringUpScreen } from '@/features/ble/h158/H158BringUpScreen';
 import { DevicePairingPrimingScreen } from '@/features/devices/DevicePairingPrimingScreen';
 import { DevicePairingGateScreen } from '@/features/devices/DevicePairingGateScreen';
 import { DeviceScanScreen } from '@/features/devices/DeviceScanScreen';
 import { PairingBoundaryScreen } from '@/features/devices/PairingBoundaryScreen';
+import { H158GateScreen } from '@/features/devices/H158GateScreen';
+import { H158PairScreen } from '@/features/devices/H158PairScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 import { useOnboardingStore, type OnboardingStatus } from '@/app/stores/useOnboardingStore';
-import { Text, tokens } from '@/shared/ui';
 
 /**
  * Root param list — spec §9.2 app/navigation.tsx. Contested shared file (CLAUDE.md): every
@@ -41,11 +39,35 @@ export type RootStackParamList = {
   // Pre-auth, first launch only (P1-2.0)
   Onboarding: undefined;
   // Unauthenticated
+  /**
+   * ⚠️ Registered nowhere. AU-1 was retired when the reference auth design landed: the channel
+   * choice now lives *on* the phone screen, as its "or continue with → Email" button, so a
+   * separate chooser has nothing left to do. `AuthMethodChoiceScreen.tsx` is kept on disk
+   * (Sadin, 2026-08-12) but is unreachable — this entry exists only so that orphaned file and
+   * its test still typecheck. A `navigate('AuthChoice')` compiles and then fails at runtime;
+   * there is no screen to land on.
+   */
   AuthChoice: undefined;
-  EmailCodeRequest: undefined;
-  EmailCodeEntry: { email: string };
-  PhoneInput: undefined;
-  OtpVerify: { phone: string };
+  /**
+   * `mode` selects copy only — headline and legal line. Both modes run the identical 6-digit
+   * code path, because there is no separate signup vs login in this backend (P1-1.0 retired
+   * AU-2/3/4). Defaults to signup: that is where a user arrives from onboarding.
+   */
+  EmailCodeRequest: { mode?: AuthMode } | undefined;
+  /** See `OtpVerify` — `mode` rides along so the channel-switch escape keeps the arriving copy. */
+  EmailCodeEntry: { email: string; mode?: AuthMode };
+  /** See `EmailCodeRequest` — `mode` is copy-only here too. */
+  PhoneInput: { mode?: AuthMode } | undefined;
+  /** `mode` is carried through so the "or continue with → Email" escape keeps the copy the user
+   *  arrived in; see `EmailCodeRequest`. Copy only, same as everywhere else it appears. */
+  OtpVerify: { phone: string; mode?: AuthMode };
+  /**
+   * ⚠️ Registered nowhere, as of the reference auth restyle (Sadin, 2026-08-12). Password
+   * sign-in is a *state* of `EmailCodeRequest` now, on the same sheet under the same chrome —
+   * the reference puts both credentials on one screen. `PasswordSignInScreen.tsx` is kept on
+   * disk, same treatment as `AuthChoice`, and this entry exists only so it and its test still
+   * typecheck. A `navigate('PasswordSignIn')` compiles and then fails at runtime.
+   */
   PasswordSignIn: undefined;
   // Authenticated, pre-verification
   VerifyIntro: undefined;
@@ -62,9 +84,20 @@ export type RootStackParamList = {
   BluetoothGate: undefined;
   DeviceScan: undefined;
   DevicePairingBoundary: { deviceId: string; deviceName: string | null };
+  // feature/ble-connectivity's own pairing screen (scanner.ts/BleScannerLike-based) — registered
+  // but currently unreferenced; see the merge-finding comment where it's registered below.
+  PairDevice: undefined;
+  // Real-hardware H158 pairing, reached from Home's live "Pair a device" button — see
+  // H158GateScreen.tsx/H158PairScreen.tsx. Parallel to the §4 BluetoothGate/DeviceScan chain
+  // above, not a replacement for it; that one still stops at DevicePairingBoundary (OQ-12).
+  H158Gate: undefined;
+  H158Pair: undefined;
   // Dev-only screen gallery (see src/features/devgallery). Registered only when __DEV__.
   ScreenGallery: undefined;
   ScreenPreview: { id: string };
+  // Dev-only bring-up spike for the real H158/YP65-AT hardware — see
+  // src/features/ble/h158/H158BringUpScreen.tsx. Not §4, not PairDevice.
+  H158BringUp: undefined;
 };
 
 /**
@@ -139,52 +172,6 @@ export function selectStack(
   return 'verify';
 }
 
-function BootSplash() {
-  return (
-    <View style={styles.centered}>
-      <ActivityIndicator size="large" />
-    </View>
-  );
-}
-
-/**
- * A header action rendered as text rather than an icon — OQ-7 (brand assets) is unanswered, so
- * there is no icon set to draw from and inventing one would be a brand decision. Sized to the
- * kit's minimum hit area like every other pressable.
- */
-function HeaderTextButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={styles.headerButton}
-    >
-      <Text variant="label" tone="link">
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-/**
- * Hoisted to module scope and passed to `headerRight` by reference rather than wrapped in an
- * inline arrow. Defining it during render would give React a new component type on every pass
- * and remount the header subtree — `react/no-unstable-nested-components`. It reads navigation
- * from the hook instead of a prop precisely so the `options` object can stay static.
- */
-function HomeHeaderRight() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  return (
-    <View style={styles.headerGroup}>
-      {__DEV__ && (
-        <HeaderTextButton label="Screens" onPress={() => navigation.navigate('ScreenGallery')} />
-      )}
-      <HeaderTextButton label="Profile" onPress={() => navigation.navigate('Profile')} />
-    </View>
-  );
-}
-
 /**
  * Three mutually exclusive stacks, chosen by session and verification state.
  *
@@ -215,7 +202,7 @@ export function RootNavigator() {
         // Restoring a Keychain-backed session. Render nothing decisive: showing the auth
         // stack here would flash a login screen at an already-signed-in user on every launch.
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="VerificationPending" component={BootSplash} />
+          <Stack.Screen name="VerificationPending" component={BootSplashScreen} />
         </Stack.Navigator>
       ) : stack === 'onboarding' ? (
         // F1 — first launch, no session yet, onboarding flag unset. Its own single-screen
@@ -226,17 +213,36 @@ export function RootNavigator() {
           <Stack.Screen name="Onboarding" component={OnboardingCarouselScreen} />
         </Stack.Navigator>
       ) : stack === 'auth' ? (
-        <Stack.Navigator initialRouteName="AuthChoice">
+        // Phone entry is the front door now — AU-1's chooser was retired with the reference
+        // design (see `AuthChoice` in RootStackParamList). Only the restyled screens set
+        // `headerShown: false`; the rest still rely on the native header for their back button
+        // until they are restyled in turn.
+        <Stack.Navigator initialRouteName="PhoneInput">
+          {/* Listed first as well as named in `initialRouteName`. React Navigation falls back to
+              the first registered screen whenever the named initial route doesn't take, and this
+              screen being the front door is not something to leave resting on one mechanism —
+              getting it wrong drops the user onto the email form with no back button and no way
+              to reach the phone path at all. */}
           <Stack.Screen
-            name="AuthChoice"
-            component={AuthMethodChoiceScreen}
-            options={{ title: 'Welcome' }}
+            name="PhoneInput"
+            component={PhoneInputScreen}
+            options={{ headerShown: false }}
           />
-          <Stack.Screen name="EmailCodeRequest" component={EmailCodeRequestScreen} options={{ title: 'Continue with email' }} />
-          <Stack.Screen name="EmailCodeEntry" component={EmailCodeEntryScreen} options={{ title: 'Enter code' }} />
-          <Stack.Screen name="PhoneInput" component={PhoneInputScreen} options={{ title: 'Your number' }} />
-          <Stack.Screen name="OtpVerify" component={OtpEntryScreen} options={{ title: 'Enter code' }} />
-          <Stack.Screen name="PasswordSignIn" component={PasswordSignInScreen} options={{ title: 'Sign in with password' }} />
+          <Stack.Screen
+            name="EmailCodeRequest"
+            component={EmailCodeRequestScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="EmailCodeEntry"
+            component={EmailCodeEntryScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="OtpVerify"
+            component={OtpEntryScreen}
+            options={{ headerShown: false }}
+          />
         </Stack.Navigator>
       ) : stack === 'home' ? (
         <Stack.Navigator>
@@ -244,35 +250,53 @@ export function RootNavigator() {
             name="Home"
             component={HomeScreen}
             options={{
-              title: 'BlueSmoke',
-              // P1-8.0 — the only affordance into Profile. Home is the whole signed-in stack,
-              // so without this the screen is registered but unreachable.
-              headerRight: HomeHeaderRight,
+              // Home now builds its own header (avatar + dev "Screens" link, centered) so the
+              // gradient can run edge-to-edge behind the status bar — see HomeScreen.tsx.
+              headerShown: false,
             }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
           <Stack.Screen name="SetPassword" component={SetPasswordScreen} options={{ title: 'Set a password' }} />
-          {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection. */}
+          {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection.
+              No native header — `BluetoothPrimingScreen` renders its own gradient + "BlueSmoke"
+              + curtain shell, matching Home's. `slide_from_bottom` makes entering it read as
+              Home's own curtain continuing to rise, landing at the same resting height. */}
           <Stack.Screen
             name="BluetoothPriming"
             component={DevicePairingPrimingScreen}
-            options={{ title: 'Pair a device' }}
+            options={{ headerShown: false, animation: 'slide_from_bottom' }}
           />
           <Stack.Screen
             name="BluetoothGate"
             component={DevicePairingGateScreen}
             options={{ title: 'Pair a device' }}
           />
-          <Stack.Screen
-            name="DeviceScan"
-            component={DeviceScanScreen}
-            options={{ title: 'Pair a device' }}
-          />
+          {/* No native header — DeviceScanScreen renders its own full-bleed gradient (matching
+              Home's) with its own back control, same reasoning as Home itself above. */}
+          <Stack.Screen name="DeviceScan" component={DeviceScanScreen} options={{ headerShown: false }} />
           <Stack.Screen
             name="DevicePairingBoundary"
             component={PairingBoundaryScreen}
             options={{ title: 'Pair a device' }}
           />
+          {/*
+            🔴 Merge finding, 2026-08-23: two independent pairing-flow implementations exist —
+            this four-screen BluetoothPriming→...→DevicePairingBoundary flow (stage) and the
+            single-screen PairDeviceScreen below (feature/ble-connectivity, built against
+            scanner.ts/BleScannerLike). Home's CTA now points at this one; PairDevice stays
+            registered so the file isn't silently orphaned, but nothing navigates to it any
+            more. Needs a team decision on which one is canonical — see the session log.
+          */}
+          <Stack.Screen
+            name="PairDevice"
+            component={PairDeviceScreen}
+            options={{ title: 'Pair device' }}
+          />
+          {/* Real H158 hardware chain — Home's live "Pair a device" button lands here (see
+              HomeScreen.tsx's PairingModal onContinue). No native header, matching the gate's
+              own leaf screens (GradientGround-based, no nav bar). */}
+          <Stack.Screen name="H158Gate" component={H158GateScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="H158Pair" component={H158PairScreen} options={{ headerShown: false }} />
           {/*
             Dev-only. `__DEV__` is statically false in a release build, so these routes are not
             merely hidden — they are absent from the navigator, which is the same guarantee the
@@ -289,6 +313,11 @@ export function RootNavigator() {
                 name="ScreenPreview"
                 component={ScreenPreviewScreen}
                 options={({ route }) => ({ title: route.params.id })}
+              />
+              <Stack.Screen
+                name="H158BringUp"
+                component={H158BringUpScreen}
+                options={{ title: 'H158 bring-up' }}
               />
             </Stack.Group>
           )}
@@ -327,13 +356,3 @@ export function RootNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerButton: {
-    minHeight: tokens.touchTarget.minHeight,
-    justifyContent: 'center',
-    paddingHorizontal: tokens.spacing.sm,
-  },
-  headerGroup: { flexDirection: 'row', alignItems: 'center' },
-});

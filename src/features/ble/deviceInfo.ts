@@ -8,6 +8,7 @@
  * `DeviceInfoOutcome`.
  */
 
+import { base64ToBytes } from './base64';
 import type { BleDeviceLike } from './BleClientContext';
 import { readBytes, readUint8 } from './byteLayout';
 import {
@@ -60,32 +61,6 @@ async function withTimeout<T>(operation: Promise<T>, ms: number): Promise<T> {
   } finally {
     clearTimeout(timeoutHandle);
   }
-}
-
-// Hand-rolled base64 decoder, duplicated from auth.ts's base64ToBytes (not
-// exported there, and exporting it would mean editing auth.ts — out of scope
-// per the execution brief §4.4/§1). Flagged in this task's report as a
-// follow-up: extract a shared base64 helper now that a second module needs
-// one. Same alphabet/algorithm as auth.ts; kept local rather than imported.
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-function base64ToBytes(base64: string): Uint8Array {
-  const clean = base64.replace(/=+$/, '');
-  const out = new Uint8Array(Math.floor((clean.length * 6) / 8));
-  let outIndex = 0;
-  let buffer = 0;
-  let bitsInBuffer = 0;
-  for (let i = 0; i < clean.length; i += 1) {
-    const value = BASE64_ALPHABET.indexOf(clean[i]);
-    buffer = (buffer << 6) | value;
-    bitsInBuffer += 6;
-    if (bitsInBuffer >= 8) {
-      bitsInBuffer -= 8;
-      out[outIndex] = (buffer >> bitsInBuffer) & 0xff;
-      outIndex += 1;
-    }
-  }
-  return out;
 }
 
 const VALID_PROVISIONING_STATES: ReadonlySet<number> = new Set(Object.values(ProvisioningState));

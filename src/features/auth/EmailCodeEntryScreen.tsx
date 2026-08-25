@@ -1,29 +1,41 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { useRoute, type RouteProp } from '@react-navigation/native';
-import { Screen, Text, tokens, useCountdown } from '@/shared/ui';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import {
+  AuthScaffold,
+  BackButton,
+  Button,
+  CodeSegments,
+  Screen,
+  Text,
+  tokens,
+  useCountdown,
+} from '@/shared/ui';
 import type { RootStackParamList } from '@/app/navigation';
 import { useAuthClient } from './AuthClientContext';
+import { DEFAULT_AUTH_MODE } from './authMode';
+import { formatCountdown } from './formatCountdown';
 
 /**
  * AU-13 — P1-1.0, step 2 of the single email front door (spec §1.2.2):
- * 6-digit code entry with auto-submit, verified with `type: 'email'`
- * (proven end to end on dev, including a brand-new account, and through the
- * app on Android). One route serves both signup and sign-in, so there is no
- * `purpose` param the way Hardik's version had one.
+ * 6-digit code entry, verified with `type: 'email'` (proven end to end on dev,
+ * including a brand-new account, and through the app on Android). One route
+ * serves both signup and sign-in, so there is no `purpose` param the way
+ * Hardik's version had one.
  *
- * Deliberately mirrors `OtpEntryScreen`'s already-solved 6-digit
- * auto-submit behaviour (segmented display over one hidden `TextInput`)
- * rather than re-implementing Hardik's `CodeEntryForm` or extracting a
- * shared component out of `OtpEntryScreen` — the brief asks to reuse the
- * behaviour, not to force a refactor of a screen that already ships and is
- * tested. `OtpEntryScreen` itself is untouched by this task.
+ * Restyled 2026-08-12 to the reference auth design, in step with `OtpEntryScreen` — including
+ * the removal of auto-submit in favour of an explicit Verify button (see that screen's header
+ * for why keeping both would be wrong). The two screens still hold their own logic: this one
+ * calls `verifyEmailCode`, waits 60s rather than 30, and offers the phone channel rather than
+ * the email one. Only `CodeSegments`, the box row, is now shared.
  *
  * `RESEND_COOLDOWN_SECONDS` is 60, not Method B's 30 — Supabase's dashboard
  * documents a 60s minimum interval per user on auth emails. Measured on dev
  * 2026-08-09 that limit is **not enforced** (two sends seconds apart both
  * delivered) — flagged in the PR body, not fixed here; the cooldown is UI
- * pacing regardless of whether the server currently backs it up.
+ * pacing regardless of whether the server currently backs it up. The restyle
+ * changed how it is rendered, not how long it runs.
  */
 
 const CODE_LENGTH = 6;
@@ -33,12 +45,15 @@ type Status = 'idle' | 'submitting' | 'signedIn';
 
 export function EmailCodeEntryScreen() {
   const authClient = useAuthClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'EmailCodeEntry'>>();
   const { email } = params;
+  const mode = params.mode ?? DEFAULT_AUTH_MODE;
 
   const [code, setCode] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [formError, setFormError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
   const { remaining: cooldown, restart: restartCooldown } = useCountdown(RESEND_COOLDOWN_SECONDS);
   const inputRef = useRef<TextInput>(null);
 
@@ -67,11 +82,7 @@ export function EmailCodeEntryScreen() {
   }
 
   function handleChangeCode(text: string) {
-    const digits = text.replace(/\D/g, '').slice(0, CODE_LENGTH);
-    setCode(digits);
-    if (digits.length === CODE_LENGTH) {
-      verify(digits);
-    }
+    setCode(text.replace(/\D/g, '').slice(0, CODE_LENGTH));
   }
 
   async function handleResend() {
@@ -103,36 +114,36 @@ export function EmailCodeEntryScreen() {
   }
 
   const isSubmitting = status === 'submitting';
+  const isComplete = code.length === CODE_LENGTH;
 
   return (
-    <Screen>
-      <Text variant="title" style={styles.centerText}>
-        Enter the code
-      </Text>
-      <Text variant="body" tone="secondary" style={[styles.centerText, styles.subtitle]}>
-        We sent a 6-digit code to {email}.
-      </Text>
+    <AuthScaffold>
+      <View style={styles.headingRow}>
+        <View style={styles.backSlot}>
+          <BackButton tone="plain" onPress={() => navigation.goBack()} disabled={isSubmitting} />
+        </View>
+        <View style={styles.headingText}>
+          <Text variant="body">Enter the {CODE_LENGTH}-digit code sent to</Text>
+          <Text variant="body" style={styles.destination}>
+            {email}
+          </Text>
+        </View>
+      </View>
 
-      <Pressable
-        style={styles.segmentsRow}
+      <CodeSegments
+        length={CODE_LENGTH}
+        code={code}
+        focused={focused}
         onPress={() => inputRef.current?.focus()}
-        accessibilityRole="button"
-        accessibilityLabel="Enter verification code"
-      >
-        {Array.from({ length: CODE_LENGTH }).map((_, i) => (
-          <View key={i} style={styles.segment}>
-            <Text variant="title" style={styles.centerText}>
-              {code[i] ?? ''}
-            </Text>
-          </View>
-        ))}
-      </Pressable>
+      />
 
       <TextInput
         ref={inputRef}
         style={styles.hiddenInput}
         value={code}
         onChangeText={handleChangeCode}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         keyboardType="number-pad"
         maxLength={CODE_LENGTH}
         editable={!isSubmitting}
@@ -141,24 +152,44 @@ export function EmailCodeEntryScreen() {
       />
 
       {formError && (
-        <Text variant="caption" tone="danger" style={[styles.centerText, styles.formError]}>
+        <Text variant="caption" tone="danger" style={styles.formError}>
           {formError}
         </Text>
       )}
-      {isSubmitting && <ActivityIndicator style={styles.spinner} color={tokens.color.textPrimary} />}
+
+      <View style={styles.verify}>
+        <Button
+          label="Verify"
+          shape="block"
+          onPress={() => verify(code)}
+          disabled={!isComplete || isSubmitting}
+          loading={isSubmitting}
+        />
+      </View>
 
       <Pressable
         onPress={handleResend}
         disabled={cooldown > 0 || isSubmitting}
         accessibilityRole="button"
         accessibilityLabel={cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
-        style={styles.linkButton}
+        style={styles.resend}
       >
-        <Text variant="label" tone={cooldown > 0 ? 'secondary' : 'link'} style={styles.centerText}>
-          {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+        <Text variant="body" tone={cooldown > 0 ? 'secondary' : 'link'} style={styles.centerText}>
+          {cooldown > 0 ? `Waiting for code — ${formatCountdown(cooldown)}` : 'Resend code'}
         </Text>
       </Pressable>
-    </Screen>
+
+      <Text variant="body" tone="secondary" style={styles.divider}>
+        or continue with
+      </Text>
+
+      <Button
+        variant="onBrand"
+        shape="block"
+        label="Phone number"
+        onPress={() => navigation.navigate('PhoneInput', { mode })}
+      />
+    </AuthScaffold>
   );
 }
 
@@ -166,23 +197,23 @@ const styles = StyleSheet.create({
   centerText: {
     textAlign: 'center',
   },
-  subtitle: {
-    marginTop: tokens.spacing.xs,
+  headingRow: {
+    justifyContent: 'center',
     marginBottom: tokens.spacing.xl,
   },
-  segmentsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: tokens.spacing.sm,
+  backSlot: {
+    // Absolute so the heading centres on the screen rather than on the space left beside the
+    // back button — same reasoning as `OtpEntryScreen`.
+    position: 'absolute',
+    left: 0,
+    zIndex: 1,
   },
-  segment: {
-    width: tokens.touchTarget.minWidth,
-    height: 52,
-    borderWidth: 1,
-    borderColor: tokens.color.border,
-    borderRadius: tokens.radii.md,
+  headingText: {
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: tokens.touchTarget.minWidth,
+  },
+  destination: {
+    fontWeight: tokens.typography.fontWeight.bold,
   },
   hiddenInput: {
     position: 'absolute',
@@ -191,15 +222,20 @@ const styles = StyleSheet.create({
     width: 1,
   },
   formError: {
+    marginTop: tokens.spacing.sm,
+  },
+  verify: {
     marginTop: tokens.spacing.lg,
   },
-  spinner: {
+  resend: {
     marginTop: tokens.spacing.lg,
-  },
-  linkButton: {
-    marginTop: tokens.spacing.xl,
     alignItems: 'center',
     minHeight: tokens.touchTarget.minHeight,
     justifyContent: 'center',
+  },
+  divider: {
+    textAlign: 'center',
+    marginTop: tokens.spacing.xl,
+    marginBottom: tokens.spacing.md,
   },
 });

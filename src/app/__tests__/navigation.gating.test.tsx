@@ -20,9 +20,27 @@ import { selectStack, RootNavigator, type GatedStack } from '../navigation';
 import { useSessionStore } from '../stores/useSessionStore';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import type { VerificationState } from '@/features/verification/useVerificationStatus';
+import { flushSettled } from '@/shared/testing/renderWithEffects';
 
 jest.mock('@/features/verification/useVerificationStatus');
 const { useVerificationStatus } = require('@/features/verification/useVerificationStatus');
+
+// `HomeScreen`'s hero now reads `useProfile()` (display-name greeting) — mocked here the same
+// way `useVerificationStatus` is above, rather than wrapping in a real `QueryClientProvider`:
+// the 'verified' iteration below sets a real `user.id`, so an unmocked hook would fire an actual
+// TanStack Query against `getSupabaseClient()` — this repo's babel config inlines real dev
+// Supabase credentials at transform time (`babel.config.js`'s `loadDotEnv` +
+// `transform-inline-environment-variables`), so that isn't hypothetical here, it's a genuine
+// network call this smoke test has no business making.
+jest.mock('@/features/profile/useProfile');
+const { useProfile } = require('@/features/profile/useProfile');
+useProfile.mockReturnValue({
+  profile: null,
+  isLoading: false,
+  error: null,
+  refetch: jest.fn(),
+  updateDisplayName: { mutate: jest.fn(), isPending: false, isError: false },
+});
 
 const ALL_VERIFICATION_STATES: VerificationState[] = [
   'loading',
@@ -140,8 +158,9 @@ describe('RootNavigator', () => {
       useOnboardingStore.setState({ status: 'seen' });
 
       let renderer!: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(() => {
+      await ReactTestRenderer.act(async () => {
         renderer = ReactTestRenderer.create(<RootNavigator />);
+        await flushSettled();
       });
       expect(renderer.toJSON()).toBeTruthy();
       await ReactTestRenderer.act(() => renderer.unmount());
@@ -153,8 +172,9 @@ describe('RootNavigator', () => {
     useOnboardingStore.setState({ status: 'unseen' });
 
     let renderer!: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(<RootNavigator />);
+      await flushSettled();
     });
     expect(renderer.toJSON()).toBeTruthy();
     await ReactTestRenderer.act(() => renderer.unmount());

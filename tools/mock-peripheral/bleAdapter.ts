@@ -42,6 +42,28 @@ export interface MockDeviceOptions {
   name: string;
   /** Scripted RSSI series consumed in call order by readRSSI(); last value repeats once exhausted. */
   rssiSeries?: number[];
+  /**
+   * P1-3.0 — RSSI carried on the *advertisement*, i.e. what a scan result
+   * reports before any connection exists. Deliberately separate from
+   * `rssiSeries`: seeding `rssi` from the series would consume its first entry
+   * before `readRSSI()` ever ran, and the §7.2 proximity tests depend on that
+   * series starting at index 0.
+   */
+  advertisedRssi?: number;
+  /**
+   * P1-3.0 — §4.1 manufacturer data, 4 bytes:
+   * `[protocolVersion | stateHint | battery | flags]`. Omit for a device that
+   * advertises none, which the app must still list.
+   */
+  manufacturerData?: Uint8Array;
+  /**
+   * Delay before this device's advertisement reaches `startDeviceScan`'s listener, milliseconds.
+   * Defaults to 0 — every existing caller's assumption before this option existed (`devFixture.ts`
+   * is the only one that sets it, to stagger its scan fixture so results trickle in the way real
+   * BLE advertisements do, rather than a "several devices" fixture dumping its whole list on
+   * screen in the same tick a real scan never would).
+   */
+  advertiseDelayMs?: number;
 }
 
 /**
@@ -51,15 +73,19 @@ export interface MockDeviceOptions {
 export class MockDevice {
   readonly id: string;
   readonly name: string;
+  /** §4.1 — `react-native-ble-plx` exposes both; the app prefers `name`, falling back to this. */
+  readonly localName: string | null;
   /**
-   * P1-3.0 — populated from `rssiSeries[0]` at construction, not left `null` until the first
-   * `readRSSI()` call. Real `react-native-ble-plx` delivers RSSI on the scan callback itself
-   * (the advertisement carries it); `useDeviceScan` reads `device.rssi` straight off the scan
-   * result (`useDeviceScan.ts`), so a scan-time `null` here would make "weak RSSI device" and
-   * "several devices" scan fixtures unable to show a signal value without an extra call the
-   * screen never makes.
+   * P1-3.0 — populated at construction, not left `null` until the first `readRSSI()` call: real
+   * `react-native-ble-plx` delivers RSSI on the scan callback itself. `advertisedRssi` wins when
+   * given explicitly; otherwise falls back to `rssiSeries[0]` so "weak RSSI device"/"several
+   * devices" scan fixtures that only set a series still show a signal value immediately.
    */
   rssi: number | null;
+  /** §4.1 manufacturer data as base64, exactly as ble-plx delivers it. `null` if none. */
+  readonly manufacturerData: string | null;
+  /** See `MockDeviceOptions.advertiseDelayMs` — read by `MockBleManager.startDeviceScan`. */
+  readonly advertiseDelayMs: number;
 
   private readonly core: DeviceCore;
   private rssiSeries: number[];
@@ -71,8 +97,13 @@ export class MockDevice {
     this.core = core;
     this.id = options.id;
     this.name = options.name;
+    this.localName = options.name;
     this.rssiSeries = options.rssiSeries ?? [];
-    this.rssi = this.rssiSeries.length > 0 ? this.rssiSeries[0] : null;
+    this.rssi = options.advertisedRssi ?? (this.rssiSeries.length > 0 ? this.rssiSeries[0] : null);
+    this.manufacturerData = options.manufacturerData
+      ? Buffer.from(options.manufacturerData).toString('base64')
+      : null;
+    this.advertiseDelayMs = options.advertiseDelayMs ?? 0;
   }
 
   async connect(): Promise<MockDevice> {
@@ -193,46 +224,129 @@ export type BleRadioState = 'PoweredOn' | 'PoweredOff' | 'Unauthorized' | 'Unsup
 
 const DEFAULT_RADIO_STATE: BleRadioState = 'PoweredOn';
 
+type AdapterStateListener = (state: string) => void;
+
 /**
  * The fake `BleManager`. Backed by one or more `MockDevice`s — `createMockPeripheral()` (the
  * single-device convenience every existing test uses) always builds exactly one; multi-device
  * scan fixtures (P1-3.0 §3.2 — "none / one / several / weak RSSI") go through
- * `createMockBleFleet()` below instead, which shares this same class over several devices.
+ * `createMockBleFleet()` below instead, which shares this same class over several devices. Every
+ * device in the array is independently connectable — `createMockPeripheral`'s
+ * `additionalAdvertisers` build theirs sharing the primary's `DeviceCore` (they're meant as
+ * scan-only decoys), but nothing here enforces that; nothing has ever needed it to.
  */
 export class MockBleManager {
   private readonly devices: MockDevice[];
-  private radioState: BleRadioState;
+  /**
+   * `string`, not `BleRadioState` — `setAdapterState` (test hook) needs to drive values outside
+   * the mock's typed "selectable set" too, e.g. `scanner.test.ts`'s `BleAdapterState.RESETTING`
+   * (`Resetting` is real ble-plx but deliberately excluded from `BleRadioState`, see that type's
+   * doc comment). `state()`/`BleScannerLike` are already `Promise<string>`/`(state: string)`, so
+   * nothing narrower is actually required here.
+   */
+  private adapterState: string;
+  private readonly adapterStateListeners = new Set<AdapterStateListener>();
+  private activeScan: { serviceUUIDs: string[] | null; listener: ScanListener } | null = null;
+  /** Pending `advertiseDelayMs` arrivals from the in-flight scan — cleared on `stopDeviceScan()`
+   * so a cancelled scan can't still deliver a device after the caller stopped listening. */
+  private scanTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(devices: MockDevice[], radioState: BleRadioState = DEFAULT_RADIO_STATE) {
     this.devices = devices;
-    this.radioState = radioState;
+    this.adapterState = radioState;
   }
 
-  async state(): Promise<BleRadioState> {
-    return this.radioState;
+  async state(): Promise<string> {
+    return this.adapterState;
   }
 
   /**
-   * Mock-only test/dev hook (P1-3.0 §3.1) — drives ON-7/8/9/10 and the gate spinner on demand.
-   * Not part of `BleManagerLike`: the real `BleManager`'s state changes with the OS radio, never
-   * on command, so this has no real-library counterpart to match.
+   * P1-3.0 — `BleScannerLike`'s subscribe half (`BleClientContext.tsx`). `scanner.ts` reacts to a
+   * radio state change mid-scan (e.g. Bluetooth switched off); the simpler `useDeviceScan.ts`
+   * path never subscribes and only ever calls `state()`/`setState()` directly.
    */
-  setState(radioState: BleRadioState): void {
-    this.radioState = radioState;
+  onStateChange(listener: AdapterStateListener, emitCurrentState = false): Subscription {
+    this.adapterStateListeners.add(listener);
+    if (emitCurrentState) {
+      listener(this.adapterState);
+    }
+    return { remove: () => this.adapterStateListeners.delete(listener) };
   }
 
-  /** §4.1 — the app must filter scan results on the service UUID; this mock only ever advertises it. */
+  /**
+   * Mock-only test hook: drive the adapter through `PoweredOff` / `Unauthorized`
+   * / etc. Switching away from `PoweredOn` kills any in-flight scan, which is
+   * what the OS does when the user turns Bluetooth off mid-scan.
+   */
+  setAdapterState(state: string): void {
+    this.adapterState = state;
+    if (state !== 'PoweredOn') {
+      this.activeScan = null;
+    }
+    for (const listener of this.adapterStateListeners) {
+      listener(state);
+    }
+  }
+
+  /** Alias for `setAdapterState` — same operation, kept for `bleAdapter.radioStateAndFleet.test.ts`. */
+  setState(radioState: BleRadioState): void {
+    this.setAdapterState(radioState);
+  }
+
+  /** §4.1 — the app must filter scan results on the service UUID; these mocks only ever advertise it. */
   startDeviceScan(serviceUUIDs: string[] | null, _options: unknown, listener: ScanListener): void {
-    if (serviceUUIDs && !serviceUUIDs.some((uuid) => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase())) {
+    if (this.adapterState !== 'PoweredOn') {
+      throw new Error(`MockBleManager: cannot scan while adapter is ${this.adapterState}`);
+    }
+    // Clears any previous scan's `activeScan`/pending timers first — must run BEFORE the new
+    // `activeScan` is assigned below, not after, or it would wipe out the scan this call is
+    // starting rather than the stale one it's meant to replace.
+    this.stopDeviceScan();
+    this.activeScan = { serviceUUIDs, listener };
+    if (!this.matchesFilter(serviceUUIDs)) {
       return;
     }
     for (const device of this.devices) {
-      listener(null, device);
+      // `advertiseDelayMs` defaults to 0, delivered synchronously here exactly like before that
+      // option existed — every existing caller (every test, `createMockPeripheral`) sees no
+      // behaviour change. Only a device built with a real delay (`devFixture.ts`'s dev fixture)
+      // arrives async.
+      if (device.advertiseDelayMs <= 0) {
+        listener(null, device);
+      } else {
+        this.scanTimers.push(setTimeout(() => listener(null, device), device.advertiseDelayMs));
+      }
     }
   }
 
   stopDeviceScan(): void {
-    // No background scan loop to cancel in this synchronous mock.
+    this.activeScan = null;
+    for (const timer of this.scanTimers) {
+      clearTimeout(timer);
+    }
+    this.scanTimers = [];
+  }
+
+  /**
+   * Mock-only test hook: re-deliver an advertisement for an already-scanned
+   * peripheral, which is what both platforms do continuously during a real
+   * scan. The app's dedupe path (P1-3.0) has nothing to exercise without it.
+   * No-op when no scan is running — matching the radio.
+   */
+  emitAdvertisement(device: MockDevice = this.devices[0]): void {
+    if (!this.activeScan || !this.matchesFilter(this.activeScan.serviceUUIDs)) {
+      return;
+    }
+    this.activeScan.listener(null, device);
+  }
+
+  /** Mock-only test hook: fail an in-flight scan the way the library reports errors. */
+  emitScanError(error: Error): void {
+    this.activeScan?.listener(error, null);
+  }
+
+  isScanning(): boolean {
+    return this.activeScan !== null;
   }
 
   async connectToDevice(deviceId: string): Promise<MockDevice> {
@@ -245,6 +359,13 @@ export class MockBleManager {
 
   async cancelDeviceConnection(deviceId: string): Promise<MockDevice> {
     return this.findKnownDevice(deviceId).cancelConnection();
+  }
+
+  private matchesFilter(serviceUUIDs: string[] | null): boolean {
+    return (
+      !serviceUUIDs ||
+      serviceUUIDs.some((uuid) => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase())
+    );
   }
 
   private findKnownDevice(deviceId: string): MockDevice {
@@ -261,8 +382,20 @@ export interface CreateMockPeripheralOptions extends DeviceCoreConfig {
   /** Last 4 hex chars of the device UID, per §4.1's advertised local name. */
   deviceUidSuffixHex?: string;
   rssiSeries?: number[];
+  /** P1-3.0 — see `MockDeviceOptions.advertisedRssi`. */
+  advertisedRssi?: number;
+  /** P1-3.0 — §4.1 manufacturer data for the primary peripheral. */
+  manufacturerData?: Uint8Array;
+  /**
+   * P1-3.0 — extra peripherals that appear in scan results, sharing the primary's `DeviceCore`.
+   * For exercising dedupe, ordering, and multi-device list behaviour where a full independent
+   * `DeviceCore` per device isn't the point — see `createMockBleFleet` below for that case.
+   */
+  additionalAdvertisers?: MockDeviceOptions[];
   /** Defaults to `'PoweredOn'` — every existing caller's assumption before this option existed. */
   radioState?: BleRadioState;
+  /** See `MockDeviceOptions.advertiseDelayMs`. Defaults to 0 (synchronous), same as that option. */
+  advertiseDelayMs?: number;
 }
 
 function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: MockDevice; core: DeviceCore } {
@@ -271,6 +404,9 @@ function buildDeviceAndCore(options: CreateMockPeripheralOptions): { device: Moc
     id: options.deviceId ?? 'mock-device-0001',
     name: `${ADVERTISING_LOCAL_NAME_PREFIX}${options.deviceUidSuffixHex ?? '0000'}`,
     rssiSeries: options.rssiSeries,
+    advertisedRssi: options.advertisedRssi,
+    manufacturerData: options.manufacturerData,
+    advertiseDelayMs: options.advertiseDelayMs,
   });
   return { device, core };
 }
@@ -281,7 +417,10 @@ export function createMockPeripheral(options: CreateMockPeripheralOptions): {
   core: DeviceCore;
 } {
   const { device, core } = buildDeviceAndCore(options);
-  const manager = new MockBleManager([device], options.radioState);
+  const additional = (options.additionalAdvertisers ?? []).map(
+    (advertiserOptions) => new MockDevice(core, advertiserOptions),
+  );
+  const manager = new MockBleManager([device, ...additional], options.radioState);
   return { manager, device, core };
 }
 

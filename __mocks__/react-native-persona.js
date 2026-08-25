@@ -28,6 +28,9 @@ class TemplateBuilder {
   referenceId() {
     return this;
   }
+  sessionToken() {
+    return this;
+  }
   fields() {
     return this;
   }

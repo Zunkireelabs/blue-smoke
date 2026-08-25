@@ -62,13 +62,23 @@ export function initSessionListener(): void {
     return;
   }
 
-  supabase.auth.getSession().then(({ data }) => {
-    useSessionStore.setState({
-      status: data.session ? 'signedIn' : 'signedOut',
-      session: data.session,
-      user: data.session?.user ?? null,
-    });
-  });
+  supabase.auth.getSession().then(
+    ({ data }) => {
+      useSessionStore.setState({
+        status: data.session ? 'signedIn' : 'signedOut',
+        session: data.session,
+        user: data.session?.user ?? null,
+      });
+    },
+    (err: unknown) => {
+      // A storage-adapter read failure (e.g. the Keychain-backed adapter's Android
+      // implementation throwing on a device where its biometric check misbehaves) must not
+      // leave `status` stuck on 'hydrating' forever — same fail-open reasoning as the missing
+      // Supabase client case above, just missing from this call site until now.
+      console.warn('[session] getSession() failed, treating as signed out:', err);
+      useSessionStore.setState({ status: 'signedOut', session: null, user: null });
+    },
+  );
 
   supabase.auth.onAuthStateChange((_event, session) => {
     useSessionStore.setState({
@@ -77,4 +87,14 @@ export function initSessionListener(): void {
       user: session?.user ?? null,
     });
   });
+}
+
+/**
+ * Test-only. Same reasoning as `useOnboardingStore.ts`'s `__resetOnboardingListenerForTests` —
+ * `listenerInitialized` exists so a real app boot never attaches the listener twice, and a test
+ * suite exercising `initSessionListener()` repeatedly needs to undo that guard between cases.
+ */
+export function __resetSessionListenerForTests(): void {
+  listenerInitialized = false;
+  useSessionStore.setState({ status: 'hydrating', session: null, user: null });
 }

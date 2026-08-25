@@ -26,6 +26,8 @@ Check these on **every** change. A breach is an automatic block, not a review co
 
 **And the authority model:** the **firmware dead-man timer** is what makes the device safe. The app's proximity monitor only makes it feel *fast*. Any design requiring the app to be alive for the device to lock is **wrong** — reject it.
 
+🔴 **This model describes the product we're contracted to build, not the hardware shipped to us so far.** As of Day 17/18 the real device implements no dead-man timer, no device-side authentication of any kind (just-work, unencrypted, no PIN), and never pushes an unsolicited state change — see spec §13 OQ-9/OQ-16/OQ-17 and `docs/hardware/hqd-device-architecture.md` §11.3. The rule above still governs what we design and build; it is not weakened by what the current firmware can't yet enforce. Treat this as an open client conversation, not a reason to relax the model.
+
 ---
 
 ## Read before answering, don't guess
@@ -239,46 +241,86 @@ From spec §12.1. All of it, not the happy path:
 
 ## Current state
 
-*(Updated Day 12, 2026-08-11. This block goes stale fastest — distrust it if the date is old.)*
+*(Updated Day 24, 2026-08-23, merging `feature/ble-connectivity`'s hardware-focused block with
+`stage`'s 62-commit-newer auth/UI/UX work — see `docs/session-log/sadin.md`, 2026-08-23. `stage`'s
+own "Current state" block (Day 12, 2026-08-11) was itself obsolete by the time of this merge — its
+top item, the `create-inquiry` idempotency bug, was already fixed and merged on `stage` days ago —
+so it isn't reproduced here; check `TODO-phase-1.md`/`TODO-phase-2.md` for current auth/backend/
+UI status instead of trusting either branch's stale narrative. This block goes stale fastest —
+distrust it if the date is old. Each
+previous version of this block was several days stale by the time anyone refreshed it, and the
+consequence has twice been re-walking ground that was already settled.)*
 
-- **Phase:** Phase 1, in progress. Phase 0 is done. **There is code, and it signs in and walks end
-  to end on dev** (phone test-OTP → verify stack → seeded Home). `typecheck`, `test`
-  (**578 tests / 54 suites**), `lint` (0 errors, **111** warnings), `bundle:check` and
-  `bundle:check:release` are all green; iOS runs on the simulator. **Android has never been
-  compiled** — no JDK, no `ANDROID_HOME` — and both platforms on physical hardware are in the
-  Definition of Done.
-- **Where the work is: `stage` (`ee143ac`), and it is now the truth.** The old warning that `stage`
-  was far behind an unpushed `chore/integrate-auth-db-persona` is **spent** — that branch is merged.
-  `main` is still stale by design between promotions.
-- **Landed 2026-08-11:** PR #14 (P1-3.0 dev BLE seam — device screens reachable on a simulator for
-  the first time, behind a `__DEV__` + ESLint + release-bundle triple guard), PR #15 (P1-2.0
-  Bluetooth gate — `unsupported` split from still-checking; all five radio states driven live),
-  PR #16 (P2-8.0 — `create-inquiry`'s reuse path now returns a session token via Persona's
-  `/resume`, so both success shapes carry one contract).
-- 🔴 **`create-inquiry` can permanently brick a user, and already has.** Its Persona
-  `Idempotency-Key` derives from `(userId, attemptNumber)`, and `attemptNumber` only advances after
-  a *successful* call — so once a key is burned (Persona binds a key to its first-use parameters
-  forever, and the request body changed when `auto-create-inquiry-session` was added) that user
-  retries the dead key forever. **Two of the three seeded test numbers — `+14152127777` and
-  `+14152127778` — cannot start verification at all.** Persona returns `400`, which our parser
-  buckets into `unexpected` → `502 PERSONA_BAD_RESPONSE`, so it reads as a vendor outage when it is
-  our own request. Briefed and claimed: `fix/P2-8.0-idempotency-key-burn`. **Use `+14152127779`
-  for any verification testing until this lands.**
-- **Verification is server-owned but the app hasn't moved yet.** `create-inquiry` mints the inquiry
-  and writes the binding row; `PersonaVerificationScreen` still calls `Inquiry.fromTemplate(...)`
-  and never calls the endpoint. PR B (`feature/P2-8.0-app-session-token-handoff`) is the swap, is
-  **11 commits behind `stage`**, and needs a rebase before it opens a PR.
+- 🔴 **The device transport is now a written contract.** The manufacturer's protocol document
+  (`H158—CMD Protocol-202608131414`) finally arrived on 2026-08-23, having been cited as the authority
+  in three earlier replies without ever being sent. It **confirms** what §11 had reverse-engineered
+  from their Android SDK — frame layout, XOR-from-header checksum, lock/unlock/terminal-info — and
+  adds that **those three are the entire command set.** There is no version query, no battery command,
+  and no authentication or pairing command, so the firmware exposes no surface on which auth could be
+  added without new firmware. Archived with the reply, the **iOS SDK** (closes **OQ-14**), the correct
+  MCU datasheet, and `H158_Test_260814_01_.pkg` at
+  [`docs/hardware/manufacturer-supplied-2026-08-23/`](docs/hardware/manufacturer-supplied-2026-08-23/).
+  Read [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§12**.
+- ✅ **VERIFIED ON HARDWARE — same day, 2026-08-23.** `H158_Test_260814_01_.pkg` was flashed and
+  tested against the manufacturer's own demo app: Read Status, Lock and Unlock all reproduced exactly
+  as documented, every checksum correct by hand, no `0x81`/`0x82` framing anywhere. **This is real,
+  not just documented.** Full byte tables in
+  [`docs/hardware/manufacturer-qa-consolidated.md`](docs/hardware/manufacturer-qa-consolidated.md)
+  Round 3, and [`hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§13**, which
+  also has a **handoff for whoever wires this into product UI** — read §13.2 and §13.3 before
+  starting: most of the transport code already exists (`h158Protocol.ts`, `h158Session.ts`,
+  `H158BringUpScreen.tsx` as a reference), but no production pairing/lock screen exists yet, and the
+  device still has zero authentication — §13.3 is a required read before that screen ships, not
+  optional context. Not yet done: a second independent flash, and running this against **our own**
+  app rather than only the manufacturer's demo.
+- 🔴 **OQ-17 is now a contradiction, not an answer.** The manufacturer has said both that the
+  advertised name carries a per-device MAC suffix (Day 12) *and* that "all devices share the same
+  Bluetooth name" (Day 13). Their iOS SDK cannot arbitrate. **This is decidable by scanning two
+  units** — settle it by measurement, not by asking a fourth time.
+- **Two process failures, same shape, two weeks apart.** `BLE.zip` (2026-08-09) sat unopened for
+  eleven days holding the PW200 procedure that unblocked the device; the 2026-08-23 `.rar` held the
+  firmware, the protocol document, the iOS SDK and the correct datasheet while the covering message
+  appeared to contain none of them. **Extract every manufacturer archive in full and diff its file
+  list before concluding anything is missing.** Relatedly, and now proven three times: **when their
+  prose disagrees with their shipped artifact, the artifact is right** — most recently the 2026-08-21
+  frame tables, which get both the device-info command and the unlock checksum wrong.
+- 🔴 **OQ-13 is CLOSED** *(Day 17/18; still accurate — §12 confirms rather than revises it).* The manufacturer delivered a working `itronlib` Android SDK plus full
+  written answers to all 18 blocking BLE questions
+  (`docs/hardware/manufacturer-supplied-2026-08-17/`). The device is **not** a §4 GATT peripheral: one
+  characteristic (`0xFFF1`, service `0xFFF0`), a custom frame format, **no authentication of any
+  kind** (just-work, unencrypted, no PIN — new **OQ-16**), **no dead-man timer** (reconfirms OQ-9),
+  and **every unit shares one Bluetooth name** with iOS exposing no MAC to tell them apart (new
+  **OQ-17**, compounds OQ-14). None of this is implementable as an extension of `protocol.ts` — it's
+  a different transport entirely. Promoted into `src/features/ble/h158/h158Protocol.ts` and
+  `h158Session.ts` (bring-up spike, dev-only `H158BringUpScreen.tsx`), deliberately **not**
+  `protocol.ts` — that file, `auth.ts`, `crypto.ts`, `tools/mock-peripheral`, and the whole §4.5 CMAC
+  handshake remain unchanged and are **not superseded**: they're still what we build once the client
+  decides how (or whether) to add authentication and a dead-man timer to the firmware. Read
+  [`docs/hardware/hqd-device-architecture.md`](docs/hardware/hqd-device-architecture.md) **§11**
+  before touching real hardware or writing anything under `src/features/ble/h158/**`.
+- **Environment note:** JDK 17 + Android SDK are now installed on at least one dev machine
+  (`android-dev/jdk`, `android-dev/sdk`) — `npm run android` is possible there. This is
+  machine-specific, not a project-wide change; check yours before assuming it. As of this merge
+  it's also confirmed on a second (Mac) machine, with a first successful `./gradlew assembleDebug`
+  — see `docs/session-log/sadin.md`, 2026-08-23.
 - **Blocking the whole plan:** **OQ-1** (sample IDs, hardware ~Day 26), **OQ-4** (who burns the
-  device root key into OTP at manufacture), and 🔴 **OQ-12** (the `serial_hash` salt — same factory
-  conversation as OQ-4, so chase them together). All answered by the client; all take longer to
-  answer than to implement. Chase daily.
-- **`P1-4.0` has nothing executable left.** Part 1 (§4.5 handshake + CMAC) and Part 2a (§4.3
-  `deviceInfo`) are done and reviewed. Everything remaining is gated on OQ-12 (`salt → serial_hash →
-  issue-device-session → K_sess`) or on hardware. Do not "unblock" it by inventing a salt — a guessed
-  value fails **silently**.
+  device root key into OTP at manufacture — now entangled with OQ-16, since there may be nowhere on
+  the device to check a key even if one exists), and 🔴 **OQ-12** (the `serial_hash` salt — same
+  factory conversation as OQ-4). All client-owned; all take longer to answer than to implement.
+- **`P1-4.0` has nothing executable left against real hardware.** Part 1 (§4.5 handshake + CMAC) and
+  Part 2a (§4.3 `deviceInfo`) are done and reviewed **against the mock**, which still correctly
+  implements §4 — that hasn't changed. Whether §4.5 is ever run against the *real* device is now an
+  open client conversation (OQ-16), not an implementation task. Do not invent a salt for OQ-12 either
+  way — a guessed value fails **silently**.
 - **OQ-6 is overdue, not blocking.** The firmware team has still never been contacted, so §4 is an
   unratified contract that several tasks are already built against. That is a real risk, but it is
   not what stops the next commit.
 - **11 open questions registered** — spec §13 (OQ-1…OQ-9, OQ-11, OQ-12). **OQ-10 has no row** while
   being referenced in `session-log/sadin.md` — reconstruct it or retire the ID. Read them before
-  assuming an answer.
+  assuming an answer. *(OQ-14 closed Day 24; OQ-13, OQ-15 already closed.)*
+- **The lint warning baseline in this file is stale.** The Commands section says 70; `npm run lint`
+  reports **89** on a clean checkout, and `npm test` reports **449 tests / 39 suites**, not 273/30.
+  The rule itself is unchanged (no `eslint-disable`; no `no-bitwise` outside the three permitted
+  directories) — only the numbers drifted. **7 tests fail on Windows** in
+  `tools/lint-guard/__tests__/verificationGuard.test.ts`; that is a known platform bug diagnosed in
+  `docs/execution-briefs/P0-5.0-ci-hardening.md`, not a regression, and it still needs an owner.

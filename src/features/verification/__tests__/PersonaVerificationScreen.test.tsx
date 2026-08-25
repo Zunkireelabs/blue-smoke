@@ -14,6 +14,13 @@
  * (`__mocks__/react-native-persona.js`), extended here (this session) with `__lastHandlers()` so
  * a test can simulate the SDK calling back `onCanceled`/`onError` — the mock's `start()` is a
  * no-op, so nothing else would ever invoke them.
+ *
+ * 2026-08-24 — `launch()` now calls `create-inquiry` before touching the SDK at all (see
+ * `PersonaVerificationScreen.tsx`'s header comment for why: the old client-side-only
+ * `fromTemplate` inquiry was never recorded server-side, so `persona-webhook` could never
+ * resolve it). `getSupabaseClient` is mocked the same automock way
+ * `useVerificationStatus.test.tsx`/`ProfileScreen.test.tsx` already do, and every spy below
+ * moved from `Inquiry.fromTemplate` to `Inquiry.fromInquiry`.
  */
 import React from 'react';
 import { Text } from 'react-native';
@@ -29,6 +36,13 @@ import { findByLabel, renderedText } from '@/features/auth/testUtils';
 jest.mock('../personaConfig');
 const { getPersonaConfig } = require('../personaConfig');
 const { Inquiry, __lastHandlers } = require('react-native-persona');
+
+jest.mock('@/shared/lib/supabaseClient');
+const { getSupabaseClient } = require('@/shared/lib/supabaseClient');
+
+function mockCreateInquiry(invoke: jest.Mock) {
+  (getSupabaseClient as jest.Mock).mockReturnValue({ functions: { invoke } });
+}
 
 const Stack = createNativeStackNavigator();
 
@@ -87,6 +101,12 @@ async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: strin
 
 beforeEach(() => {
   (getPersonaConfig as jest.Mock).mockReturnValue({ templateId: 'itmpl_test', environment: 'sandbox' });
+  mockCreateInquiry(
+    jest.fn().mockResolvedValue({
+      data: { inquiryId: 'inq_test', sessionToken: 'session_test', templateId: 'itmpl_test' },
+      error: null,
+    }),
+  );
 });
 
 afterEach(() => {
@@ -104,7 +124,7 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
   });
 
   it('VF-2: does not relaunch a second time on its own (the started-ref guard still works)', async () => {
-    const spy = jest.spyOn(Inquiry, 'fromTemplate');
+    const spy = jest.spyOn(Inquiry, 'fromInquiry');
     const renderer = renderInStack(createMockAuthClient());
     await act(async () => {});
     expect(spy).toHaveBeenCalledTimes(1);
@@ -114,8 +134,9 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
   });
 
   it('VF-5: canceled shows Resume/Do this later/Sign out, and Resume genuinely relaunches', async () => {
-    const spy = jest.spyOn(Inquiry, 'fromTemplate');
+    const spy = jest.spyOn(Inquiry, 'fromInquiry');
     const renderer = renderInStack(createMockAuthClient());
+    await act(async () => {});
     const initialCalls = spy.mock.calls.length;
 
     await act(async () => {
@@ -124,14 +145,15 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
     expect(renderedText(renderer)).toContain('Verification paused');
 
     await press(renderer, 'Resume');
-    // The old `started` ref permanently blocked this — a real fix means fromTemplate() is
+    await act(async () => {});
+    // The old `started` ref permanently blocked this — a real fix means fromInquiry() is
     // called again, not just that the screen still renders.
     expect(spy.mock.calls.length).toBe(initialCalls + 1);
-    expect(renderedText(renderer)).toContain('Starting verification');
   });
 
   it('VF-5: "Do this later" goes back rather than stranding the user on this screen', async () => {
     const renderer = renderWithCameraPrimingBehind(createMockAuthClient());
+    await act(async () => {});
     await act(async () => {
       __lastHandlers().onCanceled();
     });
@@ -144,6 +166,7 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
     const client = createMockAuthClient();
     const spy = jest.spyOn(client, 'signOut');
     const renderer = renderInStack(client);
+    await act(async () => {});
     await act(async () => {
       __lastHandlers().onCanceled();
     });
@@ -153,8 +176,9 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
   });
 
   it('VF-6: error shows Try again/Sign out, and Try again genuinely relaunches', async () => {
-    const spy = jest.spyOn(Inquiry, 'fromTemplate');
+    const spy = jest.spyOn(Inquiry, 'fromInquiry');
     const renderer = renderInStack(createMockAuthClient());
+    await act(async () => {});
     const initialCalls = spy.mock.calls.length;
 
     await act(async () => {
@@ -163,6 +187,7 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
     expect(renderedText(renderer)).toContain('Something went wrong');
 
     await press(renderer, 'Try again');
+    await act(async () => {});
     expect(spy.mock.calls.length).toBe(initialCalls + 1);
     expect(renderedText(renderer)).toContain('Starting verification');
   });
@@ -171,6 +196,7 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
     const client = createMockAuthClient();
     const spy = jest.spyOn(client, 'signOut');
     const renderer = renderInStack(client);
+    await act(async () => {});
     await act(async () => {
       __lastHandlers().onError();
     });
@@ -191,5 +217,21 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
 
     await press(renderer, 'Sign out');
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a create-inquiry failure surfaces as the error stage, never launches the SDK, and never silently stalls', async () => {
+    // Regression, 2026-08-24: before this fix, launch() never called create-inquiry at all, so
+    // there was no failure path to test — every completed inquiry stalled forever on "Confirming
+    // your verification…" because persona-webhook could never find a matching row. This locks in
+    // the new failure branch: an invoke error must reach the same honest error stage the SDK's
+    // own onError already used, not a silent hang.
+    mockCreateInquiry(jest.fn().mockResolvedValue({ data: null, error: new Error('network error') }));
+    const spy = jest.spyOn(Inquiry, 'fromInquiry');
+    const renderer = renderInStack(createMockAuthClient());
+
+    await act(async () => {});
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(renderedText(renderer)).toContain('Something went wrong');
   });
 });

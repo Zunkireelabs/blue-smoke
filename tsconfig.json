@@ -30,6 +30,21 @@
     // tools/mock-peripheral/bleAdapter.ts, so it type-checks under
     // tsconfig.test.json instead.
     "src/features/ble/__tests__/deviceInfo.test.ts",
+    // P1-3.0 — scanner.test.ts imports createMockPeripheral (bleAdapter.ts) too,
+    // same Buffer/node:crypto wall. Type-checked under tsconfig.test.json instead.
+    "src/features/ble/__tests__/scanner.test.ts",
+    // P1-3.0 — base64.test.ts cross-checks against Buffer.from(...).toString('base64')
+    // directly (no bleAdapter import needed to hit the same wall). Type-checked under
+    // tsconfig.test.json instead.
+    "src/features/ble/__tests__/base64.test.ts",
+    // P1-3.0 — PairDeviceScreen.test.tsx also imports createMockPeripheral, same wall.
+    "src/features/devices/__tests__/PairDeviceScreen.test.tsx",
+    // P1-7.0 — connection.test.ts also imports createMockPeripheral, same wall.
+    "src/features/ble/__tests__/connection.test.ts",
+    // P1-3.0/P1-7.0 journey test — imports createMockPeripheral, same wall.
+    "src/features/ble/__tests__/journey.test.ts",
+    // P1-7.0 — appState.test.ts also imports createMockPeripheral, same wall.
+    "src/features/ble/__tests__/appState.test.ts",
     // P2-6.0 (UI-BUILD-B) — bleSeam.acceptance.test.tsx also imports
     // tools/mock-peripheral/bleAdapter.ts, same reason as the two above.
     "src/features/ble/__tests__/bleSeam.acceptance.test.tsx",

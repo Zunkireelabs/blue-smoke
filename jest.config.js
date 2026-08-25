@@ -2,6 +2,14 @@
 // tools/lint-guard — the latter three are plain Node with no RN runtime, each with its own
 // jest.config.js explaining why it can't share the RN preset.
 module.exports = {
+  // Jest's workers never release a test file's module registry once loaded, so heap grows
+  // monotonically as more suites land in the same worker. Locally (10 CPUs, ~9 workers) that
+  // never surfaces — each worker only takes ~8 of the 76 suites. On the CI runner's 2-4 workers
+  // it does: heap climbs past Node's default old-space ceiling well after the last test reports
+  // passed, during worker teardown, crashing the job with an OOM `Aborted (core dumped)` even
+  // though every test passed. This recycles a worker once its idle (between-file) memory crosses
+  // the limit, before that accumulation gets anywhere near the ceiling.
+  workerIdleMemoryLimit: '512MB',
   projects: [
     {
       displayName: 'app',
@@ -17,6 +25,9 @@ module.exports = {
         '<rootDir>/tools/',
         '<rootDir>/supabase/',
       ],
+      // Fails the test that produced it on any unexpected console.error — see
+      // docs/execution-briefs/UI-BUILD-E-console-error-guard.md.
+      setupFilesAfterEnv: [require.resolve('./tools/jest/failOnConsoleError.js')],
     },
     '<rootDir>/tools/mock-peripheral/jest.config.js',
     '<rootDir>/supabase/functions/jest.config.js',

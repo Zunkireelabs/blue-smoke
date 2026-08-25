@@ -13,6 +13,17 @@
     <!-- react-native-persona (P2-1.0) — ID capture + selfie, its SDK owns the camera UI. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- react-native-keychain (authKeychainStorage.ts) — the Supabase session is stored
+         biometric-gated (spec §8, BIOMETRY_ANY_OR_DEVICE_PASSCODE). Without this permission
+         declared, Android's BiometricManager reports NO biometric hardware to this app on
+         API 28+ regardless of what the device actually has (react-native-keychain's own
+         DeviceAvailability.kt checks Manifest.permission.USE_BIOMETRIC at runtime) — surfaced
+         as CryptoFailedException "Fingerprint hardware not available" on a real device with a
+         working, enrolled fingerprint sensor. USE_BIOMETRIC is a normal permission (no runtime
+         prompt, auto-granted at install). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
