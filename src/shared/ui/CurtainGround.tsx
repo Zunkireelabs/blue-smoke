@@ -130,7 +130,7 @@ export function CurtainGround({
       >
         {eyebrow && (
           <Text
-            variant="label"
+            variant="body"
             tone={subtitleTone}
             style={[styles.eyebrow, isLeftAligned && styles.leftAlign]}
           >
@@ -152,6 +152,7 @@ export function CurtainGround({
           style={[
             styles.brandTitle,
             name && styles.compactHeroText,
+            eyebrow && !name && styles.heroTitle,
             isLeftAligned && styles.leftAlign,
             eyebrow && (name ? styles.titleAfterName : styles.titleAfterEyebrow),
           ]}
@@ -227,14 +228,23 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 29,
   },
-  // Small uppercase label above the title (Home's greeting + name) — `label` (14) rather than
-  // `caption` (12), and still a single line at that size on real content. Reused from the
-  // existing type scale rather than a new token: Home's curtain parks as high as 31% down the
-  // screen (`DEVICES_CURTAIN_TOP_RATIO`), so every extra line above the title eats directly into
-  // an already-tight budget between the header row and the curtain's top edge.
+  // Larger than the shared `title` token (28) — only for Home's eyebrow-led hero (no `name`
+  // line competing for space), to read as a real statement headline rather than the same size
+  // as the plain centred "BlueSmoke" wordmark other `CurtainGround` screens show.
+  heroTitle: {
+    fontSize: 34,
+    lineHeight: 39,
+  },
+  // Small sentence-case label above the title (Home's greeting + name) — plain `body` weight/
+  // case, matching the reference's "Hello, Anna" treatment rather than a shouty small-caps
+  // eyebrow, bumped a couple points past `body`'s default 16 to hold its own against the larger
+  // `heroTitle` below it. Still a single line at that size on real content; Home's curtain parks
+  // as high as 31% down the screen (`DEVICES_CURTAIN_TOP_RATIO`), so every extra line above the
+  // title eats directly into an already-tight budget between the header row and the curtain's
+  // top edge.
   eyebrow: {
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontSize: 18,
+    lineHeight: 23,
     opacity: 0.82,
   },
   // Only applied when `eyebrow` is present (without `name`) — with no eyebrow, `titleTopSpacing`

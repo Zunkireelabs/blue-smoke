@@ -16,6 +16,7 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 
+import { BleClientProvider, type BleManagerLike } from '@/features/ble/BleClientContext';
 import { selectStack, RootNavigator, type GatedStack } from '../navigation';
 import { useSessionStore } from '../stores/useSessionStore';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
@@ -41,6 +42,36 @@ useProfile.mockReturnValue({
   refetch: jest.fn(),
   updateDisplayName: { mutate: jest.fn(), isPending: false, isError: false },
 });
+
+/**
+ * `AppProviders` supplies the BLE manager in the real app; this smoke test mounts `RootNavigator`
+ * on its own, so it has to supply one itself. Needed since `HomeScreen` began reading the
+ * Bluetooth gate state on focus — without a provider `useBleManager()` falls through to the
+ * lazily-constructed real `BleManager`, whose `NativeEventEmitter` throws under Jest. Reports the
+ * radio off: this file asserts that each stack MOUNTS, nothing past that, and 'PoweredOff' is the
+ * branch that reaches no further BLE machinery.
+ */
+function renderRootNavigator() {
+  const manager: BleManagerLike = {
+    state: async () => 'PoweredOff',
+    startDeviceScan: () => {
+      throw new Error('not used by this test');
+    },
+    stopDeviceScan: () => {},
+    connectToDevice: async () => {
+      throw new Error('not used by this test');
+    },
+    isDeviceConnected: async () => false,
+    cancelDeviceConnection: async () => {
+      throw new Error('not used by this test');
+    },
+  };
+  return (
+    <BleClientProvider manager={manager}>
+      <RootNavigator />
+    </BleClientProvider>
+  );
+}
 
 const ALL_VERIFICATION_STATES: VerificationState[] = [
   'loading',
@@ -159,7 +190,7 @@ describe('RootNavigator', () => {
 
       let renderer!: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(async () => {
-        renderer = ReactTestRenderer.create(<RootNavigator />);
+        renderer = ReactTestRenderer.create(renderRootNavigator());
         await flushSettled();
       });
       expect(renderer.toJSON()).toBeTruthy();
@@ -173,7 +204,7 @@ describe('RootNavigator', () => {
 
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(<RootNavigator />);
+      renderer = ReactTestRenderer.create(renderRootNavigator());
       await flushSettled();
     });
     expect(renderer.toJSON()).toBeTruthy();

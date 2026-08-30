@@ -30,3 +30,10 @@ export async function getLastConnectedH158Device(): Promise<LastConnectedH158Dev
 export async function setLastConnectedH158Device(device: LastConnectedH158Device): Promise<void> {
   await AsyncStorage.setItem(LAST_CONNECTED_H158_KEY, JSON.stringify(device));
 }
+
+/** "Forget device" — the only path back to Home's empty state. Local-only, same as the rest of
+ * this file: there is no OS bond or server-side record to also revoke (see this file's header
+ * comment). */
+export async function clearLastConnectedH158Device(): Promise<void> {
+  await AsyncStorage.removeItem(LAST_CONNECTED_H158_KEY);
+}

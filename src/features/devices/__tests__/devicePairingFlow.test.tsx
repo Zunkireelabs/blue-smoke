@@ -19,6 +19,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {
   BleClientProvider,
   type BleAdvertisementLike,
@@ -65,6 +67,11 @@ afterEach(() => {
     client.clear();
   }
   __resetH158ConnectionStoreForTests();
+  // A connect in one test (e.g. "Done leaves the device connected…") writes
+  // `h158DeviceStorage.ts`'s remembered-device flag, same module-level-leak risk
+  // `__resetH158ConnectionStoreForTests` exists for above — otherwise the next test's fresh
+  // `HomeScreen` render would inherit a device it never itself connected.
+  (AsyncStorage as unknown as { __resetMockStorage: () => void }).__resetMockStorage();
 });
 
 function buildFakeDevice(advertisement: BleAdvertisementLike): BleDeviceLike {
@@ -133,39 +140,78 @@ function buildH158FakeManager(advertisement: BleAdvertisementLike): BleManagerLi
   return buildH158FakeManagerWithDevices([advertisement]);
 }
 
-function renderFlow(manager: BleManagerLike) {
+/**
+ * A manager that reports the adapter switched off. Used by the two tests that need the ON-4
+ * priming sheet to actually appear: Home now skips it whenever the gate already reads
+ * `poweredOn`, so a "powered on" fake would never render the sheet whose "Continue"/"Not now"
+ * those tests press. Nothing past the gate is reachable with Bluetooth off, so every method
+ * beyond `state()` throws rather than pretending to work.
+ */
+function buildPoweredOffManager(): BleManagerLike {
+  return {
+    state: async () => 'PoweredOff',
+    startDeviceScan: () => {
+      throw new Error('not used by this test');
+    },
+    stopDeviceScan: () => {},
+    connectToDevice: async () => {
+      throw new Error('not used by this test');
+    },
+    isDeviceConnected: async () => false,
+    cancelDeviceConnection: async () => {
+      throw new Error('not used by this test');
+    },
+  };
+}
+
+// Flushes the pending async reads the screens sit on — Home's `readBluetoothGateState` focus
+// read, the gate's own `state()` read, a connect. Real timers, matching this file's convention.
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+async function renderFlow(manager: BleManagerLike) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(queryClient);
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
       <QueryClientProvider client={queryClient}>
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="H158Gate">
-              {/* H158GateScreen reuses BluetoothGateScreen directly, no nested provider of its own
-                  — it reads whatever manager `BleClientProvider` supplies here, same as the real
-                  app reads whatever `AppProviders` supplies. */}
-              {() => (
-                <BleClientProvider manager={manager}>
-                  <H158GateScreen />
-                </BleClientProvider>
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="H158Pair">
-              {/* H158PairScreen deliberately shadows whatever's above it in real navigation (see
-                  its own header comment) — `testManager` is the escape hatch that exists solely so
-                  this test can inject a fake `BleManagerLike` instead of the real, native-backed
-                  `BleManager`, which throws under Jest. */}
-              {() => <H158PairScreen testManager={manager} />}
-            </Stack.Screen>
-          </Stack.Navigator>
-        </NavigationContainer>
+        {/* One provider above the whole navigator, exactly where `AppProviders` puts it in the
+            real app. It used to wrap only `H158Gate`, which was enough while `HomeScreen` read
+            no BLE state of its own; Home now reads `readBluetoothGateState` on focus to decide
+            whether the ON-4 priming sheet still teaches anything, so it needs the same injected
+            fake — without it `useBleManager()` falls through to the lazily-constructed real
+            `BleManager`, which throws under Jest. */}
+        <BleClientProvider manager={manager}>
+          <NavigationContainer>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Home" component={HomeScreen} />
+              {/* H158GateScreen reuses BluetoothGateScreen directly, no nested provider of its
+                  own — it reads whatever manager `BleClientProvider` supplies above, same as the
+                  real app reads whatever `AppProviders` supplies. */}
+              <Stack.Screen name="H158Gate" component={H158GateScreen} />
+              <Stack.Screen name="H158Pair">
+                {/* H158PairScreen deliberately shadows whatever's above it in real navigation
+                    (see its own header comment) — `testManager` is the escape hatch that exists
+                    solely so this test can inject a fake `BleManagerLike` instead of the real,
+                    native-backed `BleManager`, which throws under Jest. */}
+                {() => <H158PairScreen testManager={manager} />}
+              </Stack.Screen>
+            </Stack.Navigator>
+          </NavigationContainer>
+        </BleClientProvider>
       </QueryClientProvider>,
     );
   });
   renderers.push(renderer);
+  // Home reads the Bluetooth gate state on focus to decide whether the ON-4 priming sheet still
+  // teaches anything. Settling here rather than leaving it to whatever the first assertion
+  // happens to await is the difference between these tests exercising that decision and passing
+  // by accident on a flag that hadn't resolved yet.
+  await settle();
   return renderer;
 }
 
@@ -175,14 +221,16 @@ async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: strin
   });
 }
 
-// HomeScreen's `PairingModal` opens straight into the "We need Bluetooth to pair" dialog — this
-// just waits a beat (real timers, matching the rest of this file's convention) for it to settle
-// so `findByLabel(renderer, 'Continue' | 'Not now')` has something to find.
-async function openPairingDialog(renderer: ReactTestRenderer.ReactTestRenderer) {
+/**
+ * Home's "Pair a device" CTA. Where it lands now depends on the Bluetooth gate state Home read
+ * on focus: with the radio already `poweredOn` it goes straight to `H158Gate` (which resolves
+ * immediately and replaces to the scan), and only otherwise does `PairingModal` open the ON-4
+ * "We need Bluetooth to pair" sheet whose "Continue"/"Not now" the callers below press. Each
+ * test asserts which of the two it got rather than this helper assuming either.
+ */
+async function pressPairDevice(renderer: ReactTestRenderer.ReactTestRenderer) {
   await press(renderer, 'Pair a device');
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  await settle();
 }
 
 describe('Home -> real H158 pairing, through to a connected device', () => {
@@ -194,15 +242,14 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
       rssi: -55,
       manufacturerData: null,
     });
-    const renderer = renderFlow(manager);
+    const renderer = await renderFlow(manager);
 
     expect(renderedText(renderer)).toContain('No devices paired');
-    await openPairingDialog(renderer);
-    expect(renderedText(renderer)).toContain('We need Bluetooth to pair');
-
-    await press(renderer, 'Continue');
-    // The gate resolves against the fake manager's `state()` ('PoweredOn') and replaces to
-    // H158Pair, which shows its own scanning UI for the real scan.
+    await pressPairDevice(renderer);
+    // Bluetooth is already `poweredOn` here, so the ON-4 priming sheet is skipped entirely: the
+    // gate resolves against the fake manager's `state()` and replaces straight to H158Pair,
+    // which shows its own scanning UI for the real scan.
+    expect(renderedText(renderer)).not.toContain('We need Bluetooth to pair');
     expect(renderedText(renderer)).toContain('Connect your BlueSmoke');
 
     // The fake manager's single advertisement matches H158_DEVICE_NAME_PREFIX and is found
@@ -229,10 +276,9 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
       rssi: -50,
       manufacturerData: null,
     });
-    const renderer = renderFlow(manager);
+    const renderer = await renderFlow(manager);
 
-    await openPairingDialog(renderer);
-    await press(renderer, 'Continue');
+    await pressPairDevice(renderer);
     // Both the `ListRow` (label: the bare device name) and `DeviceRadar`'s chip (label: "Connect
     // to <name>" — distinct on purpose, see `DeviceRadar.tsx`'s `RadarDeviceChip` doc comment)
     // are present for the same found device.
@@ -255,10 +301,9 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
       { id: 'h158-mock-0006-b', name: 'YP65-AT-TEST06', localName: null, rssi: -70, manufacturerData: null },
     ]);
     const connectSpy = jest.spyOn(manager, 'connectToDevice');
-    const renderer = renderFlow(manager);
+    const renderer = await renderFlow(manager);
 
-    await openPairingDialog(renderer);
-    await press(renderer, 'Continue');
+    await pressPairDevice(renderer);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -298,10 +343,9 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
       manufacturerData: null,
     });
     const cancelSpy = jest.spyOn(manager, 'cancelDeviceConnection');
-    const renderer = renderFlow(manager);
+    const renderer = await renderFlow(manager);
 
-    await openPairingDialog(renderer);
-    await press(renderer, 'Continue');
+    await pressPairDevice(renderer);
     await press(renderer, 'Connect to YP65-AT-TEST03');
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -313,8 +357,16 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     // The manager-level disconnect (not the optional `BleDeviceLike.cancelConnection`) is what
     // actually drops the link — see `H158PairScreen.tsx`'s `disconnect` callback.
     expect(cancelSpy).toHaveBeenCalledWith('h158-mock-0003');
-    // `disconnect` pops back to Home, and `useH158ConnectionStore` no longer has a device.
-    expect(renderedText(renderer)).toContain('No devices paired');
+    // `disconnect` pops back to Home. `useH158ConnectionStore` no longer has a live device, but
+    // `disconnect()` never touches `h158DeviceStorage.ts`'s remembered device — a disconnect is
+    // not a "forget" — so Home still shows the row, now as Disconnected, rather than falling
+    // back to the empty state a real, previously-paired device shouldn't ever hit.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(renderedText(renderer)).not.toContain('No devices paired');
+    expect(renderedText(renderer)).toContain('YP65-AT-TEST03');
+    expect(renderedText(renderer)).toContain('Disconnected');
   });
 
   it("Done leaves the device connected, and Home's connected card resumes the same controls", async () => {
@@ -325,10 +377,9 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
       rssi: -55,
       manufacturerData: null,
     });
-    const renderer = renderFlow(manager);
+    const renderer = await renderFlow(manager);
 
-    await openPairingDialog(renderer);
-    await press(renderer, 'Continue');
+    await pressPairDevice(renderer);
     await press(renderer, 'Connect to YP65-AT-TEST04');
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -349,17 +400,43 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     expect(renderedText(renderer)).toContain('Disconnect');
   });
 
-  it('"Not now" on the pairing dialog returns to the device list, not a dead end', async () => {
+  it('"Pair a device" with a device already connected skips the priming sheet, not re-primes', async () => {
+    // The reported bug, in its worst-looking form: a device is connected and Bluetooth is
+    // plainly working, and "+ Pair a device" still opened "We need Bluetooth to pair" — ON-4
+    // copy that explains a permission the user has visibly already granted. Walked through a
+    // real connect first (rather than seeding the store) so the assertion is about the state a
+    // user actually arrives in.
     const manager = buildH158FakeManager({
-      id: 'h158-mock-0002',
-      name: 'YP65-AT-TEST02',
+      id: 'h158-mock-0007',
+      name: 'YP65-AT-TEST07',
       localName: null,
-      rssi: -60,
+      rssi: -55,
       manufacturerData: null,
     });
-    const renderer = renderFlow(manager);
+    const renderer = await renderFlow(manager);
 
-    await openPairingDialog(renderer);
+    await pressPairDevice(renderer);
+    await press(renderer, 'Connect to YP65-AT-TEST07');
+    await settle();
+    await press(renderer, 'Done');
+    expect(renderedText(renderer)).toContain('Connected');
+
+    await pressPairDevice(renderer);
+    expect(renderedText(renderer)).not.toContain('We need Bluetooth to pair');
+    // Where it lands instead is `H158PairScreen` resuming the live session (see the "Done leaves
+    // the device connected" test above) — not a fresh scan. That is the honest current
+    // behaviour, not the intended end state: with one connection slot there is nowhere for a
+    // second device to go, so "Pair a device" can only ever return you to the one you have.
+    // P1-5.0's device list is what makes this CTA mean "add another".
+    expect(renderedText(renderer)).toContain('Disconnect');
+  });
+
+  it('"Not now" on the pairing dialog returns to the device list, not a dead end', async () => {
+    // Bluetooth off, so the priming sheet this test exists to escape from is actually shown —
+    // with the radio on, Home skips it and there is no "Not now" to press.
+    const renderer = await renderFlow(buildPoweredOffManager());
+
+    await pressPairDevice(renderer);
     expect(renderedText(renderer)).toContain('We need Bluetooth to pair');
 
     await press(renderer, 'Not now');
@@ -367,23 +444,9 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
   });
 
   it('Bluetooth off resolves to ON-9 through the real composed gate, not a rebuilt copy of it', async () => {
-    const offManager: BleManagerLike = {
-      state: async () => 'PoweredOff',
-      startDeviceScan: () => {
-        throw new Error('not used by this test');
-      },
-      stopDeviceScan: () => {},
-      connectToDevice: async () => {
-        throw new Error('not used by this test');
-      },
-      isDeviceConnected: async () => false,
-      cancelDeviceConnection: async () => {
-        throw new Error('not used by this test');
-      },
-    };
-    const renderer = renderFlow(offManager);
+    const renderer = await renderFlow(buildPoweredOffManager());
 
-    await openPairingDialog(renderer);
+    await pressPairDevice(renderer);
     await press(renderer, 'Continue');
 
     expect(renderedText(renderer)).toContain('Bluetooth is off');
@@ -408,9 +471,9 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
           throw new Error('not used by this test');
         },
       };
-      const renderer = renderFlow(deniedManager);
+      const renderer = await renderFlow(deniedManager);
 
-      await openPairingDialog(renderer);
+      await pressPairDevice(renderer);
       await press(renderer, 'Continue');
 
       expect(renderedText(renderer)).toContain('We need permission to continue');
