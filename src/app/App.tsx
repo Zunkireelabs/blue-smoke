@@ -5,6 +5,7 @@ import { RootNavigator } from './navigation';
 import { useAppReadyStore } from './stores/useAppReadyStore';
 import { initSessionListener } from './stores/useSessionStore';
 import { initOnboardingListener } from './stores/useOnboardingStore';
+import { initBleNotifications } from '@/features/ble/notifications/initBleNotifications';
 
 export function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -13,6 +14,7 @@ export function App() {
   useEffect(() => {
     initSessionListener();
     initOnboardingListener();
+    initBleNotifications();
   }, []);
 
   if (!isReady) {
