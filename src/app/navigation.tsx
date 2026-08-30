@@ -25,6 +25,7 @@ import { DeviceScanScreen } from '@/features/devices/DeviceScanScreen';
 import { PairingBoundaryScreen } from '@/features/devices/PairingBoundaryScreen';
 import { H158GateScreen } from '@/features/devices/H158GateScreen';
 import { H158PairScreen } from '@/features/devices/H158PairScreen';
+import { DeviceListDevScreen } from '@/features/devices/DeviceListDevScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
@@ -87,17 +88,22 @@ export type RootStackParamList = {
   // feature/ble-connectivity's own pairing screen (scanner.ts/BleScannerLike-based) — registered
   // but currently unreferenced; see the merge-finding comment where it's registered below.
   PairDevice: undefined;
-  // Real-hardware H158 pairing, reached from Home's live "Pair a device" button — see
-  // H158GateScreen.tsx/H158PairScreen.tsx. Parallel to the §4 BluetoothGate/DeviceScan chain
-  // above, not a replacement for it; that one still stops at DevicePairingBoundary (OQ-12).
-  H158Gate: undefined;
-  H158Pair: undefined;
+  // Real-hardware H158 pairing, reached from Home's live "Pair a device" button (no `deviceId`
+  // — always scans to add a NEW device, P1-5.0) or from a specific row in Home's device list
+  // (`deviceId` set — resumes/reconnects that one). See H158GateScreen.tsx/H158PairScreen.tsx.
+  // Parallel to the §4 BluetoothGate/DeviceScan chain above, not a replacement for it; that one
+  // still stops at DevicePairingBoundary (OQ-12).
+  H158Gate: { deviceId?: string } | undefined;
+  H158Pair: { deviceId?: string } | undefined;
   // Dev-only screen gallery (see src/features/devgallery). Registered only when __DEV__.
   ScreenGallery: undefined;
   ScreenPreview: { id: string };
   // Dev-only bring-up spike for the real H158/YP65-AT hardware — see
   // src/features/ble/h158/H158BringUpScreen.tsx. Not §4, not PairDevice.
   H158BringUp: undefined;
+  // P1-5.0 — dev-only device-list harness, seeded with 2 mock peripherals. Registered only
+  // when __DEV__; see DeviceListDevScreen's header doc for why this isn't wired to Home yet.
+  DeviceListDev: undefined;
 };
 
 /**
@@ -318,6 +324,11 @@ export function RootNavigator() {
                 name="H158BringUp"
                 component={H158BringUpScreen}
                 options={{ title: 'H158 bring-up' }}
+              />
+              <Stack.Screen
+                name="DeviceListDev"
+                component={DeviceListDevScreen}
+                options={{ title: 'Devices (dev)' }}
               />
             </Stack.Group>
           )}
