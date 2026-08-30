@@ -6,6 +6,8 @@ import { useAppReadyStore } from './stores/useAppReadyStore';
 import { initSessionListener } from './stores/useSessionStore';
 import { initOnboardingListener } from './stores/useOnboardingStore';
 import { initAppUpdateCheck } from '@/features/app-update/initAppUpdateCheck';
+import { initBleNotifications } from '@/features/ble/notifications/initBleNotifications';
+import { Banner } from '@/shared/ui';
 
 export function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -15,6 +17,7 @@ export function App() {
     initSessionListener();
     initOnboardingListener();
     initAppUpdateCheck();
+    initBleNotifications();
   }, []);
 
   if (!isReady) {
@@ -25,6 +28,7 @@ export function App() {
     <AppProviders>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <RootNavigator />
+      <Banner />
     </AppProviders>
   );
 }

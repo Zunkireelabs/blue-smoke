@@ -4,7 +4,8 @@
  * mock docblock describes. `createChannel`/`displayNotification`/`cancelNotification`/
  * `stopForegroundService`/`registerForegroundService`/`requestPermission`/`onForegroundEvent`/
  * `onBackgroundEvent` are all no-ops (or capture-only) here — the logic in
- * `checkAppUpdate.ts`/`initAppUpdateCheck.ts` is what their tests exercise, not notifee itself.
+ * `checkAppUpdate.ts`/`initAppUpdateCheck.ts`, `batteryNotifications.ts` and
+ * `connectionNotification.ts` is what their tests exercise, not notifee itself.
  */
 
 const AndroidImportance = {
