@@ -24,21 +24,18 @@ import { BluetoothPrimingBody } from '@/features/onboarding/BluetoothPrimingBody
 import { useProfile } from '@/features/profile/useProfile';
 import { useBleManager } from '@/features/ble/BleClientContext';
 import { readBluetoothGateState } from '@/features/ble/bluetoothPermission';
+import { useH158ConnectionStore, setH158Disconnected } from '@/features/ble/h158/useH158ConnectionStore';
 import {
-  useH158ConnectionStore,
-  type ConnectedH158Device,
-} from '@/features/ble/h158/useH158ConnectionStore';
-import {
-  clearLastConnectedH158Device,
-  getLastConnectedH158Device,
+  getPairedH158Devices,
+  removePairedH158Device,
+  type RememberedH158Device,
 } from '@/features/ble/h158/h158DeviceStorage';
 import type { RootStackParamList } from '@/app/navigation';
 
 /** The hero's headline, below the greeting — fixed rather than branching on paired-device count.
- * `useH158ConnectionStore` now carries a live single-connection flag (see `ConnectedDeviceCard`
- * below), but there is still no multi-device *list* (P1-5.0, `TODO-phase-1.md`) for this copy to
- * summarize — one connected device isn't a count worth branching a headline on. Revisit once
- * P1-5.0 lands. */
+ * P1-5.0's real multi-device list now exists (below), but "you have N devices" isn't copy this
+ * pass's scope covers — that's a design decision for whoever next touches this hero block, not a
+ * byproduct of the list existing. */
 const HERO_HEADLINE = 'Get your device\nconnected.';
 
 // F6.P (USER_FLOWS.md) — after roughly this long pending, stop implying imminence and offer an
@@ -179,11 +176,6 @@ function DeviceSignalIllustration() {
   );
 }
 
-// UI-only display threshold for `BatteryGlyph`'s low-battery tinting — not a device/protocol
-// value (h158Protocol.ts's `batteryPercent` carries no such threshold of its own), so this is a
-// client-side design choice, not something read from spec or manufacturer docs.
-const LOW_BATTERY_PERCENT = 20;
-
 /** Small outline battery mark with a proportionally-filled body — sits at the right end of
  * `ConnectedDeviceCard`'s row (design ask: "battery percentage in the right end of the device").
  * Hand-drawn inline for the same reason every other glyph in this file is (no icon set exists yet).
@@ -228,40 +220,37 @@ function DevicesEmptyState() {
 }
 
 /**
- * Replaces `DevicesEmptyState` when `useH158ConnectionStore` has a live device — a compact
- * light-grey row (design reference, matching `ListRow`'s own "list rows as light-grey rounded
- * containers with a leading icon" convention, execution brief §3) rather than the old tall,
- * centred hero card: this reads as one entry in a device list, which is the shape P1-5.0's real
- * multi-device list will eventually be, even though today there is still only ever one row. This
- * is a live *connection* indicator only, sourced from `H158PairScreen`'s `connectH158Session`
- * call — not the P1-5.0 multi-device list (bonded-device list, rename, unpair, battery, §4
- * backend sync), which is a separate, much larger, still-unclaimed task (see
- * `TODO-phase-1.md`). Tapping through re-enters the same `H158Gate` → `H158Pair` chain the "+"
- * button uses — but `H158PairScreen` now resumes straight into the connected controls (Read
- * Status/Lock/Unlock/Disconnect) when `useH158ConnectionStore` already has a live session, rather
- * than re-scanning for a device that's already connected, so this card is a real way back into
- * those controls, not just a status readout.
+ * One row in Home's real P1-5.0 multi-device list, replacing what used to be a single branch on
+ * `useH158ConnectionStore`'s one connection slot — a compact light-grey row (design reference,
+ * matching `ListRow`'s own "list rows as light-grey rounded containers with a leading icon"
+ * convention, execution brief §3) rather than the old tall, centred hero card: this reads as one
+ * entry in a real list, one per row. Tapping through re-enters `H158Gate` → `H158Pair`, carrying
+ * THIS device's id as a nav param, so `H158PairScreen` resumes/reconnects the right one rather
+ * than whichever happened to be live — see that screen's own header comment for the two entry
+ * shapes this now supports.
  *
- * `locked`/`batteryPercent` are `useH158ConnectionStore`'s own fields — a confirmed device reply
- * (`readStatus`/`setChildLock`) or nothing, never a guess (CLAUDE.md: "Lock state UI is
- * notification-driven, never optimistic"). `null` (nothing heard back yet) renders no
- * Locked/Unlocked badge and no battery reading — nothing here stands in for an unconfirmed
- * state. The accessibility label mirrors that: the lock/battery clauses are appended only once
- * each value is known, so a fresh connection with no reply yet still reads exactly as it did
- * before this state existed.
+ * `connected` is membership in `useH158ConnectionStore`'s connection map, not a field on it —
+ * `locked`/`batteryPercent`/`lowBattery` come along only when `connected` is true, since a
+ * remembered-but-not-connected device has no live connection object to read them from at all.
+ * All three are a confirmed device reply (`readStatus`/`setChildLock`) or nothing, never a guess
+ * (CLAUDE.md: "Lock state UI is notification-driven, never optimistic") — `null` renders no
+ * Locked/Unlocked/Low-battery badge and no battery reading. The accessibility label mirrors
+ * that: the lock/battery clauses are appended only once each value is known.
  */
 function ConnectedDeviceCard({
   device,
   connected,
   locked,
   batteryPercent,
+  lowBattery,
   onPress,
   onForget,
 }: {
-  device: ConnectedH158Device;
+  device: RememberedH158Device;
   connected: boolean;
   locked: boolean | null;
   batteryPercent: number | null;
+  lowBattery: boolean | null;
   onPress: () => void;
   onForget: () => void;
 }) {
@@ -292,6 +281,7 @@ function ConnectedDeviceCard({
             {connected && locked !== null && (
               <Badge label={locked ? 'Locked' : 'Unlocked'} tone={locked ? 'neutral' : 'danger'} />
             )}
+            {connected && lowBattery && <Badge label="Low battery" tone="danger" />}
           </View>
         </View>
         {connected && batteryPercent !== null && (
@@ -300,7 +290,7 @@ function ConnectedDeviceCard({
                 references — the contrast-completeness guard's regex misreads a token name sitting
                 directly before a bare colon that's followed by another token reference as a fake
                 style-key entry, when the two are written colon-adjacent in one expression. */}
-            {batteryPercent <= LOW_BATTERY_PERCENT ? (
+            {lowBattery ? (
               <BatteryGlyph percent={batteryPercent} color={tokens.color.dangerText} />
             ) : (
               <BatteryGlyph percent={batteryPercent} color={tokens.color.textSecondary} />
@@ -638,21 +628,20 @@ export function HomeScreen() {
   const [sheetTop, setSheetTop] = useState(0);
   const devicesLabelRef = useRef<View>(null);
   const { profile } = useProfile();
-  const connectedDevice = useH158ConnectionStore((state) => state.device);
-  const connectedDeviceLocked = useH158ConnectionStore((state) => state.locked);
-  const connectedDeviceBattery = useH158ConnectionStore((state) => state.batteryPercent);
-  // Local-only "remembered device" — survives a disconnect (`useH158ConnectionStore`'s own
-  // `device` does not, see `setH158Disconnected()`), so a device that's merely out of range
-  // still renders as a row here instead of Home falling back to `DevicesEmptyState`. Reloaded on
-  // every focus, not just mount, so returning from `H158Pair` after a fresh pair (or after
-  // "Forget device" below) picks up the change immediately.
-  const [lastKnownDevice, setLastKnownDevice] = useState<ConnectedH158Device | null>(null);
+  const connections = useH158ConnectionStore((state) => state.connections);
+
+  // The REMEMBERED half of the list — survives a disconnect (`useH158ConnectionStore`'s own
+  // `connections` map does not, see `setH158Disconnected`), so a device that's merely out of
+  // range still renders as a row here instead of vanishing from the list. Reloaded on every
+  // focus, not just mount, so returning from `H158Pair` after a fresh pair (or after "Forget
+  // device" below) picks up the change immediately.
+  const [pairedDevices, setPairedDevices] = useState<RememberedH158Device[]>([]);
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void getLastConnectedH158Device().then((device) => {
+      void getPairedH158Devices().then((devices) => {
         if (!cancelled) {
-          setLastKnownDevice(device);
+          setPairedDevices(devices);
         }
       });
       return () => {
@@ -660,19 +649,55 @@ export function HomeScreen() {
       };
     }, []),
   );
-  const displayDevice = connectedDevice ?? lastKnownDevice;
-  const forgetDevice = useCallback(() => {
-    void clearLastConnectedH158Device().then(() => setLastKnownDevice(null));
-  }, []);
+
+  // Every row Home shows, merging the remembered list above with the live connection map — a
+  // device connected but somehow not (yet) in the remembered list (e.g. `addPairedH158Device`
+  // hasn't resolved yet after a just-completed connect) still gets a row rather than silently
+  // going missing until storage catches up.
+  const deviceRows = useMemo(() => {
+    const remembered = pairedDevices.map((device) => ({
+      device,
+      connection: connections[device.id] ?? null,
+    }));
+    const rememberedIds = new Set(pairedDevices.map((device) => device.id));
+    const liveOnly = Object.values(connections)
+      .filter((connection) => !rememberedIds.has(connection.device.id))
+      .map((connection) => ({ device: connection.device, connection }));
+    return [...remembered, ...liveOnly];
+  }, [pairedDevices, connections]);
+
+  // Two consumers below: `forgetDevice` (disconnecting a forgotten device) and the Bluetooth
+  // gate check further down (deciding whether the ON-4 priming sheet still teaches anything).
+  const bleManager = useBleManager();
+  const forgetDevice = useCallback(
+    (id: string) => {
+      // If this device is currently connected, forgetting it also disconnects it — otherwise
+      // it would immediately reappear as a "live but unremembered" row (`deviceRows`'s
+      // `liveOnly` fallback above), which would make "Forget device" look broken rather than
+      // actually forgetting anything. Same disconnect sequence `H158PairScreen.tsx`'s own
+      // `disconnect()` uses: unsubscribe FFF1, drop the GATT link at the manager level, then
+      // update the store — see that screen's header comment for why each step is there.
+      const connection = useH158ConnectionStore.getState().connections[id];
+      if (connection) {
+        connection.session.dispose();
+        void bleManager.cancelDeviceConnection(id).catch(() => {
+          // Already gone — nothing left to retry; fall through to updating local state either way.
+        });
+        setH158Disconnected(id);
+      }
+      void removePairedH158Device(id).then(() =>
+        setPairedDevices((current) => current.filter((device) => device.id !== id)),
+      );
+    },
+    [bleManager],
+  );
 
   // ON-4's priming sheet (`PairingModal` below) exists to explain Bluetooth BEFORE the OS
   // permission dialog the gate triggers — F7.2. Once `readBluetoothGateState` already reports
-  // `poweredOn`, there is no dialog left to pre-empt and nothing for the user to fix, so the
-  // sheet is pure friction between "Pair a device" and the scan. It was showing on every press,
-  // including with Bluetooth on and a device already connected. Every other gate state
-  // (permission never asked, denied, blocked, adapter off, unsupported, still-unknown) still
-  // gets the sheet exactly as before — this narrows the skip to the one case where priming
-  // teaches nothing.
+  // `poweredOn`, there is no dialog left to pre-empt, so the sheet is pure friction — pairing a
+  // SECOND or THIRD device (P1-5.0's whole point) would otherwise re-show it every single time.
+  // Every other gate state (permission never asked, denied, blocked, adapter off, unsupported,
+  // still-unknown) still gets the sheet exactly as before.
   //
   // Read on focus AND on foreground, the same re-check rule `BluetoothGateScreen` follows
   // (USER_FLOWS.md F1: "permission state is re-checked on every app foreground"), rather than
@@ -681,7 +706,6 @@ export function HomeScreen() {
   // or the app backgrounding; both stale outcomes are safe. Stale `true` skips the sheet and
   // lands on `BluetoothGateScreen`'s own ON-9 "Bluetooth is off" screen, which is the honest
   // destination anyway; stale `false` shows the sheet, which is just the old behaviour.
-  const bleManager = useBleManager();
   const [bluetoothReady, setBluetoothReady] = useState(false);
   useFocusEffect(
     useCallback(() => {
@@ -775,22 +799,26 @@ export function HomeScreen() {
         </View>
         {/* `emptyCardWrapper`'s `flexGrow: 1` still centres its contents in the space between
             the "Devices" label and the curtain's bottom edge — only `justifyContent` branches on
-            state. Unconnected, `DevicesEmptyState` and its "Pair a device" pill render together
-            as one block (design review round 3 — every reference this redesign is built from
-            composes the illustration, copy, and CTA tightly, not as two disconnected pieces), so
-            they centre as a single unit. Connected, `ConnectedDeviceCard` sits top-aligned like a
-            single row in a list (design reference), and `pairSection` below stays a separate
-            "add another device" row rather than getting folded into the list row. */}
-        <View style={[styles.emptyCardWrapper, displayDevice && styles.deviceListWrapper]}>
-          {displayDevice ? (
-            <ConnectedDeviceCard
-              device={displayDevice}
-              connected={connectedDevice !== null}
-              locked={connectedDeviceLocked}
-              batteryPercent={connectedDeviceBattery}
-              onPress={() => navigation.navigate('H158Gate')}
-              onForget={forgetDevice}
-            />
+            state. Empty, `DevicesEmptyState` and its "Pair a device" pill render together as one
+            block (design review round 3 — every reference this redesign is built from composes
+            the illustration, copy, and CTA tightly, not as two disconnected pieces), so they
+            centre as a single unit. Non-empty, the list sits top-aligned, growing downward one
+            `ConnectedDeviceCard` per paired device (design reference), and `pairSection` below
+            stays a separate "add another device" row rather than getting folded into the list. */}
+        <View style={[styles.emptyCardWrapper, deviceRows.length > 0 && styles.deviceListWrapper]}>
+          {deviceRows.length > 0 ? (
+            deviceRows.map(({ device, connection }) => (
+              <ConnectedDeviceCard
+                key={device.id}
+                device={device}
+                connected={connection !== null}
+                locked={connection?.locked ?? null}
+                batteryPercent={connection?.batteryPercent ?? null}
+                lowBattery={connection?.lowBattery ?? null}
+                onPress={() => navigation.navigate('H158Gate', { deviceId: device.id })}
+                onForget={() => forgetDevice(device.id)}
+              />
+            ))
           ) : (
             <>
               <DevicesEmptyState />
@@ -798,7 +826,7 @@ export function HomeScreen() {
             </>
           )}
         </View>
-        {displayDevice && (
+        {deviceRows.length > 0 && (
           <View style={styles.pairSection}>
             <PairDeviceButton onPress={startPairing} />
           </View>
@@ -1134,10 +1162,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  // Overrides `emptyCardWrapper`'s centring so `ConnectedDeviceCard` sits top-aligned instead —
-  // see the wrapper's own inline comment at the call site.
+  // Overrides `emptyCardWrapper`'s centring so the list sits top-aligned instead — see the
+  // wrapper's own inline comment at the call site. `gap` separates one `ConnectedDeviceCard` from
+  // the next — P1-5.0's list can be more than one row.
   deviceListWrapper: {
     justifyContent: 'flex-start',
+    gap: tokens.spacing.sm,
   },
   // Compact light-grey row (design reference; same fill/radius `ListRow` uses for `DV-4`/`DV-9`/
   // `PF-*`) rather than `DevicesEmptyState`'s illustration + copy — this reads as one entry in a

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -25,13 +25,15 @@ import {
 import { createDeviceScanner, type DiscoveredDevice, type ScanState } from '@/features/ble/scanner';
 import { H158_DEVICE_NAME_PREFIX } from '@/features/ble/h158/h158Protocol';
 import { connectH158Session, type H158Session } from '@/features/ble/h158/h158Session';
-import { setLastConnectedH158Device } from '@/features/ble/h158/h158DeviceStorage';
+import { addPairedH158Device, getPairedH158Devices } from '@/features/ble/h158/h158DeviceStorage';
 import {
   useH158ConnectionStore,
+  canConnectAnotherH158Device,
   setH158Connected,
   setH158Disconnected,
   setH158LockState,
   setH158BatteryPercent,
+  H158_MAX_CONCURRENT_CONNECTIONS,
   type ConnectedH158Device,
 } from '@/features/ble/h158/useH158ConnectionStore';
 import type { RootStackParamList } from '@/app/navigation';
@@ -52,20 +54,35 @@ const HOME_WASH_COLORS = [
 
 type ConnectionPhase =
   | { kind: 'scanning' }
-  | { kind: 'connecting'; device: DiscoveredDevice }
-  // `ConnectedH158Device` (id/name only), not `DiscoveredDevice` — a resumed connection (see
-  // the mount-time `useState` initializer below) never went through a scan, so it has no
-  // rssi/firstSeenAtMs/lastSeenAtMs to report, and nothing in this phase reads them anyway.
+  | { kind: 'connecting'; name: string | null }
+  // `ConnectedH158Device` (id/name only), not `DiscoveredDevice` — a resumed/reconnected
+  // connection never went through THIS screen's own scan, so it has no rssi/firstSeenAtMs/
+  // lastSeenAtMs to report, and nothing in this phase reads them anyway.
   | { kind: 'connected'; device: ConnectedH158Device; session: H158Session }
-  | { kind: 'failed'; detail: string };
+  | { kind: 'failed'; detail: string }
+  | { kind: 'connectionLimitReached' };
 
 /**
  * Real-hardware pairing screen for the H158/YP65-AT, reached from Home's live "Pair a device"
- * button via `H158GateScreen`. Not the §4 flow (`DeviceScanScreen.tsx`/`PairingBoundaryScreen.tsx`,
- * both untouched) — that one is still what P1-4.0's mock-based work targets, and it dead-ends
- * deliberately on OQ-12. This screen talks to the actual shipped hardware end to end: scan →
- * connect → lock/unlock, using the same `connectH158Session`/`H158Session` API the dev-only
- * `H158BringUpScreen.tsx` already proved out against real units.
+ * button and from each row in Home's device list, via `H158GateScreen`. Not the §4 flow
+ * (`DeviceScanScreen.tsx`/`PairingBoundaryScreen.tsx`, both untouched) — that one is still what
+ * P1-4.0's mock-based work targets, and it dead-ends deliberately on OQ-12. This screen talks to
+ * the actual shipped hardware end to end: scan → connect → lock/unlock, using the same
+ * `connectH158Session`/`H158Session` API the dev-only `H158BringUpScreen.tsx` already proved out
+ * against real units.
+ *
+ * P1-5.0 — this screen now has TWO entry shapes, distinguished by the `deviceId` nav param
+ * (`H158GateScreen.tsx` forwards it straight through):
+ *   - No `deviceId` (Home's "Pair a device" CTA): always scans, to ADD a device. Never resumes
+ *     whatever else is already connected — that was the single-slot design's bug (pairing a
+ *     second unit silently evicted the first from view). `useH158ConnectionStore`'s own
+ *     connection-count cap is checked before a scan-selected device is dialled, not before the
+ *     scan itself — scanning to just LOOK is always allowed.
+ *   - `deviceId` set (a row in Home's device list): resumes straight into the connected controls
+ *     if that id already has a live entry in `useH158ConnectionStore`; otherwise dials it
+ *     directly (`connectH158Session` takes a device id, not a scan result — ble-plx can connect
+ *     a known peripheral id without a fresh scan on both platforms) rather than making the user
+ *     re-scan to reconnect a device they've already paired once.
  *
  * Background/copy deliberately matches `DeviceScanScreen.tsx`'s look (same `HOME_WASH_COLORS`
  * wash, same "Finding your device" title while searching with no results yet, same
@@ -84,7 +101,7 @@ type ConnectionPhase =
  * persistent, unmissable disclosure of that fact rather than any "Secured"/padlock language, and
  * nothing here writes a Supabase `device_ownership` row: what "pairing" should mean for this
  * hardware is an open client product decision (§13.3), not an engineering default. Only a local
- * "last connected device" flag is kept (`h158DeviceStorage.ts`), the same AsyncStorage pattern
+ * "remembered devices" list is kept (`h158DeviceStorage.ts`), the same AsyncStorage pattern
  * `onboardingStorage.ts` uses.
  */
 export interface H158PairScreenProps {
@@ -109,6 +126,8 @@ export function H158PairScreen({ testManager }: H158PairScreenProps = {}) {
 
 function H158PairScreenContent() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'H158Pair'>>();
+  const targetDeviceId = route.params?.deviceId;
   const scannerLike = useBleScanner();
   const manager = useBleManager();
   const insets = useSafeAreaInsets();
@@ -125,50 +144,27 @@ function H158PairScreenContent() {
   const scanner = scannerRef.current;
 
   const [scanState, setScanState] = useState<ScanState>(() => scanner.getState());
-  // Resumes straight into the connected controls if `useH158ConnectionStore` already has a live
-  // session — e.g. Home's `ConnectedDeviceCard` routes back through `H158Gate` into this screen
-  // for an already-connected device, and re-scanning for it would be pointless (worse: it might
-  // not even be re-discoverable while a phone already holds its single GATT slot, reply item 9).
+  // The screen's own connect logic (`connect`/`connectById` below) is what actually drives
+  // `phase` — this initial value only decides what's on screen for the very first render, before
+  // any of it has run. `targetDeviceId` set means "resume or reconnect that specific device", so
+  // the initial phase must never be `scanning` in that case (a flash of the radar before the
+  // mount effect below redirects it), but it also can't itself dial the connection — a `useState`
+  // initializer must stay synchronous and side-effect-free.
   const [phase, setPhase] = useState<ConnectionPhase>(() => {
-    const resumed = useH158ConnectionStore.getState();
-    return resumed.device && resumed.session
-      ? { kind: 'connected', device: resumed.device, session: resumed.session }
-      : { kind: 'scanning' };
+    if (targetDeviceId) {
+      const resumed = useH158ConnectionStore.getState().connections[targetDeviceId];
+      if (resumed) {
+        return { kind: 'connected', device: resumed.device, session: resumed.session };
+      }
+      return { kind: 'connecting', name: null };
+    }
+    return { kind: 'scanning' };
   });
   const [lastStatus, setLastStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = scanner.subscribe(setScanState);
-    // Only scan if we didn't resume an existing session above (mirrors the `phase` initializer's
-    // own check rather than reading `phase` here, so this effect doesn't need `phase` as a
-    // dependency just to run once on mount).
-    if (!useH158ConnectionStore.getState().session) {
-      scanner.start();
-    }
-    return () => {
-      unsubscribe();
-      scanner.dispose();
-      // Deliberately NOT `session.dispose()` here — unlike the scanner, the H158 session is
-      // owned by `useH158ConnectionStore` now, not by this screen's lifecycle. Disposing the
-      // FFF1 subscription just because this screen unmounted would break Read
-      // Status/Lock/Unlock on the very next visit `phase`'s resume-from-store branch is meant to
-      // support. Only `disconnect()` below tears the session down.
-    };
-  }, [scanner]);
-
-  const goBack = useCallback(() => navigation.goBack(), [navigation]);
-
-  const retryScan = useCallback(() => {
-    setPhase({ kind: 'scanning' });
-    scanner.start();
-  }, [scanner]);
-
   const connect = useCallback(
-    async (device: DiscoveredDevice) => {
-      scanner.stop();
-      setPhase({ kind: 'connecting', device });
-
-      const outcome = await connectH158Session(manager, device.id);
+    async (deviceId: string, name: string | null) => {
+      const outcome = await connectH158Session(manager, deviceId);
 
       if (!outcome.ok) {
         const detail =
@@ -179,15 +175,15 @@ function H158PairScreenContent() {
         return;
       }
 
-      const connected: ConnectedH158Device = { id: device.id, name: device.name };
+      const connected: ConnectedH158Device = { id: deviceId, name };
       setPhase({ kind: 'connected', device: connected, session: outcome.session });
       setH158Connected(connected, outcome.session);
       // Deliberately not torn down when this screen unmounts (same split as
       // `H158Session.dispose()` itself, see `useH158ConnectionStore.ts`'s doc comment) — the
       // GATT link outlives this screen, so the listener needs to too, or Home would keep
       // showing "connected" after a real drop it never heard about.
-      outcome.device.onDisconnected?.(() => setH158Disconnected());
-      await setLastConnectedH158Device(connected);
+      outcome.device.onDisconnected?.(() => setH158Disconnected(deviceId));
+      await addPairedH158Device(connected);
 
       // Fire-and-forget: populates Home's Locked/Unlocked badge and battery reading as soon as
       // the device is reachable, rather than leaving them blank until someone presses "Read
@@ -195,13 +191,76 @@ function H158PairScreenContent() {
       // — never a guessed value standing in for a confirmed reply.
       void outcome.session.readStatus().then((statusOutcome) => {
         if (statusOutcome.ok) {
-          setH158LockState(statusOutcome.value.locked);
-          setH158BatteryPercent(statusOutcome.value.batteryPercent);
+          setH158LockState(deviceId, statusOutcome.value.locked);
+          setH158BatteryPercent(deviceId, statusOutcome.value.batteryPercent);
         }
       });
     },
-    [manager, scanner],
+    [manager],
   );
+
+  const connectFromScan = useCallback(
+    (device: DiscoveredDevice) => {
+      if (!canConnectAnotherH158Device()) {
+        setPhase({ kind: 'connectionLimitReached' });
+        return;
+      }
+      scanner.stop();
+      setPhase({ kind: 'connecting', name: device.name });
+      void connect(device.id, device.name);
+    },
+    [connect, scanner],
+  );
+
+  useEffect(() => {
+    const unsubscribe = scanner.subscribe(setScanState);
+    if (targetDeviceId) {
+      // Resuming (already covered by the `phase` initializer above) or reconnecting — either
+      // way, no scan: `connectH158Session` dials a known peripheral id directly. Looks the name
+      // up from the remembered-devices list purely for the "Connecting to <name>…" caption; a
+      // miss (a device this app has somehow never remembered) still connects, just with a
+      // generic caption, rather than blocking on it.
+      if (!useH158ConnectionStore.getState().connections[targetDeviceId]) {
+        void getPairedH158Devices().then((devices) => {
+          const remembered = devices.find((d) => d.id === targetDeviceId);
+          setPhase((current) =>
+            current.kind === 'connecting' ? { kind: 'connecting', name: remembered?.name ?? null } : current,
+          );
+        });
+        void connect(targetDeviceId, null);
+      }
+    } else {
+      scanner.start();
+    }
+    return () => {
+      unsubscribe();
+      scanner.dispose();
+      // Deliberately NOT `session.dispose()` here — unlike the scanner, an H158 session is owned
+      // by `useH158ConnectionStore` now, not by this screen's lifecycle. Disposing the FFF1
+      // subscription just because this screen unmounted would break Read Status/Lock/Unlock on
+      // the very next visit `phase`'s resume-from-store branch is meant to support. Only
+      // `disconnect()` below tears a session down.
+    };
+    // `connect`/`targetDeviceId` intentionally excluded: this effect is mount-time wiring
+    // (subscribe to the scanner, kick off exactly one scan-or-direct-connect), not something
+    // that should re-run if `connect`'s identity changes across a re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanner]);
+
+  const goBack = useCallback(() => navigation.goBack(), [navigation]);
+
+  const retryScan = useCallback(() => {
+    setPhase({ kind: 'scanning' });
+    scanner.start();
+  }, [scanner]);
+
+  const retryDirectConnect = useCallback(() => {
+    if (!targetDeviceId) {
+      return;
+    }
+    setPhase({ kind: 'connecting', name: null });
+    void connect(targetDeviceId, null);
+  }, [connect, targetDeviceId]);
 
   const readStatus = useCallback(async () => {
     if (phase.kind !== 'connected') {
@@ -214,8 +273,8 @@ function H158PairScreenContent() {
     }
     const { locked, systemStateLabel, batteryPercent } = outcome.value;
     setLastStatus(`${locked ? 'Locked' : 'Unlocked'} · ${systemStateLabel} · ${batteryPercent}% battery`);
-    setH158LockState(locked);
-    setH158BatteryPercent(batteryPercent);
+    setH158LockState(phase.device.id, locked);
+    setH158BatteryPercent(phase.device.id, batteryPercent);
   }, [phase]);
 
   const setLock = useCallback(
@@ -229,7 +288,7 @@ function H158PairScreenContent() {
         return;
       }
       setLastStatus(`${outcome.value.locked ? 'Locked' : 'Unlocked'}`);
-      setH158LockState(outcome.value.locked);
+      setH158LockState(phase.device.id, outcome.value.locked);
     },
     [phase],
   );
@@ -244,7 +303,9 @@ function H158PairScreenContent() {
    * isn't optional). Update the store directly rather than waiting on the `onDisconnected`
    * listener registered in `connect` above — that listener still fires too, but only after the
    * native callback round-trips, and this is a user-initiated action that should read as
-   * immediate.
+   * immediate. Only THIS device's connection entry is dropped — Home should keep showing every
+   * other connected device exactly as it was, and the remembered-devices list is untouched: a
+   * disconnect is not a "forget" (that's Home's own "Forget device" link).
    */
   const disconnect = useCallback(async () => {
     if (phase.kind !== 'connected') {
@@ -258,7 +319,7 @@ function H158PairScreenContent() {
       // Already gone — e.g. the device dropped the link itself moments earlier. Nothing left to
       // retry; fall through to updating local/UI state either way.
     }
-    setH158Disconnected();
+    setH158Disconnected(deviceId);
     setLastStatus(null);
     navigation.popToTop();
   }, [phase, manager, navigation]);
@@ -285,14 +346,26 @@ function H158PairScreenContent() {
         )}
 
         {phase.kind === 'scanning' && (
-          <ScanBody state={scanState} onSelect={connect} onRetry={retryScan} onCancel={goBack} />
+          <ScanBody state={scanState} onSelect={connectFromScan} onRetry={retryScan} onCancel={goBack} />
         )}
 
         {phase.kind === 'connecting' && (
           <View style={styles.section}>
             <Text tone="inverse" style={styles.centerText}>
-              Connecting to {phase.device.name ?? 'your device'}…
+              Connecting to {phase.name ?? 'your device'}…
             </Text>
+          </View>
+        )}
+
+        {phase.kind === 'connectionLimitReached' && (
+          <View style={styles.section}>
+            <Card style={styles.messageCard}>
+              <Text tone="danger" style={styles.centerText}>
+                You can have up to {H158_MAX_CONCURRENT_CONNECTIONS} devices connected at once.
+                Disconnect one from Home before adding another.
+              </Text>
+            </Card>
+            <Button label="Cancel" variant="secondary" onPress={goBack} />
           </View>
         )}
 
@@ -303,7 +376,7 @@ function H158PairScreenContent() {
                 {phase.detail}
               </Text>
             </Card>
-            <Button label="Try again" onPress={retryScan} />
+            <Button label="Try again" onPress={targetDeviceId ? retryDirectConnect : retryScan} />
             <Button label="Cancel" variant="secondary" onPress={goBack} />
           </View>
         )}
@@ -331,7 +404,7 @@ function H158PairScreenContent() {
             <Button label="Done" variant="secondary" onPress={() => navigation.popToTop()} />
             {/* `secondary`, not `destructive` — `Button.tsx`'s own doc reserves `destructive` for
                 irreversible actions (e.g. PF-7); disconnecting the GATT link is neither
-                irreversible nor unsafe — reconnecting is just "Pair a device" again — so this
+                irreversible nor unsafe — reconnecting is just tapping this device again — so this
                 matches `SignOutButton`'s precedent for the same kind of lesser, reversible exit
                 action rather than overstating it. */}
             <Button label="Disconnect" variant="secondary" onPress={disconnect} />

@@ -88,11 +88,13 @@ export type RootStackParamList = {
   // feature/ble-connectivity's own pairing screen (scanner.ts/BleScannerLike-based) — registered
   // but currently unreferenced; see the merge-finding comment where it's registered below.
   PairDevice: undefined;
-  // Real-hardware H158 pairing, reached from Home's live "Pair a device" button — see
-  // H158GateScreen.tsx/H158PairScreen.tsx. Parallel to the §4 BluetoothGate/DeviceScan chain
-  // above, not a replacement for it; that one still stops at DevicePairingBoundary (OQ-12).
-  H158Gate: undefined;
-  H158Pair: undefined;
+  // Real-hardware H158 pairing, reached from Home's live "Pair a device" button (no `deviceId`
+  // — always scans to add a NEW device, P1-5.0) or from a specific row in Home's device list
+  // (`deviceId` set — resumes/reconnects that one). See H158GateScreen.tsx/H158PairScreen.tsx.
+  // Parallel to the §4 BluetoothGate/DeviceScan chain above, not a replacement for it; that one
+  // still stops at DevicePairingBoundary (OQ-12).
+  H158Gate: { deviceId?: string } | undefined;
+  H158Pair: { deviceId?: string } | undefined;
   // Dev-only screen gallery (see src/features/devgallery). Registered only when __DEV__.
   ScreenGallery: undefined;
   ScreenPreview: { id: string };

@@ -1,8 +1,9 @@
 /**
- * End-to-end press-and-assert coverage for Home's real "Pair a device" button, same philosophy
- * as `auth/__tests__/deadEndExits.test.tsx`: proving a CTA GOES somewhere, not just that it
- * renders. Walks the real, composed screens (not a hand-rolled stand-in for any of them) from
- * `HomeScreen`'s "Pair a device" through to a connected H158 device.
+ * End-to-end press-and-assert coverage for Home's real "Pair a device" button AND its P1-5.0
+ * multi-device list, same philosophy as `auth/__tests__/deadEndExits.test.tsx`: proving a CTA
+ * GOES somewhere, not just that it renders. Walks the real, composed screens (not a hand-rolled
+ * stand-in for any of them) from `HomeScreen`'s "Pair a device" through to one or more connected
+ * H158 devices.
  *
  * 2026-08-24 — retargeted from the §4 mock-protocol chain (`DevicePairingGateScreen.tsx` →
  * `DeviceScanScreen.tsx` → `PairingBoundaryScreen.tsx`) to the real-hardware H158 chain
@@ -11,6 +12,14 @@
  * §4 chain stays registered in `navigation.tsx` and independently covered by
  * `DevicePairingGateScreen.test.tsx`/`DeviceScanScreen.test.tsx`/`BluetoothGateScreen.test.tsx` —
  * this file no longer duplicates that coverage, since Home's CTA no longer reaches it.
+ *
+ * P1-5.0 — generalised from a single-device flag to a real list: `useH158ConnectionStore` is now
+ * a map keyed by device id (`__resetH158ConnectionStoreForTests` clears the whole map) and
+ * `h158DeviceStorage.ts`'s remembered devices are a list backed by the same AsyncStorage mock
+ * `useOnboardingStore`'s own tests reset, so this file resets both between tests. `BleClientProvider`
+ * now wraps the whole navigator, not just `H158Gate` — `HomeScreen` reads it too (to decide
+ * whether the ON-4 priming sheet still has anything to teach), so without it `useBleManager()`
+ * would fall through to the real, lazily-constructed `BleManager`, which throws under Jest.
  */
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
@@ -67,10 +76,9 @@ afterEach(() => {
     client.clear();
   }
   __resetH158ConnectionStoreForTests();
-  // A connect in one test (e.g. "Done leaves the device connected…") writes
-  // `h158DeviceStorage.ts`'s remembered-device flag, same module-level-leak risk
-  // `__resetH158ConnectionStoreForTests` exists for above — otherwise the next test's fresh
-  // `HomeScreen` render would inherit a device it never itself connected.
+  // A connect in one test writes `h158DeviceStorage.ts`'s remembered-devices list, same
+  // module-level-leak risk `__resetH158ConnectionStoreForTests` exists for above — otherwise the
+  // next test's fresh `HomeScreen` render would inherit devices it never itself paired.
   (AsyncStorage as unknown as { __resetMockStorage: () => void }).__resetMockStorage();
 });
 
@@ -141,11 +149,11 @@ function buildH158FakeManager(advertisement: BleAdvertisementLike): BleManagerLi
 }
 
 /**
- * A manager that reports the adapter switched off. Used by the two tests that need the ON-4
- * priming sheet to actually appear: Home now skips it whenever the gate already reads
- * `poweredOn`, so a "powered on" fake would never render the sheet whose "Continue"/"Not now"
- * those tests press. Nothing past the gate is reachable with Bluetooth off, so every method
- * beyond `state()` throws rather than pretending to work.
+ * A manager that reports the adapter switched off. Used by the tests that need the ON-4 priming
+ * sheet to actually appear: Home skips it whenever the gate already reads `poweredOn`, so a
+ * "powered on" fake would never render the sheet whose "Continue"/"Not now" those tests press.
+ * Nothing past the gate is reachable with Bluetooth off, so every method beyond `state()` throws
+ * rather than pretending to work.
  */
 function buildPoweredOffManager(): BleManagerLike {
   return {
@@ -181,10 +189,9 @@ async function renderFlow(manager: BleManagerLike) {
       <QueryClientProvider client={queryClient}>
         {/* One provider above the whole navigator, exactly where `AppProviders` puts it in the
             real app. It used to wrap only `H158Gate`, which was enough while `HomeScreen` read
-            no BLE state of its own; Home now reads `readBluetoothGateState` on focus to decide
-            whether the ON-4 priming sheet still teaches anything, so it needs the same injected
-            fake — without it `useBleManager()` falls through to the lazily-constructed real
-            `BleManager`, which throws under Jest. */}
+            no BLE state of its own; Home now reads `readBluetoothGateState` on focus, so it
+            needs the same injected fake — without it `useBleManager()` falls through to the
+            lazily-constructed real `BleManager`, which throws under Jest. */}
         <BleClientProvider manager={manager}>
           <NavigationContainer>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -233,6 +240,15 @@ async function pressPairDevice(renderer: ReactTestRenderer.ReactTestRenderer) {
   await settle();
 }
 
+/** Drives a full scan-and-connect from Home through to a connected device, for tests whose real
+ * subject is what happens AFTER that (a second pairing, a forget, a disconnect). Bluetooth is
+ * already on, so `pressPairDevice` goes straight to the scan with no sheet to press through. */
+async function pairDevice(renderer: ReactTestRenderer.ReactTestRenderer, deviceName: string) {
+  await pressPairDevice(renderer);
+  await press(renderer, `Connect to ${deviceName}`);
+  await settle();
+}
+
 describe('Home -> real H158 pairing, through to a connected device', () => {
   it('Pair a device -> gate -> scan -> select -> connected, with the no-lock-code disclosure shown', async () => {
     const manager = buildH158FakeManager({
@@ -259,9 +275,7 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     // The results card only appears once the scan itself stops (not mid-scan) — the ring chip
     // is the only way to connect while still actively scanning.
     await press(renderer, 'Connect to YP65-AT-TEST01');
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await settle();
 
     expect(renderedText(renderer)).toContain('Connected');
     // §13.3's no-auth reality, surfaced honestly rather than any "Secured"/padlock claim.
@@ -287,9 +301,7 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     // Press the CHIP, not the row — proves the chip reaches the exact same connected state via
     // its own `onSelectDevice` call, not a separate/divergent code path.
     await press(renderer, 'Connect to YP65-AT-TEST05');
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await settle();
 
     expect(renderedText(renderer)).toContain('Connected');
     expect(renderedText(renderer)).toContain('This device has no lock code');
@@ -304,9 +316,6 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     const renderer = await renderFlow(manager);
 
     await pressPairDevice(renderer);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
 
     // Both units get their own chip (distinct ids -> distinct slots, no overlap/duplicate-key
     // crash) even though they share one advertised name — the results card itself is still
@@ -326,15 +335,13 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     await act(async () => {
       await chips[1].props.onPress();
     });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await settle();
 
     expect(connectSpy).toHaveBeenCalledWith('h158-mock-0006-b');
     expect(renderedText(renderer)).toContain('Connected');
   });
 
-  it('Disconnect drops the GATT link and Home stops showing the device as connected', async () => {
+  it('Disconnect drops the GATT link but Home keeps showing the device — remembered, not connected', async () => {
     const manager = buildH158FakeManager({
       id: 'h158-mock-0003',
       name: 'YP65-AT-TEST03',
@@ -345,11 +352,7 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     const cancelSpy = jest.spyOn(manager, 'cancelDeviceConnection');
     const renderer = await renderFlow(manager);
 
-    await pressPairDevice(renderer);
-    await press(renderer, 'Connect to YP65-AT-TEST03');
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await pairDevice(renderer, 'YP65-AT-TEST03');
     expect(renderedText(renderer)).toContain('Connected');
 
     await press(renderer, 'Disconnect');
@@ -357,19 +360,17 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     // The manager-level disconnect (not the optional `BleDeviceLike.cancelConnection`) is what
     // actually drops the link — see `H158PairScreen.tsx`'s `disconnect` callback.
     expect(cancelSpy).toHaveBeenCalledWith('h158-mock-0003');
-    // `disconnect` pops back to Home. `useH158ConnectionStore` no longer has a live device, but
-    // `disconnect()` never touches `h158DeviceStorage.ts`'s remembered device — a disconnect is
-    // not a "forget" — so Home still shows the row, now as Disconnected, rather than falling
-    // back to the empty state a real, previously-paired device shouldn't ever hit.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    // `disconnect` pops back to Home. P1-5.0: a disconnect is NOT a forget — the remembered-
+    // devices list (`h158DeviceStorage.ts`) is untouched, so the device still renders as its own
+    // row, now showing Disconnected rather than vanishing the way the old single-slot store made
+    // it (that behaviour was the bug P1-5.0 exists to fix, not a feature to preserve).
+    await settle();
     expect(renderedText(renderer)).not.toContain('No devices paired');
     expect(renderedText(renderer)).toContain('YP65-AT-TEST03');
     expect(renderedText(renderer)).toContain('Disconnected');
   });
 
-  it("Done leaves the device connected, and Home's connected card resumes the same controls", async () => {
+  it("Done leaves the device connected, and Home's connected row resumes the same controls", async () => {
     const manager = buildH158FakeManager({
       id: 'h158-mock-0004',
       name: 'YP65-AT-TEST04',
@@ -379,11 +380,7 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     });
     const renderer = await renderFlow(manager);
 
-    await pressPairDevice(renderer);
-    await press(renderer, 'Connect to YP65-AT-TEST04');
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await pairDevice(renderer, 'YP65-AT-TEST04');
     expect(renderedText(renderer)).toContain('Connected');
 
     // "Done" only navigates back — it never disconnects (`H158Session.dispose()`'s own doc
@@ -392,43 +389,75 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     expect(renderedText(renderer)).toContain('YP65-AT-TEST04');
     expect(renderedText(renderer)).not.toContain('No devices paired');
 
-    // Tapping the connected card re-enters H158Gate -> H158Pair, which now resumes straight into
-    // the connected controls from `useH158ConnectionStore` instead of re-scanning for a device
-    // that's already connected.
+    // Tapping the row re-enters H158Gate -> H158Pair with this device's id, which resumes
+    // straight into the connected controls from `useH158ConnectionStore` instead of re-scanning
+    // for a device that's already connected.
     await press(renderer, 'YP65-AT-TEST04, connected. Open device.');
     expect(renderedText(renderer)).toContain('Connected');
     expect(renderedText(renderer)).toContain('Disconnect');
   });
 
-  it('"Pair a device" with a device already connected skips the priming sheet, not re-primes', async () => {
-    // The reported bug, in its worst-looking form: a device is connected and Bluetooth is
-    // plainly working, and "+ Pair a device" still opened "We need Bluetooth to pair" — ON-4
-    // copy that explains a permission the user has visibly already granted. Walked through a
-    // real connect first (rather than seeding the store) so the assertion is about the state a
-    // user actually arrives in.
-    const manager = buildH158FakeManager({
-      id: 'h158-mock-0007',
-      name: 'YP65-AT-TEST07',
+  it('P1-5.0 — pairing a SECOND device adds a row instead of replacing the first', async () => {
+    // Two fully independent fake managers, exactly as pairing two different physical H158 units
+    // would be — the point of this test is that connecting to the second one does not evict the
+    // first from Home's list, the single-slot store's actual bug.
+    const managerA = buildH158FakeManager({
+      id: 'h158-mock-000a',
+      name: 'YP65-AT-AAAA',
       localName: null,
-      rssi: -55,
+      rssi: -50,
       manufacturerData: null,
     });
+    const renderer = await renderFlow(managerA);
+
+    await pairDevice(renderer, 'YP65-AT-AAAA');
+    expect(renderedText(renderer)).toContain('Connected');
+    await press(renderer, 'Done');
+    expect(renderedText(renderer)).toContain('YP65-AT-AAAA');
+
+    // Same fake-manager convention `H158PairScreen` itself relies on: `BleClientProvider` on the
+    // `H158Pair` screen re-reads whatever `testManager` this render's tree was built with, so a
+    // second call into "Pair a device" from the SAME renderer keeps using `managerA` — swap in a
+    // manager whose scan/connect targets the second unit's id/name.
+    const managerB = buildH158FakeManager({
+      id: 'h158-mock-000b',
+      name: 'YP65-AT-BBBB',
+      localName: null,
+      rssi: -60,
+      manufacturerData: null,
+    });
+    const rendererB = await renderFlow(managerB);
+    // Re-seed rendererB's Home with the FIRST device already paired, the way a real app would
+    // have it in AsyncStorage from the earlier pairing above — `renderFlow` builds a fresh tree
+    // per fake manager (mirroring `H158PairScreen`'s own per-screen `BleClientProvider` shadow),
+    // but storage is a real shared module, so it already carries device A's entry here.
+    expect(renderedText(rendererB)).toContain('YP65-AT-AAAA');
+
+    await pairDevice(rendererB, 'YP65-AT-BBBB');
+    expect(renderedText(rendererB)).toContain('Connected');
+    await press(rendererB, 'Done');
+
+    // BOTH devices show as their own row — this is the actual P1-5.0 assertion.
+    expect(renderedText(rendererB)).toContain('YP65-AT-AAAA');
+    expect(renderedText(rendererB)).toContain('YP65-AT-BBBB');
+    expect(renderedText(rendererB)).not.toContain('No devices paired');
+  });
+
+  it('Forget device removes just that row, leaving the rest of the list untouched', async () => {
+    const manager = buildH158FakeManagerWithDevices([
+      { id: 'h158-mock-forget-a', name: 'YP65-AT-FRGT-A', localName: null, rssi: -50, manufacturerData: null },
+    ]);
     const renderer = await renderFlow(manager);
 
-    await pressPairDevice(renderer);
-    await press(renderer, 'Connect to YP65-AT-TEST07');
-    await settle();
+    await pairDevice(renderer, 'YP65-AT-FRGT-A');
     await press(renderer, 'Done');
-    expect(renderedText(renderer)).toContain('Connected');
+    expect(renderedText(renderer)).toContain('YP65-AT-FRGT-A');
 
-    await pressPairDevice(renderer);
-    expect(renderedText(renderer)).not.toContain('We need Bluetooth to pair');
-    // Where it lands instead is `H158PairScreen` resuming the live session (see the "Done leaves
-    // the device connected" test above) — not a fresh scan. That is the honest current
-    // behaviour, not the intended end state: with one connection slot there is nowhere for a
-    // second device to go, so "Pair a device" can only ever return you to the one you have.
-    // P1-5.0's device list is what makes this CTA mean "add another".
-    expect(renderedText(renderer)).toContain('Disconnect');
+    await press(renderer, 'Forget YP65-AT-FRGT-A');
+    await settle();
+
+    expect(renderedText(renderer)).not.toContain('YP65-AT-FRGT-A');
+    expect(renderedText(renderer)).toContain('No devices paired');
   });
 
   it('"Not now" on the pairing dialog returns to the device list, not a dead end', async () => {

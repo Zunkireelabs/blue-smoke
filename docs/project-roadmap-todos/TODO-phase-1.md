@@ -368,6 +368,50 @@ the app working** — account, profile and verification are all reachable withou
 **Excludes:** sharing a device across multiple accounts.
 **Risk:** status/battery polling impact on battery and connection.
 
+🔴 **2026-08-30 — a SECOND, separate implementation of this list now exists, against the real
+H158/YP65-AT chain (`H158GateScreen.tsx`/`H158PairScreen.tsx`/`HomeScreen.tsx`), verified on
+physical hardware.** Everything above stays accurate for the §4-mock world it was written
+against (`DeviceListScreen.tsx`/`useDeviceStore.ts`, still §4-only, untouched) — this is a
+parallel track, not a correction of it, same split §11/§12/§13 of `hqd-device-architecture.md`
+already draw between the two protocols. Re-checked against the H158 chain specifically:
+
+- [x] Device list UI showing all paired devices *(`h158DeviceStorage.ts`'s remembered-devices
+      list, rendered by `HomeScreen.tsx`'s `DeviceRow`s — the REAL list, not a dev-only seed:
+      every device a user has ever connected shows up here, hydrated on every focus)*
+- [x] Live connection status per device *(`useH158ConnectionStore.ts`, now a map keyed by device
+      id rather than one slot — pairing a second unit no longer evicts the first, the bug the
+      single-slot version had)*
+- [x] Battery level *(`H158Status.batteryPercent`, a raw device byte — H158 has no `0xFF`-unknown
+      sentinel of its own; `null` until a `readStatus()`/`setChildLock()` reply lands, same
+      "confirmed or nothing" rule as everywhere else in this app)*
+- [x] Low-battery indicator, with hysteresis (15% set / 20% clear) *(`useH158ConnectionStore.ts`'s
+      `applyLowBatteryHysteresis` — computed CLIENT-side from the raw percent, unlike the §4 world
+      above: H158's `H158Status` carries no `flags`-bit low-battery signal to read instead)*
+- [x] Lock state per device *(`H158Status.locked`, confirmed-reply-or-null, same rule as battery)*
+- [ ] Staleness indicator on lock state (spec §9.3) — not built for the H158 chain yet
+- [ ] Rename device — no UI exists for this on the H158 chain; out of scope for this pass
+- [x] "Unpair" *(**not** `FACTORY_UNPAIR`** — that command doesn't exist on this hardware; per
+      `hqd-device-architecture.md` §11/§13, the H158 command set is lock/unlock/terminal-info and
+      NOTHING else, confirmed by the manufacturer's own protocol document. "Forget device" is
+      therefore the whole of what unpairing can mean here: drops the local remembered-device
+      entry, and disconnects first if the device is currently connected. There is no bond, key, or
+      session to revoke — H158 has none of those to begin with (§13.3))*
+- [x] Connect/disconnect per device from the list *(each row's own `H158Gate`→`H158Pair` round
+      trip, carrying that device's id as a nav param so the right one is dialled)*
+- [x] Multi-device connection policy defined *(`H158_MAX_CONCURRENT_CONNECTIONS = 3` in
+      `useH158ConnectionStore.ts` — same 3-connection UX default as the §4 world's constant, not a
+      shared value: reply item 9's per-DEVICE one-phone-at-a-time limit is a different ceiling
+      entirely. Beyond it, `H158PairScreen` refuses the new connect with a visible message)*
+- [ ] Status polling designed for battery efficiency — moot for this hardware: H158 pushes no
+      unsolicited notification at all (reply item 13), so there is no polling loop to design one
+      way or the other. Status is "last confirmed reply", full stop, until something explicit asks
+      again (`readStatus()`/`setChildLock()`) — the honest ceiling this hardware imposes, not an
+      unfinished box.
+- [x] Tested with ≥ 2 devices simultaneously *(`devicePairingFlow.test.tsx`'s "pairing a SECOND
+      device adds a row instead of replacing the first" — proven against the fake H158
+      `BleManagerLike`, same convention the rest of that file uses; not yet proven against two
+      PHYSICAL units — that's the next real-hardware session)*
+
 ---
 
 ## P1-6.0 — Device ↔ Account Sync to Backend
