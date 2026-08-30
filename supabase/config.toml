@@ -405,6 +405,16 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# AD-1 M1a. `verify_jwt = true` is the default — stated explicitly here so the contrast with
+# `persona-webhook` (deployed `verify_jwt: false`, since Persona sends no Supabase JWT) is
+# legible in this file. As with the rest of `config.toml`, this project deploys to cloud
+# dev/staging projects rather than running `supabase start` (no Docker on the build machine —
+# see the `[auth.sms.test_otp]` note above), so this section documents deploy intent; the actual
+# per-function JWT-verification setting is the dashboard/CLI deploy-time value and must be
+# confirmed to match after each deploy.
+[functions.admin-query]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

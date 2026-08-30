@@ -6,7 +6,7 @@
 **Spec references:** [`../TECHNICAL_SPEC.md`](../TECHNICAL_SPEC.md) — §5 (schema/RLS), §6.4.1 (why
 there is no manual verification override), §8.1 (data classes), §8.6 (erasure)
 
-**Progress:** 0 / 3 milestones · **0 / 62 sub-tasks**
+**Progress:** 0 / 3 milestones · **8 / 62 sub-tasks** *(M1a done except the manual admin seed and the `REQUIRE_ADMIN_MFA` dev secret — both blocked on deploy credentials not available in this environment, see the M1a report)*
 
 > **Goal.** A small web panel where an operator can see who is using the product, manage those
 > accounts, watch the device fleet, and audit verification outcomes in aggregate — **without ever
@@ -73,16 +73,16 @@ back here. A copied paragraph is a paragraph that goes stale.
 Split into two briefs:
 
 ### M1a — Commission + auth spine  ·  `AD-1-M1a-commission-and-auth-spine.md`
-- [ ] Commission docs: un-park AD-1 in `CLAUDE.md`, `TODO-addons.md`, `ROADMAP.md`, spec §1.3, `SCREEN_MAP.md`
-- [ ] Migration `2026…_admin_identity.sql` — `admin_users`, `admin_audit_log`, append-only trigger
-- [ ] First admin seeded manually (documented, not committed)
-- [ ] `_shared/requireAdmin.ts` (pure claims parse + `assertAdmin` DB check) + Jest tests
-- [ ] `_shared/adminAudit.ts` (`writeAdminAudit`, forbidden-key scrub) + Jest tests
-- [ ] `_shared/adminCors.ts` — preflight + origin allowlist for browser callers
-- [ ] `admin-query/index.ts` — dispatch skeleton + the `me` action **only**
-- [ ] `config.toml` — `[functions.admin-query]` entry; `REQUIRE_ADMIN_MFA=false` secret on dev
-- [ ] SQL proofs: `admin_users_write_denial_proof.sql`, `admin_audit_append_only_proof.sql`
-- [ ] Auth matrix verified: no token → 401 · customer JWT → 403 · admin JWT → 200 (Path B) · and by reading, aal1 admin → 403 when `REQUIRE_ADMIN_MFA` unset
+- [x] Commission docs: un-park AD-1 in `CLAUDE.md`, `TODO-addons.md`, `ROADMAP.md`, spec §1.3, `SCREEN_MAP.md`
+- [x] Migration `2026…_admin_identity.sql` — `admin_users`, `admin_audit_log`, append-only trigger
+- [ ] First admin seeded manually (documented, not committed) — **pending, not run**; SQL is in `supabase/README.md`
+- [x] `_shared/requireAdmin.ts` (pure claims parse + `assertAdmin` DB check) + Jest tests
+- [x] `_shared/adminAudit.ts` (`writeAdminAudit`, forbidden-key scrub) + Jest tests
+- [x] `_shared/adminCors.ts` — preflight + origin allowlist for browser callers
+- [x] `admin-query/index.ts` — dispatch skeleton + the `me` action **only**
+- [ ] `config.toml` — `[functions.admin-query]` entry committed; `REQUIRE_ADMIN_MFA=false` secret **documented in `supabase/README.md` but not set** — no deploy credentials in this environment, see report §7
+- [x] SQL proofs: `admin_users_write_denial_proof.sql`, `admin_audit_append_only_proof.sql` — written; **not locally verified, no Docker/psql/DB credentials in this environment** (see M1a report §5)
+- [x] Auth matrix verified by reading: no token → 401 · customer JWT → 403 · admin JWT → 200 (Path B) · aal1 admin → 403 when `REQUIRE_ADMIN_MFA` unset — **not exercised against a deployed function**, see report §11
 
 ### M1b — Read actions  ·  `AD-1-M1b-read-actions.md` *(brief written after M1a review)*
 - [ ] `admin-query` actions: `users.list`, `users.search` (exact match only), `users.detail`, `fleet.list`, `auditlog.list`

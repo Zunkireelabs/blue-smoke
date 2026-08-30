@@ -286,6 +286,39 @@ with an empty array, not an error** (so every read asserts status *and* row coun
 PostgREST code `42501` counts as an RLS denial — a `409` or an FK error is reported INCONCLUSIVE,
 never PASS. That second rule is inherited directly from the SQL version's `when others` bug.
 
+## AD-1 admin panel
+
+`admin_users` and `admin_audit_log` (migration `20260830120000_admin_identity.sql`) are RLS-
+enabled with zero policies — deny-all to every client role. Rows are created only by the seed
+below (once) and, from M2, by the `admin-admins` Edge Function.
+
+### First admin seed — run ONCE, not committed
+
+```sql
+-- Run against the linked project (Supabase SQL editor, service role).
+-- Replace the email with the real first admin's account, which must already exist in
+-- auth.users — they sign up through the web-admin panel first; it will 403 until this runs.
+insert into admin_users (id, role, note)
+select id, 'superadmin', 'bootstrap admin — <name>, 2026-08-30'
+from auth.users
+where email = '<first-admin@example.com>'
+on conflict (id) do nothing;
+```
+
+Do not put the email in a committed migration — that puts an identity in git. **Pending**: this
+has not been run yet against any environment; it is the requester's call which account becomes
+the bootstrap superadmin.
+
+### Edge Function secrets — `admin-query`
+
+| Secret | Dev value | Purpose |
+|---|---|---|
+| `REQUIRE_ADMIN_MFA` | `false` | Path B (`AD-1-M1a-commission-and-auth-spine.md` §3): free Supabase has no TOTP, so the aal2 check is relaxed. **Never set on a project where `[auth.mfa.totp]` is actually on** — that would silently readmit password-only admin sessions. The `admin_users` membership check is unaffected either way. |
+| `ADMIN_PANEL_ORIGINS` | the `web-admin` dev origin(s), comma-separated | CORS allowlist for `_shared/adminCors.ts`. Never `*`. |
+
+Neither secret is set yet in any environment — **pending**, same as the seed above; both are the
+requester's call (which origins, and confirming `REQUIRE_ADMIN_MFA=false` is intentional there).
+
 ## Not yet done (tracked in `docs/project-roadmap-todos/TODO-phase-0.md`, P0-3.0)
 
 - Third Supabase project (prod) — not created yet

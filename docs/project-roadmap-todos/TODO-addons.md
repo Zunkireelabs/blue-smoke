@@ -1,6 +1,6 @@
 # Add-Ons — Out of Base Scope
 
-**Status:** 🅿️ **PARKED.** Quoted and scheduled separately from core delivery.
+**Status:** 🟡 **AD-1 COMMISSIONED (2026-08-30).** AD-2, AD-3, AD-4 remain 🅿️ PARKED.
 **Spec:** [`../TECHNICAL_SPEC.md`](../TECHNICAL_SPEC.md) · **Roadmap:** [`ROADMAP.md`](ROADMAP.md)
 
 > **Goal (PRD verbatim):** Optional modules quoted separately and not included in the core 4-phase
@@ -11,13 +11,18 @@
 
 ## ⛔ Scope discipline
 
-Nothing in this file is built during the 30 days. If a request arrives that resembles one of
-these items, it goes through the PRD as a change request — it does not quietly become "a small
-addition to Phase 3."
+Nothing in this file is built during the 30 days, **except AD-1**, commissioned 2026-08-30 —
+it has its own working file, [`TODO-AD-1-admin-panel.md`](TODO-AD-1-admin-panel.md), and is
+explicitly post-core, post-30-days track: it does not consume the base build's capacity table.
+For everything else here, if a request arrives that resembles one of these items, it goes
+through the PRD as a change request — it does not quietly become "a small addition to Phase 3."
 
 The most likely leak vectors, in order of probability:
 
-1. *"Can we just see a list of who's verified?"* → that is **AD-1**, the admin panel, 15 days.
+1. *"Can we just see a list of who's verified?"* → that is **AD-1**, the admin panel, 15 days —
+   **now commissioned**. The answer to this specific leak vector is still "aggregate counts, not
+   a per-user browser of verification detail" — commissioning AD-1 did not change that boundary,
+   it only means the aggregate-counts version is now being built rather than declined outright.
 2. *"Can we add Sentry, just for our own debugging?"* → that is **AD-2**, and it also touches the 🔴 verification subtree, where analytics imports are ESLint-blocked by design.
 3. *"Can the liveness be a bit stronger?"* → that is **AD-4**, 7.5 days.
 
@@ -26,8 +31,26 @@ The most likely leak vectors, in order of probability:
 ## AD-1 — Admin Web Panel (Fleet, Verification Audit, User Management)
 `Admin` · `Web (Admin Panel)` · **High** · **15.0 person-days / 120 h**
 
+**🟡 COMMISSIONED 2026-08-30 — working file: [`TODO-AD-1-admin-panel.md`](TODO-AD-1-admin-panel.md).**
+
 > Web panel for administrators to view the device fleet, audit verification outcomes (pass/fail
 > counts and methods, never raw biometrics), and manage users.
+
+### Added at commissioning, not in the PRD line item
+
+The client asked for these on top of the PRD line, and they are folded into AD-1's scope:
+suspend / ban / re-enable an account, delete a user, admin-triggered password reset, and
+app-download figures.
+
+🔴 **"Approve/unapprove a user" is account status only, never a verification override.** Today
+`persona-webhook` is the only writer of `age_verified` / `provider_status` (spec §6.4.1). There
+is no manual "approve this user's age verification" button, and none is being built — a
+wrongly-declined user is recovered via a fresh Persona inquiry approved in Persona's own
+console, which flows back through the existing signed webhook.
+
+**The 15.0 d / 120 h estimate above predates both the Persona vendor switch and these
+additions and owes the client a re-estimate.** It was sized before Persona replaced on-device
+OCR/liveness/face-match, and before the account-management additions above were folded in.
 
 **If commissioned, scope would include:**
 - [ ] Admin auth with a role separate from customer accounts

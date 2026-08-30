@@ -297,6 +297,49 @@ why M1 carries no secondary responsibilities.
 
 ---
 
+## 7.1 AD-1 — Admin Web Panel (commissioned 2026-08-30, post-core track)
+
+**This is not one of the 30 days.** AD-1 is a separately-quoted add-on that started work on
+2026-08-30, well after this roadmap's Day-30 window closes. It must not consume the §1.1
+capacity table's seats while Blocks D/E are open — nobody staffed on M1/M2/M3 of the core build
+picks up AD-1 work at the expense of the critical path in this document.
+
+**Shape:** three milestones, each split into briefs, executed and reviewed one at a time —
+`docs/project-roadmap-todos/TODO-AD-1-admin-panel.md` is the working file:
+
+- **M1 — Foundation + read-only.** Commission docs, `admin_users`/`admin_audit_log` +
+  auth spine (M1a, this brief), then the read actions + `web-admin` wiring (M1b). Nothing
+  mutating ships.
+- **M2 — Dashboards + user management.** The mutating milestone: suspend/ban/reactivate,
+  delete, password reset, session revocation, device unpair. Enables TOTP (deferred from M1,
+  see below).
+- **M3 — Verification audit + adoption.** Aggregate-only reporting views in a schema never
+  exposed to the Data API, funnel/adoption reads, manual download entry.
+
+**Two-repo split:** the SPA is a separate Vite + React + TS repo (`web-admin`), talking to three
+new Edge Functions (`admin-query`, `admin-mutate`, `admin-admins`) that live here, in
+`supabase/functions/`, beside this project's one ordered migration sequence. Docs stay in this
+repo; `web-admin`'s README only links back.
+
+**Two touches into shipped core code, both in M2, both need announcing before they land:**
+`issue-device-session` gains an `account_status` check (a suspended/banned user must not obtain
+new key material), and `revoke-device-session`'s session-revocation logic is extracted into a
+shared, behaviour-neutral module so `admin-mutate` can call the same code path a user's own
+revoke request uses — re-proved with `revoke_session_proof.sql` unchanged.
+
+**Three things AD-1 does not do, by design, not by oversight:**
+
+1. **Write `age_verified`.** `persona-webhook` remains the sole writer (inviolable rule 3).
+   "Approve/unapprove" in the panel is account status only.
+2. **Show a real per-step verification funnel.** The data to support one doesn't exist without
+   client-side instrumentation, which is AD-2 territory (`src/app/navigation.tsx`), not this
+   add-on. What AD-1 *can* honestly show — inquiry counts, approve/decline rates, retry
+   pressure — is not the same claim as "where in the flow people drop off."
+3. **Show an ID or a selfie.** The image never exists outside Persona's own SDK process; there
+   is no raw material anywhere in this system for a panel to expose.
+
+---
+
 ## 8. Progress at a glance
 
 Update this table at the end of each block.

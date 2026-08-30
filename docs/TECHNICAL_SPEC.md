@@ -221,8 +221,11 @@ A React Native (iOS + Android) companion app for a **Bluetooth-enabled vape devi
 - ❌ Firmware development on the YC1012_JD / Cortex-M0+ *(add-on; base scope is spec only)*
 - ❌ ~~Any third-party or government ID-validation API~~ **— reversed in v1.5. Persona is now the verification vendor (§6).** Government ID-validation APIs beyond Persona remain out of scope.
 - ❌ ~~Cloud OCR or server-side biometric matching~~ **— reversed in v1.5.** Both now happen at the vendor. Neither is built *by us*, which is what this line was protecting.
-- ❌ Admin web panel *(add-on)*
-- ❌ Analytics / crash reporting *(add-on)*
+- ~~❌ Admin web panel *(add-on)*~~ — **commissioned 2026-08-30 as AD-1, separately quoted,
+  outside the 30 days; still a non-goal of the *base* build so nothing in Phases 0–3 may depend
+  on it.** The panel adds no writer of `age_verified` (§6.4.1) and no policy to the §5.3 RLS
+  surface.
+- ❌ Analytics / crash reporting *(add-on)* — (AD-1 does not open it)
 - ❌ Advanced anti-spoofing / presentation-attack detection *(add-on)*
 - ❌ Social / SSO login
 - ❌ Sharing one device across multiple accounts

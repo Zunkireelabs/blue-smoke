@@ -330,9 +330,13 @@ LK · OQ-1/OQ-4 → DV, LK (hardware ~Day 26) · OQ-11(d) → PF-7 · SMTP → A
 
 ## Out of scope — do not supply refs
 
-From `TODO-addons.md`: **AD-1 Admin Web Panel** (15 d — fleet view, verification audit, user
-management, audit-log browser), **AD-2** analytics beyond a user-facing opt-out, **AD-3** firmware,
+From `TODO-addons.md`: **AD-2** analytics beyond a user-facing opt-out, **AD-3** firmware,
 **AD-4** advanced liveness. And, again: **all Persona ID-capture and selfie screens** — vendor-owned.
+
+**AD-1 (admin web panel) is commissioned but out of scope *for this document*** — not because it
+isn't being built, but because it's a separate web SPA on Tailwind/shadcn (`web-admin`, its own
+repo), not `tokens.ts`, and needs no refs from this workstream. Its screens are designed and
+tracked in that repo and in `docs/project-roadmap-todos/TODO-AD-1-admin-panel.md`, not here.
 
 ---
 

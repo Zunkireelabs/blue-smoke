@@ -41,7 +41,8 @@ Check these on **every** change. A breach is an automatic block, not a review co
 | Proximity, hysteresis, state machine | Spec **§7** |
 | Security, threat model, data classes | Spec **§8** |
 | What am I building today | [`docs/project-roadmap-todos/`](docs/project-roadmap-todos/) — ROADMAP + per-phase TODOs |
-| Is this in scope? | The phase TODO files. If it's in `TODO-addons.md`, **it is not in scope** |
+| Is this in scope? | The phase TODO files. If it's in `TODO-addons.md`, **it is not in scope** — except **AD-1**, commissioned 2026-08-30, tracked in its own working file below |
+| Admin panel — anything | `docs/project-roadmap-todos/TODO-AD-1-admin-panel.md`. Read its 🔴 preamble before writing admin code |
 | Why was X rejected? | [`docs/archive/PROJECT_BRIEF-superseded.md`](docs/archive/PROJECT_BRIEF-superseded.md) |
 
 **Never invent a UUID, byte offset, command ID, or threshold.** They are all specified. If something genuinely isn't, say so and flag it — don't fill the gap with a plausible value.
@@ -68,6 +69,7 @@ Not assignments — a map, so you can tell whose in-flight branch your diff migh
 | **BLE & Lock** | `src/features/ble/**`, `src/features/lock/**` | Scan, bonding, auth handshake, lock/unlock, proximity, background BLE. **Critical path** — most likely to block others. |
 | **Verification** | `src/features/verification/**` | Persona SDK integration (capture flow), the create-inquiry + webhook Edge Functions. No longer a no-network zone — see rules below. Most self-contained area; easiest to work in without collisions. |
 | **App & Backend** | `src/features/auth|onboarding|profile|devices/**`, `supabase/**`, `.github/**` | Auth, onboarding, device UI, Supabase schema + RLS + Edge Functions, CI/CD. Broadest surface, so most likely to touch shared files. |
+| **Admin panel (AD-1)** | `supabase/functions/admin-*/**`, `supabase/functions/_shared/{requireAdmin,adminAudit,adminCors}.ts`, and the separate `web-admin` repo | Admin auth, fleet/user/audit reads, account actions. Backend + migrations live in THIS repo. Touches `issue-device-session` once in M2 (account-status check) and refactors `revoke-device-session` behaviour-neutrally in M2 — both need announcing. |
 
 **When work spans two areas:** say so, and prefer splitting it into two PRs over one wide diff.
 
@@ -231,7 +233,7 @@ From spec §12.1. All of it, not the happy path:
 ## Do not
 
 - **Reintroduce superseded decisions.** No self-hosted Node backend, no Ed25519 on the MCU, no us writing firmware. All rejected — see `docs/archive/`. (Persona/KYC-vendor was on this list too — reversed, see pillar 2 above and `docs/session-log/anish.md`. Written client confirmation is still pending, so treat the vendor decision as provisional until that lands.)
-- **Build add-ons.** Admin panel, analytics/Sentry, firmware, advanced PAD are out of scope. If asked, name it as an add-on and point at `TODO-addons.md`.
+- **Build add-ons — except AD-1.** Analytics/Sentry, firmware, and advanced PAD are still out of scope; if asked, name it as an add-on and point at `TODO-addons.md`. **The admin web panel (AD-1) was commissioned on 2026-08-30** and is live work — see `docs/project-roadmap-todos/TODO-AD-1-admin-panel.md`. AD-1 being open does **not** open AD-2: a real verification funnel needs client-side events, which is AD-2 by definition.
 - **Add analytics or crash reporting to the verification subtree.** Ever. A crash during ID capture must not produce a report containing the ID.
 - **Commit secrets.** The Supabase service-role key bypasses every RLS policy. `.gitignore` guards this; don't defeat it.
 - **Weaken a security control to make a test pass.** Fix the test.
