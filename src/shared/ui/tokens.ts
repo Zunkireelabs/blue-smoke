@@ -422,4 +422,18 @@ export const contrastPairs: ReadonlyArray<{
     bg: semanticColor.successBg,
     size: 'body',
   },
+  {
+    // HomeScreen's connected-device dot (design ask, 2026-08-31) fills a small circle solid
+    // `success`, not `successBg` — no text ever sits on it, but the completeness guard still
+    // requires a registered bgToken pairing, same non-text role `textInverse on brand` already
+    // covers for the Toggle track. `success` on white measured 5.55:1 (see `successRaw`'s header
+    // comment), and contrast ratio is symmetric, so `textInverse` (white) on `success` passes the
+    // same AA threshold.
+    name: 'textInverse on success',
+    fgToken: 'textInverse',
+    bgToken: 'success',
+    fg: semanticColor.textInverse,
+    bg: semanticColor.success,
+    size: 'body',
+  },
 ];

@@ -75,11 +75,36 @@ describe('BluetoothGateScreen — real-state selector', () => {
     expect(text).not.toContain('We need permission to continue');
   });
 
-  it('PoweredOff renders ON-9 (Bluetooth off), never claiming we can flip the toggle', async () => {
+  it('PoweredOff renders ON-9 (Bluetooth off), never claiming we can flip the toggle when the manager has no enable()', async () => {
     const { renderer, onResolved } = await renderGate(fakeManager('PoweredOff'));
     expect(renderedText(renderer)).toContain('Bluetooth is off');
     expect(renderedText(renderer)).not.toContain('Turn on Bluetooth');
     expect(onResolved).not.toHaveBeenCalled();
+  });
+
+  // 2026-08-31 — `BleManager.enable()` (react-native-ble-plx, Android only) genuinely does show
+  // the OS's native toggle-on dialog, unlike iOS where no such API exists (the test above, and
+  // this screen's own original design, predate wiring it up). Only Android + a manager that
+  // implements it gets the extra button; either half missing falls back to Open-Settings-only.
+  it('PoweredOff on Android with manager.enable() offers Turn on Bluetooth, and a grant resolves the gate', async () => {
+    Platform.OS = 'android';
+    const enable = jest.fn().mockResolvedValue(undefined);
+    const manager: BleManagerLike = { ...fakeManager('PoweredOff', 'PoweredOn'), enable };
+    const { renderer, onResolved } = await renderGate(manager);
+    expect(renderedText(renderer)).toContain('Turn on Bluetooth');
+
+    await act(async () => {
+      findByLabel(renderer, 'Turn on Bluetooth').props.onPress();
+    });
+
+    expect(enable).toHaveBeenCalledTimes(1);
+    expect(onResolved).toHaveBeenCalledTimes(1);
+  });
+
+  it('PoweredOff on Android without manager.enable() falls back to Open-Settings-only', async () => {
+    Platform.OS = 'android';
+    const { renderer } = await renderGate(fakeManager('PoweredOff'));
+    expect(renderedText(renderer)).not.toContain('Turn on Bluetooth');
   });
 
   it('Unauthorized on iOS renders ON-8 (permanently denied), never ON-7', async () => {

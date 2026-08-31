@@ -262,7 +262,7 @@ export function RootNavigator() {
             }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
-          <Stack.Screen name="SetPassword" component={SetPasswordScreen} options={{ title: 'Set a password' }} />
+          <Stack.Screen name="SetPassword" component={SetPasswordScreen} options={{ title: 'Change password' }} />
           {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection.
               No native header — `BluetoothPrimingScreen` renders its own gradient + "BlueSmoke"
               + curtain shell, matching Home's. `slide_from_bottom` makes entering it read as

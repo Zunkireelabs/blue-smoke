@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet } from 'react-native';
+import { ActivityIndicator, AppState, Platform, StyleSheet } from 'react-native';
 import { GradientGround } from '@/shared/ui';
 import { useBleManager } from '@/features/ble/BleClientContext';
 import {
@@ -103,7 +103,21 @@ export function BluetoothGateScreen({ onResolved }: BluetoothGateScreenProps) {
   }, [state, onResolved]);
 
   if (state === 'poweredOff') {
-    return <BluetoothOffScreen />;
+    return (
+      <BluetoothOffScreen
+        onEnableBluetooth={
+          Platform.OS === 'android' && manager.enable
+            ? () => {
+                // Re-check either way: a grant flips `check()` on to resolve the gate; a decline
+                // (or a device where `enable()` itself rejects) still re-reads the real state
+                // rather than leaving this a silently dead button — same "settle on both
+                // branches" reasoning ON-7's `Try again` above already uses.
+                manager.enable!().then(check, check);
+              }
+            : undefined
+        }
+      />
+    );
   }
   if (state === 'deniedOnce') {
     return (

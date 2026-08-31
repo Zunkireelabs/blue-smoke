@@ -180,6 +180,20 @@ async function settle() {
   });
 }
 
+// Both `H158PairScreen.tsx`'s `handleDisconnectPress` and `HomeScreen.tsx`'s
+// `handleConnectPress` hold their actual navigate behind a minimum-delay floor (2s) even though
+// the underlying work finishes near-instantly — purely a perceived-feedback affordance (each
+// one's own spinner) — so `settle()`'s single macrotask tick isn't enough to reach the
+// post-navigation state a full Disconnect/Reconnect test needs to assert on. Real timer, same
+// convention `settle()` above documents, not `jest.useFakeTimers()` — this file's own
+// scanner-timeout tests already found that global fake timers here reintroduce the dangling-timer
+// class that once hung a whole run.
+async function settleMinDelay() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+  });
+}
+
 async function renderFlow(manager: BleManagerLike) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(queryClient);
@@ -195,7 +209,15 @@ async function renderFlow(manager: BleManagerLike) {
         <BleClientProvider manager={manager}>
           <NavigationContainer>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="Home">
+                {/* `HomeScreen` now dials a reconnect itself (P1-5.0 follow-up, 2026-08-31)
+                    through its own `H158HomeConnectAgent`, which shadows whatever's above it in
+                    real navigation the same way `H158PairScreen` does — `testManager` is the
+                    same escape hatch, for the same reason: without it, that agent's own
+                    `useBleManager()` falls through to the real, native-backed `BleManager`,
+                    which throws under Jest. */}
+                {() => <HomeScreen testManager={manager} />}
+              </Stack.Screen>
               {/* H158GateScreen reuses BluetoothGateScreen directly, no nested provider of its
                   own — it reads whatever manager `BleClientProvider` supplies above, same as the
                   real app reads whatever `AppProviders` supplies. */}
@@ -362,12 +384,29 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     expect(cancelSpy).toHaveBeenCalledWith('h158-mock-0003');
     // `disconnect` pops back to Home. P1-5.0: a disconnect is NOT a forget — the remembered-
     // devices list (`h158DeviceStorage.ts`) is untouched, so the device still renders as its own
-    // row, now showing Disconnected rather than vanishing the way the old single-slot store made
-    // it (that behaviour was the bug P1-5.0 exists to fix, not a feature to preserve).
-    await settle();
+    // row rather than vanishing the way the old single-slot store made it (that behaviour was the
+    // bug P1-5.0 exists to fix, not a feature to preserve). No "Disconnected" badge any more
+    // (design ask, 2026-08-31) — the "Last connected X ago" line asserted below is what signals
+    // the drop now.
+    await settleMinDelay();
     expect(renderedText(renderer)).not.toContain('No devices paired');
     expect(renderedText(renderer)).toContain('YP65-AT-TEST03');
-    expect(renderedText(renderer)).toContain('Disconnected');
+    // With zero connected devices, "Connected devices" now shows its own compact "0 connected"
+    // placeholder row (design ask, 2026-08-31) rather than hiding the heading entirely — "Paired
+    // devices" still follows below with the actual remembered device.
+    expect(renderedText(renderer)).toContain('Connected devices');
+    expect(renderedText(renderer)).toContain('0 connected');
+    expect(renderedText(renderer)).toContain('No devices connected');
+    expect(renderedText(renderer)).toContain('Paired devices');
+    // "Last connected X ago" (design ask, 2026-08-31, reference screenshot) — `addPairedH158Device`
+    // stamped this the moment `pairDevice` connected above, so right after disconnecting it reads
+    // as "just now" rather than the badge being the only signal of the drop.
+    expect(renderedText(renderer)).toContain('Last connected just now');
+    // The "Connect ›" trailing hint (same reference screenshot) — makes explicit what tapping
+    // the row already does. Checked via the chevron glyph, not the word "Connect" alone: that
+    // substring is already trivially present in "Connected devices"/"Reconnect" elsewhere on this
+    // screen, so it wouldn't actually catch a regression.
+    expect(renderedText(renderer)).toContain('›');
   });
 
   it("Done leaves the device connected, and Home's connected row resumes the same controls", async () => {
@@ -388,6 +427,13 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     await press(renderer, 'Done');
     expect(renderedText(renderer)).toContain('YP65-AT-TEST04');
     expect(renderedText(renderer)).not.toContain('No devices paired');
+    // With the only paired device now connected, "Paired devices" has nothing left in its own
+    // list — it shows `NoPairedDevicesRow`'s placeholder rather than disappearing (design ask,
+    // 2026-08-31), same treatment "Connected devices" already got for its own empty case.
+    expect(renderedText(renderer)).toContain('Paired devices');
+    expect(renderedText(renderer)).toContain('0 paired');
+    expect(renderedText(renderer)).toContain('All devices connected');
+    expect(renderedText(renderer)).toContain('1 connected');
 
     // Tapping the row re-enters H158Gate -> H158Pair with this device's id, which resumes
     // straight into the connected controls from `useH158ConnectionStore` instead of re-scanning
@@ -443,7 +489,10 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     expect(renderedText(rendererB)).not.toContain('No devices paired');
   });
 
-  it('Forget device removes just that row, leaving the rest of the list untouched', async () => {
+  it('Forget device, from the detail screen it now lives on, removes just that row', async () => {
+    // Home no longer carries a per-row "Forget device" link (moved onto H158PairScreen's own
+    // connected-state controls) — this re-enters the device's detail screen the same way "Done
+    // leaves the device connected..." above does, then presses Forget from there.
     const manager = buildH158FakeManagerWithDevices([
       { id: 'h158-mock-forget-a', name: 'YP65-AT-FRGT-A', localName: null, rssi: -50, manufacturerData: null },
     ]);
@@ -453,10 +502,56 @@ describe('Home -> real H158 pairing, through to a connected device', () => {
     await press(renderer, 'Done');
     expect(renderedText(renderer)).toContain('YP65-AT-FRGT-A');
 
-    await press(renderer, 'Forget YP65-AT-FRGT-A');
+    await press(renderer, 'YP65-AT-FRGT-A, connected. Open device.');
+    expect(renderedText(renderer)).toContain('Connected');
+
+    // "Forget device" now opens a confirm sheet (same pattern as ProfileScreen's "Log out?")
+    // rather than forgetting immediately — the destructive action inside it is a distinct
+    // control ("Confirm forget device") from the trigger, so both are findable by name.
+    await press(renderer, 'Forget device');
+    await settle();
+    await press(renderer, 'Confirm forget device');
     await settle();
 
     expect(renderedText(renderer)).not.toContain('YP65-AT-FRGT-A');
+    expect(renderedText(renderer)).toContain('No devices paired');
+  });
+
+  it('a device that fails to reconnect can still be forgotten, from the failed-attempt screen', async () => {
+    // The gap this closes: once Home's row-level "Forget device" link was removed, the only
+    // remaining path was through the `connected` phase's own Forget button — which a device
+    // that's gone permanently unreachable (broken, given away, factory reset) can never reach
+    // again. `H158PairScreen`'s `failed` phase carries its own Forget button for exactly this,
+    // gated on `targetDeviceId` (a reconnect attempt for an already-remembered device, not a
+    // fresh scan-based pairing failure with nothing remembered yet).
+    const manager = buildH158FakeManagerWithDevices([
+      { id: 'h158-mock-unreach-a', name: 'YP65-AT-UNREACH', localName: null, rssi: -50, manufacturerData: null },
+    ]);
+    const renderer = await renderFlow(manager);
+
+    await pairDevice(renderer, 'YP65-AT-UNREACH');
+    await press(renderer, 'Disconnect');
+    await settleMinDelay();
+    // No "Disconnected" badge any more (design ask, 2026-08-31) — "Last connected just now" is
+    // what confirms the row dropped out of its connected state.
+    expect(renderedText(renderer)).toContain('Last connected just now');
+
+    // Simulate the device having gone permanently unreachable — the next connect attempt fails.
+    jest.spyOn(manager, 'connectToDevice').mockRejectedValue(new Error('device unreachable'));
+
+    // "Reconnect" now holds the actual navigate behind the same 2s minimum-delay floor
+    // `HomeScreen.tsx`'s `handleConnectPress` gives the "Connect ›" hint's spinner.
+    await press(renderer, 'YP65-AT-UNREACH, disconnected. Reconnect.');
+    await settleMinDelay();
+    expect(renderedText(renderer)).toContain("Couldn't connect");
+
+    // Same confirm-sheet step as the "connected"-phase Forget test above.
+    await press(renderer, 'Forget device');
+    await settle();
+    await press(renderer, 'Confirm forget device');
+    await settle();
+
+    expect(renderedText(renderer)).not.toContain('YP65-AT-UNREACH');
     expect(renderedText(renderer)).toContain('No devices paired');
   });
 
