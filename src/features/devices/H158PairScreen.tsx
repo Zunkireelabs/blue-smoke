@@ -419,22 +419,31 @@ function H158PairScreenContent() {
     [connect, scanner],
   );
 
+  // `connect`/`targetDeviceId` are read through a ref rather than listed as deps on the mount
+  // effect below: that effect is one-shot wiring (subscribe to the scanner, kick off exactly one
+  // scan-or-direct-connect), and re-running it because `connect`'s identity moved across a
+  // re-render would dispose a live scanner and re-dial mid-attempt. The ref states that intent
+  // directly instead of asking the linter to ignore the effect.
+  const mountArgs = useRef({ connect, targetDeviceId });
+  mountArgs.current = { connect, targetDeviceId };
+
   useEffect(() => {
+    const { connect: dial, targetDeviceId: resumeId } = mountArgs.current;
     const unsubscribe = scanner.subscribe(setScanState);
-    if (targetDeviceId) {
+    if (resumeId) {
       // Resuming (already covered by the `phase` initializer above) or reconnecting — either
       // way, no scan: `connectH158Session` dials a known peripheral id directly. Looks the name
       // up from the remembered-devices list purely for the "Connecting to <name>…" caption; a
       // miss (a device this app has somehow never remembered) still connects, just with a
       // generic caption, rather than blocking on it.
-      if (!useH158ConnectionStore.getState().connections[targetDeviceId]) {
+      if (!useH158ConnectionStore.getState().connections[resumeId]) {
         void getPairedH158Devices().then((devices) => {
-          const remembered = devices.find((d) => d.id === targetDeviceId);
+          const remembered = devices.find((d) => d.id === resumeId);
           setPhase((current) =>
             current.kind === 'connecting' ? { kind: 'connecting', name: remembered?.name ?? null } : current,
           );
         });
-        void connect(targetDeviceId, null);
+        void dial(resumeId, null);
       }
     } else {
       scanner.start();
@@ -448,10 +457,6 @@ function H158PairScreenContent() {
       // the very next visit `phase`'s resume-from-store branch is meant to support. Only
       // `disconnect()` below tears a session down.
     };
-    // `connect`/`targetDeviceId` intentionally excluded: this effect is mount-time wiring
-    // (subscribe to the scanner, kick off exactly one scan-or-direct-connect), not something
-    // that should re-run if `connect`'s identity changes across a re-render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanner]);
 
   const goBack = useCallback(() => navigation.goBack(), [navigation]);
@@ -492,13 +497,18 @@ function H158PairScreenContent() {
   // covers a fresh pairing/reconnect, but a RESUMED visit (the mount effect's `targetDeviceId`
   // branch does nothing when the store already has a live connection) never fires a read at all,
   // so this screen would otherwise show nothing there until something else happened to trigger
-  // one. Keyed on `phase.kind`, not `phase`/`readStatus`, so it fires once per visit to the
-  // connected phase rather than on every re-render `liveConnection`'s own updates cause.
+  // one. Keyed on `phase.kind` alone, so it fires once per visit to the connected phase rather
+  // than on every re-render `liveConnection`'s own updates cause — `readStatus` closes over the
+  // whole `phase` object and `lastStatus` changes the moment the read lands, so listing either
+  // would re-run this effect immediately. Both are therefore read through a ref, which keeps the
+  // "once per visit" rule in the code rather than in a linter suppression.
+  const statusRead = useRef({ lastStatus, readStatus });
+  statusRead.current = { lastStatus, readStatus };
+
   useEffect(() => {
-    if (phase.kind === 'connected' && lastStatus === null) {
-      void readStatus();
+    if (phase.kind === 'connected' && statusRead.current.lastStatus === null) {
+      void statusRead.current.readStatus();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase.kind]);
 
   const setLock = useCallback(

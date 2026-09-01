@@ -320,9 +320,7 @@ function SettingsRow({ label, description, icon, trailing, onPress, labelTone }:
 
 const ICON_SIZE = 20;
 const ICON_STROKE = 1.75;
-const ICON_COLOR = tokens.color.textPrimary;
 const AVATAR_SIZE = 40;
-const CARD_BACKGROUND = '#F0F0F0';
 
 // Hand-drawn inline, same convention as `HomeScreen.tsx`'s glyphs — no icon set exists yet in
 // this codebase, so a one-off SVG per row is the established pattern rather than a new
@@ -330,10 +328,10 @@ const CARD_BACKGROUND = '#F0F0F0';
 function PersonIcon() {
   return (
     <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={8} r={4} stroke={ICON_COLOR} strokeWidth={ICON_STROKE} />
+      <Circle cx={12} cy={8} r={4} stroke={tokens.color.textPrimary} strokeWidth={ICON_STROKE} />
       <Path
         d="M4 20c0-3.5 3.5-6 8-6s8 2.5 8 6"
-        stroke={ICON_COLOR}
+        stroke={tokens.color.textPrimary}
         strokeWidth={ICON_STROKE}
         strokeLinecap="round"
       />
@@ -346,13 +344,13 @@ function ShieldIcon() {
     <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none">
       <Path
         d="M12 3l7 3v5c0 5-3.2 8.5-7 10-3.8-1.5-7-5-7-10V6l7-3z"
-        stroke={ICON_COLOR}
+        stroke={tokens.color.textPrimary}
         strokeWidth={ICON_STROKE}
         strokeLinejoin="round"
       />
       <Path
         d="M9 12l2 2 4-4"
-        stroke={ICON_COLOR}
+        stroke={tokens.color.textPrimary}
         strokeWidth={ICON_STROKE}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -364,10 +362,10 @@ function ShieldIcon() {
 function CalendarIcon() {
   return (
     <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none">
-      <Rect x={4} y={5} width={16} height={15} rx={2} stroke={ICON_COLOR} strokeWidth={ICON_STROKE} />
-      <Line x1={4} y1={9} x2={20} y2={9} stroke={ICON_COLOR} strokeWidth={ICON_STROKE} />
-      <Line x1={8} y1={3} x2={8} y2={7} stroke={ICON_COLOR} strokeWidth={ICON_STROKE} strokeLinecap="round" />
-      <Line x1={16} y1={3} x2={16} y2={7} stroke={ICON_COLOR} strokeWidth={ICON_STROKE} strokeLinecap="round" />
+      <Rect x={4} y={5} width={16} height={15} rx={2} stroke={tokens.color.textPrimary} strokeWidth={ICON_STROKE} />
+      <Line x1={4} y1={9} x2={20} y2={9} stroke={tokens.color.textPrimary} strokeWidth={ICON_STROKE} />
+      <Line x1={8} y1={3} x2={8} y2={7} stroke={tokens.color.textPrimary} strokeWidth={ICON_STROKE} strokeLinecap="round" />
+      <Line x1={16} y1={3} x2={16} y2={7} stroke={tokens.color.textPrimary} strokeWidth={ICON_STROKE} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -375,10 +373,10 @@ function CalendarIcon() {
 function LockIcon() {
   return (
     <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none">
-      <Rect x={5} y={11} width={14} height={9} rx={2} stroke={ICON_COLOR} strokeWidth={ICON_STROKE} />
+      <Rect x={5} y={11} width={14} height={9} rx={2} stroke={tokens.color.textPrimary} strokeWidth={ICON_STROKE} />
       <Path
         d="M8 11V8a4 4 0 018 0v3"
-        stroke={ICON_COLOR}
+        stroke={tokens.color.textPrimary}
         strokeWidth={ICON_STROKE}
         strokeLinecap="round"
       />
@@ -386,8 +384,8 @@ function LockIcon() {
   );
 }
 
-// Colored `dangerText` (already an approved token, unlike `ICON_COLOR`) rather than a tinted
-// backdrop, so it reads as red the same way the "Log out" label does — no colored circle behind it.
+// Colored `dangerText` rather than a tinted backdrop, so it reads as red the same way the
+// "Log out" label does — no colored circle behind it.
 function LogoutIcon() {
   return (
     <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none">
@@ -460,10 +458,10 @@ const styles = StyleSheet.create({
   },
   groupCard: {
     padding: 0,
-    // Exact value requested for this screen — doesn't map to an existing `tokens.color.*` entry,
-    // so it's a local literal rather than a design-system token (this file isn't scanned by
-    // `tokenOnlyGuard`, unlike `src/shared/ui/**`).
-    backgroundColor: CARD_BACKGROUND,
+    // Exact value requested for this screen. It had no `tokens.color.*` entry, so one was added
+    // (`surfaceSubtle`, backed by `neutral[75]`) rather than kept as a local literal — this file
+    // IS scanned by `tokenOnlyGuard`, which lists it in `RESTYLED_SCREENS`.
+    backgroundColor: tokens.color.surfaceSubtle,
     borderWidth: 0,
   },
   row: {

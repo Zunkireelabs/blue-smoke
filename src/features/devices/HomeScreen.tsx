@@ -410,14 +410,13 @@ function ConnectedDeviceCard({
   // Another row opening (`isOpen` turning false here) snaps this one shut — "only one row open
   // at a time". A row's own release/settle already drives `dragX` back to 0 through the
   // responder handlers below, so this only ever fires for a DIFFERENT row than the one the user
-  // is actually touching.
+  // is actually touching. `setDragX` is a `useCallback([])`, so listing it costs no extra runs.
   useEffect(() => {
     if (isOpen === false && dragXRef.current !== 0) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
       setDragX(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, setDragX]);
 
   // A failed lock/unlock gets a brief, subtle inline note rather than a persistent badge — CLAUDE.md's
   // "user-facing errors are coaching, never diagnostic" is written for verification copy, but the
@@ -500,7 +499,7 @@ function ConnectedDeviceCard({
       // `deviceRowPressOverlay` below is the iOS equivalent (`Pressable` has no ripple there) — a
       // single translucent veil drawn OVER the finished row, rather than dimming the row's own
       // layers, so nothing underneath it can show through unevenly.
-      android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+      android_ripple={{ color: tokens.color.pressRipple }}
       // Delays `onPressIn` (and therefore `pressed` below) just long enough for the sibling
       // `PanResponder` to claim a real swipe first — reported as "I get the tap effect when I
       // swipe" (2026-08-31): without this, `Pressable` shows its press feedback the instant a
@@ -1027,6 +1026,14 @@ function H158HomeConnectAgent({
   onSettled: (deviceId: string, outcome: ConnectH158DeviceOutcome) => void;
 }) {
   const manager = useBleManager();
+  // `name`/`onSettled` are read through a ref rather than listed as deps: this effect must fire
+  // exactly once per `deviceId` change (a fresh connect attempt), not re-dial because
+  // `onSettled`'s identity moved on a `HomeScreen` re-render mid-attempt. A ref says that in the
+  // type system instead of asking the linter to look the other way, and it also guarantees the
+  // callback fired on settle is the CURRENT one, which a stale closure would not.
+  const latest = useRef({ name, onSettled });
+  latest.current = { name, onSettled };
+
   useEffect(() => {
     let cancelled = false;
     // 🔴 2026-08-31 fix — this path (a direct row-tap reconnect, see this component's own header
@@ -1043,7 +1050,7 @@ function H158HomeConnectAgent({
         const permission = await requestAndroidBluetoothPermission();
         if (permission !== 'granted') {
           if (!cancelled) {
-            onSettled(deviceId, {
+            latest.current.onSettled(deviceId, {
               ok: false,
               detail:
                 permission === 'permanentlyDenied'
@@ -1054,19 +1061,15 @@ function H158HomeConnectAgent({
           return;
         }
       }
-      const outcome = await connectAndRememberH158Device(manager, deviceId, name);
+      const outcome = await connectAndRememberH158Device(manager, deviceId, latest.current.name);
       if (!cancelled) {
-        onSettled(deviceId, outcome);
+        latest.current.onSettled(deviceId, outcome);
       }
     };
     void dial();
     return () => {
       cancelled = true;
     };
-    // `name`/`onSettled` intentionally excluded: this effect should fire exactly once per
-    // `deviceId` change (a fresh connect attempt), not re-dial because `onSettled`'s identity
-    // moved on a `HomeScreen` re-render mid-attempt.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId, manager]);
   return null;
 }
@@ -2041,12 +2044,12 @@ const styles = StyleSheet.create({
   // reported "glitch": `opacity` on `deviceRow` dims every overlapping opaque shape stacked inside
   // it independently (`connectedDot`'s white ring over `DeviceLockGlyph`'s own white backing, in
   // particular), so those seams became visible instead of the whole row reading as one flat dim.
-  // A plain `rgba` literal, not a `tokens.color.*` reference — a transient press tint has no text
-  // sitting on it, so it carries no WCAG contrast obligation the way a real background token would
-  // (see `contrastCompleteness.test.ts`'s `BG_KEYS` handling).
+  // `tokens.color.pressVeil` — one of the two rgba tokens in `tokens.ts`, and named in
+  // `contrastCompleteness.test.ts`'s `EXEMPT_TOKENS`: a transient press tint has no text sitting
+  // on it, so it carries no WCAG contrast obligation the way a real background token would.
   deviceRowPressOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: tokens.color.pressVeil,
     borderRadius: tokens.radii.lg,
   },
   // Anchor for `connectedDot`'s absolute positioning — `position: 'relative'` is the only thing

@@ -24,6 +24,9 @@ import { Platform } from 'react-native';
 const neutral = {
   0: '#FFFFFF',
   50: '#F4F4F5',
+  // Sits between 50 and 100 — a pure grey, unlike 50's faint warm cast. Added for the grouped
+  // settings card on Profile, whose fill was specified as an exact value.
+  75: '#F0F0F0',
   100: '#E4E4E7',
   200: '#D4D4D8',
   300: '#A1A1AA',
@@ -110,6 +113,10 @@ const semanticColor = {
   background: neutral[0],
   backgroundMuted: neutral[50],
   surface: neutral[0],
+  // A grouped card that reads as an inset panel rather than a raised one — Profile's settings
+  // group, where the rows carry their own separators and the card itself has no border. Distinct
+  // from `backgroundMuted`: that is a page ground, this is a surface laid on top of one.
+  surfaceSubtle: neutral[75],
 
   border: neutral[200],
   borderStrong: neutral[300],
@@ -154,6 +161,21 @@ const semanticColor = {
   surfaceTint: '#F7FBFF',
   success: successRaw.text,
   successBg: successRaw.background,
+
+  /**
+   * Transient press feedback on a composite row (HomeScreen's device row) — a single translucent
+   * veil laid OVER the finished row, rather than fading the row's own `opacity`, which
+   * double-dims every overlapping opaque shape stacked inside it.
+   *
+   * These are the two tokens here that are genuinely `rgba()` rather than a solid hex dimmed via
+   * the `opacity` style (the trick `Sheet`'s backdrop uses). Android's `android_ripple` takes one
+   * colour string and has no separate opacity to dim it with, and the iOS veil is kept in the same
+   * form so the two stay visibly matched. Both are exempt in `contrastCompleteness.test.ts` — a
+   * press tint never has text sitting on it, and `contrast.test.ts`'s `hexToRgb` could not parse
+   * an alpha value anyway.
+   */
+  pressRipple: 'rgba(0, 0, 0, 0.08)',
+  pressVeil: 'rgba(0, 0, 0, 0.06)',
 } as const;
 
 const spacing = {
@@ -434,6 +456,42 @@ export const contrastPairs: ReadonlyArray<{
     bgToken: 'success',
     fg: semanticColor.textInverse,
     bg: semanticColor.success,
+    size: 'body',
+  },
+  // `surfaceSubtle` — Profile's grouped settings card. One entry per foreground that actually
+  // renders on it: row labels (`textPrimary`), row descriptions and the identity block
+  // (`textSecondary`), the verification badge (`success`), and the "Log out" row's label and
+  // glyph (`dangerText`).
+  {
+    name: 'textPrimary on surfaceSubtle',
+    fgToken: 'textPrimary',
+    bgToken: 'surfaceSubtle',
+    fg: semanticColor.textPrimary,
+    bg: semanticColor.surfaceSubtle,
+    size: 'body',
+  },
+  {
+    name: 'textSecondary on surfaceSubtle',
+    fgToken: 'textSecondary',
+    bgToken: 'surfaceSubtle',
+    fg: semanticColor.textSecondary,
+    bg: semanticColor.surfaceSubtle,
+    size: 'body',
+  },
+  {
+    name: 'dangerText on surfaceSubtle',
+    fgToken: 'dangerText',
+    bgToken: 'surfaceSubtle',
+    fg: semanticColor.dangerText,
+    bg: semanticColor.surfaceSubtle,
+    size: 'body',
+  },
+  {
+    name: 'success on surfaceSubtle',
+    fgToken: 'success',
+    bgToken: 'surfaceSubtle',
+    fg: semanticColor.success,
+    bg: semanticColor.surfaceSubtle,
     size: 'body',
   },
 ];
