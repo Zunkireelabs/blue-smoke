@@ -15,6 +15,8 @@
 import { Platform } from 'react-native';
 import notifee, { AndroidImportance } from '@notifee/react-native';
 import { useH158ConnectionStore } from '@/features/ble/h158/useH158ConnectionStore';
+import { clearBanner, showBanner } from '@/shared/ui/useBannerStore';
+import { navigationRef } from '@/app/navigation';
 
 export const LOW_BATTERY_LATCH_PERCENT = 15;
 export const LOW_BATTERY_CLEAR_PERCENT = 20;
@@ -93,9 +95,20 @@ export function startBatteryNotifications(): () => void {
     const { state: nextState, action } = nextBatteryLatchState(latchState, state.batteryPercent);
     latchState = nextState;
     if (action === 'show') {
-      void showLowBatteryNotification(state.batteryPercent as number);
+      const batteryPercent = state.batteryPercent as number;
+      void showLowBatteryNotification(batteryPercent);
+      showBanner({
+        id: LOW_BATTERY_NOTIFICATION_ID,
+        text: `Device battery low — ${batteryPercent}%. Charge it soon.`,
+        onPress: () => {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('Home');
+          }
+        },
+      });
     } else if (action === 'clear') {
       void clearLowBatteryNotification();
+      clearBanner(LOW_BATTERY_NOTIFICATION_ID);
     }
   });
 }

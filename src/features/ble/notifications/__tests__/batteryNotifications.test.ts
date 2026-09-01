@@ -4,10 +4,23 @@
  * is faked via `__mocks__/@notifee/react-native.js`, same convention as `react-native-persona`'s
  * mock — these tests exercise `nextBatteryLatchState`'s pure decision table plus
  * `startBatteryNotifications`'s subscription wiring, not notifee.
+ *
+ * `@/app/navigation` is mocked the same way `notificationNavigation.test.ts` mocks it — a
+ * hand-rolled `navigationRef` fake, since the real module pulls in the whole screen tree, which
+ * a unit test over the battery latch has no reason to import.
  */
+const mockNavigate = jest.fn();
+jest.mock('@/app/navigation', () => ({
+  navigationRef: {
+    isReady: () => true,
+    navigate: (...args: unknown[]) => mockNavigate(...args),
+  },
+}));
+
 import {
   LOW_BATTERY_CLEAR_PERCENT,
   LOW_BATTERY_LATCH_PERCENT,
+  LOW_BATTERY_NOTIFICATION_ID,
   nextBatteryLatchState,
   startBatteryNotifications,
   __resetBatteryNotificationsForTests,
@@ -18,6 +31,7 @@ import {
   setH158Disconnected,
   __resetH158ConnectionStoreForTests,
 } from '../../h158/useH158ConnectionStore';
+import { useBannerStore, __resetBannerStoreForTests } from '@/shared/ui/useBannerStore';
 
 const notifee = require('@notifee/react-native');
 
@@ -81,6 +95,7 @@ describe('startBatteryNotifications — wired to the real store', () => {
     jest.clearAllMocks();
     __resetH158ConnectionStoreForTests();
     __resetBatteryNotificationsForTests();
+    __resetBannerStoreForTests();
   });
 
   test('displays once when battery drops under 15%, cancels once when it recovers to 20%', async () => {
@@ -95,6 +110,7 @@ describe('startBatteryNotifications — wired to the real store', () => {
       setH158BatteryPercent(14);
       await flush();
       expect(notifee.displayNotification).toHaveBeenCalledTimes(1);
+      expect(useBannerStore.getState().message?.id).toBe(LOW_BATTERY_NOTIFICATION_ID);
 
       // Still under threshold — must not display again.
       setH158BatteryPercent(10);
@@ -110,8 +126,28 @@ describe('startBatteryNotifications — wired to the real store', () => {
       setH158BatteryPercent(20);
       await flush();
       expect(notifee.cancelNotification).toHaveBeenCalledTimes(1);
+      expect(useBannerStore.getState().message).toBeNull();
 
       setH158Disconnected();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('tapping the banner clears it and navigates to Home', async () => {
+    const unsubscribe = startBatteryNotifications();
+    try {
+      setH158Connected(DEVICE, {} as never);
+      setH158BatteryPercent(14);
+      await flush();
+
+      const message = useBannerStore.getState().message;
+      expect(message).not.toBeNull();
+      // Dismissing on tap is `Banner`'s own job (`Banner.test.tsx`) — this only exercises the
+      // module's `onPress`, which is purely the navigate side effect.
+      message?.onPress?.();
+
+      expect(mockNavigate).toHaveBeenCalledWith('Home');
     } finally {
       unsubscribe();
     }

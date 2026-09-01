@@ -14,6 +14,8 @@
 import { Platform } from 'react-native';
 import notifee, { AndroidImportance, AndroidCategory } from '@notifee/react-native';
 import { useH158ConnectionStore } from '@/features/ble/h158/useH158ConnectionStore';
+import { clearBanner, showBanner } from '@/shared/ui/useBannerStore';
+import { navigationRef } from '@/app/navigation';
 
 const CONNECTION_CHANNEL_ID = 'h158-connection';
 export const CONNECTION_NOTIFICATION_ID = 'h158-connection-notification';
@@ -75,9 +77,19 @@ export function startConnectionNotification(): () => void {
     if (state.device) {
       shown = true;
       void showConnectionNotification(state.device.name, state.batteryPercent);
+      showBanner({
+        id: CONNECTION_NOTIFICATION_ID,
+        text: `${state.device.name ?? 'BlueSmoke device'} — ${connectedBody(state.batteryPercent)}`,
+        onPress: () => {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('Home');
+          }
+        },
+      });
     } else if (shown) {
       shown = false;
       void stopConnectionNotification();
+      clearBanner(CONNECTION_NOTIFICATION_ID);
     }
   });
 }
