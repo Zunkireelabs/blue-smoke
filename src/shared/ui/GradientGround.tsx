@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { tokens } from './tokens';
+import { GroundStatusBar } from './GroundStatusBar';
 
 export interface GradientGroundProps {
   children: ReactNode;
@@ -53,6 +54,8 @@ export function GradientGround({
 }: GradientGroundProps) {
   return (
     <View style={styles.container}>
+      {/* The bar sits over `colors[0]`, the wash's TOP stop — not the sheet below it. */}
+      <GroundStatusBar topColor={colors[0]} />
       <LinearGradient
         colors={colors}
         style={[styles.gradient, { height: washHeight }]}

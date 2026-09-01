@@ -67,8 +67,11 @@ const FG_KEYS = new Set(['color', 'placeholderTextColor']);
 const ICON_SHAPE_KEYS = new Set(['fill', 'stroke']);
 /** Keys whose value is the surface text/an icon sits on. `tintColor` is
  * `react-native-glass-effect-view`'s `GlassEffectView` prop — the color tinting the glass
- * material text/icons render on top of, same background role as `backgroundColor`. */
-const BG_KEYS = new Set(['backgroundColor', 'tintColor']);
+ * material text/icons render on top of, same background role as `backgroundColor`.
+ * `topColor` is `GroundStatusBar`'s prop: the colour sitting under the status bar, which the
+ * OS clock and signal icons render on top of — the same background role, and the reason that
+ * component derives `barStyle` from it rather than from the OS theme. */
+const BG_KEYS = new Set(['backgroundColor', 'tintColor', 'topColor']);
 /** Keys whose value never renders text or an icon — outlines only. Applies to every scanned
  * file. Tokens found under these keys must be named in `EXEMPT_TOKENS` below, not silently
  * skipped. */
