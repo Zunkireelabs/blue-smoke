@@ -319,6 +319,20 @@ describe('PairDeviceScreen — Android permission gate', () => {
     expect(mockRequestMultiple).toHaveBeenCalledTimes(1);
   });
 
+  // 🔴 CI incident, 2026-09-01: this test deliberately holds `checkMultiple` open via a
+  // hand-made `releaseCheck` resolver (below) so it can observe a mid-flight render — see that
+  // comment for why. If Jest's per-test timeout (default 5000ms) ever fires before this test
+  // reaches its own `releaseCheck(...)` call, the test function is abandoned with that promise
+  // still pending forever. Nothing then unblocks whatever inside the component is awaiting it,
+  // the Jest worker can never unwind, and the whole run hangs rather than failing cleanly — this
+  // is what happened twice in a row on GitHub's CI runner (fix/status-bar-contrast PR #27),
+  // wedging the job for 8+ minutes after one `Exceeded timeout of 5000 ms` failure, though this
+  // test finishes in 7-11ms on every local run and every prior CI run before that day. A single
+  // slow runner is a real possibility (this suite renders through the full mock BLE peripheral
+  // and permission stack); a 20s budget gives ~2000x local headroom without masking a genuine
+  // regression, which would still fail loudly rather than hang. The third `test()` argument, not
+  // a global config change — this is the one test whose timeout firing mid-flight is unsafe by
+  // design, not a signal every test in this file runs close to its limit.
   test('an unchanged permission on foreground does not flash the checking spinner over the device list', async () => {
     mockRequestMultiple.mockResolvedValue({ BLUETOOTH_SCAN: 'granted', BLUETOOTH_CONNECT: 'granted' });
     mockCheckMultiple.mockResolvedValue({ BLUETOOTH_SCAN: 'granted', BLUETOOTH_CONNECT: 'granted' });
@@ -366,5 +380,5 @@ describe('PairDeviceScreen — Android permission gate', () => {
     // Guards against passing for the wrong reason — if the foreground handler
     // never ran at all, there would have been no spinner to avoid.
     expect(mockCheckMultiple).toHaveBeenCalledTimes(1);
-  });
+  }, 20_000);
 });
