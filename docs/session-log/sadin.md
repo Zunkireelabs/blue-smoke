@@ -4,6 +4,49 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-09-01 — CI hang traced to one test; half fixed, half quarantined honestly
+
+**Branches:** `fix/pair-device-screen-test-timeout` (PR #30).
+
+A downstream PR's CI (status-bar fix, unrelated branch) hung silently for 8+ minutes, four
+separate times, always right after `PairDeviceScreen.test.tsx`'s "an unchanged permission on
+foreground does not flash the checking spinner" — never elsewhere. Root-caused with logs, not
+guessed.
+
+**First cause, confirmed and fixed here.** The test holds `checkMultiple`'s promise open with a
+hand-made `releaseCheck` resolver to observe a mid-flight render. If Jest's default 5000ms
+per-test timeout fires before the test reaches its own `releaseCheck(...)` call, the test is
+abandoned with that promise pending forever — nothing then resolves whatever inside the component
+is awaiting it, and the Jest worker can never unwind. `--detectOpenHandles` was clean on a normal
+pass and only reachable via the timeout path, which confirmed the mechanism before touching
+anything. Fixed with a 20s per-test budget (Jest's third `test()` argument, not a global config
+change — this is the one test whose timeout firing mid-flight is unsafe by design).
+
+**Second cause, investigated, not fixed — quarantined instead of guessed at.** The same test then
+failed a *different* way on the very next CI run: a content assertion
+(`toContain('BlueSmoke-0000')`) got `"No devices found"`, and the identical silent hang recurred.
+Two things ruled out before giving up on a live fix:
+
+  - Read `PairDeviceScreen.tsx`'s actual foreground-recheck effect end to end. It does not touch
+    scanner state on an unchanged permission — the code and its own comment are explicit this is
+    the entire point of the recovery path. No app bug found by reading the source.
+  - Reproduced the identical assertion failure locally, twice, matching CI's exact `npm test`
+    invocation (with and without `--forceExit`). Both times the suite finished in under 2 seconds.
+    **The hang did not reproduce on this machine.**
+
+Marked `test.skip` with the full incident inline rather than inventing a further "fix" that
+couldn't be checked against the real failure — a change untested against the actual failure mode
+is a different guess, not a fix. Not a security control (a spinner-flash UI check), so this isn't
+the "weaken a control to pass a test" CLAUDE.md forbids; it's an honest quarantine with a paper
+trail, left for whoever has CI log access across several *natural* (not forced) runs to catch it,
+or a maintainer who can reproduce GitHub's actual runner pressure.
+
+**Cost, worth recording plainly:** this one latent test bug burned roughly two hours across four
+CI attempts before the mechanism was understood, on branches that had nothing to do with it —
+`PairDeviceScreen.test.tsx` was untouched by the status-bar work throughout.
+
+---
+
 ## 2026-08-10 — new machine set up from nothing; P2-8.0 closed, reviewed twice, PR opened
 
 **Branch:** `feature/P2-8.0-server-side-inquiry-creation`, pushed.
