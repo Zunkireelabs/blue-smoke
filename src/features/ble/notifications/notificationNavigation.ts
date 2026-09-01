@@ -1,26 +1,38 @@
 /**
- * Routes a tap on either OS notification built on this branch — the low-battery alert
+ * Routes a tap on any OS notification this app displays to its destination. notifee only
+ * supports one `onForegroundEvent`/`onBackgroundEvent` registration app-wide, so this is the
+ * single shared handler for all of them, dispatching by notification id: the low-battery alert
  * (`batteryNotifications.ts`) and the persistent connected-device notice
- * (`connectionNotification.ts`) — to Home, since that's already where the connected-device
- * card, lock/unlock, and battery surface. A single shared handler covers both notification IDs
- * rather than two separate registrations: notifee only supports one `onBackgroundEvent`
- * handler app-wide, and there is already a second one on `feature/app-update-notification`
- * (`initAppUpdateCheck.ts`) — whoever reconciles that merge needs to combine both handlers into
- * one registration, not just pick one. Flagging here again, and in the PR description.
+ * (`connectionNotification.ts`) go to Home, since that's already where the connected-device
+ * card, lock/unlock, and battery surface; the app-update notice
+ * (`@/features/app-update/checkAppUpdate.ts`) opens the store URL instead. Call
+ * `registerNotificationPressNavigation()` once at app boot (`initBleNotifications.ts`) — do not
+ * add another `notifee.onForegroundEvent`/`onBackgroundEvent` registration elsewhere, it will
+ * silently replace this one.
  *
  * Press events fire outside the React tree, so this navigates via `navigationRef`
  * (`../../../app/navigation.tsx`), not `useNavigation()`. `isReady()` guards a press landing
  * before `<NavigationContainer>` has mounted — a cold start from a killed state.
  */
-import notifee, { EventType } from '@notifee/react-native';
+import { Linking } from 'react-native';
+import notifee, { EventType, type Event } from '@notifee/react-native';
 import { navigationRef } from '@/app/navigation';
 import { LOW_BATTERY_NOTIFICATION_ID } from './batteryNotifications';
 import { CONNECTION_NOTIFICATION_ID } from './connectionNotification';
+import { APP_UPDATE_NOTIFICATION_ID } from '@/features/app-update/checkAppUpdate';
 
-const HOME_ROUTED_NOTIFICATION_IDS: ReadonlySet<string> = new Set([
+const HOME_ROUTED_NOTIFICATION_ID_PREFIXES: readonly string[] = [
   LOW_BATTERY_NOTIFICATION_ID,
   CONNECTION_NOTIFICATION_ID,
-]);
+];
+
+/**
+ * Battery/connection notification ids now carry a per-device suffix (multi-device
+ * `useH158ConnectionStore`), so this matches by prefix rather than exact id.
+ */
+function isHomeRoutedNotificationId(notificationId: string): boolean {
+  return HOME_ROUTED_NOTIFICATION_ID_PREFIXES.some(prefix => notificationId.startsWith(prefix));
+}
 
 export function navigateHomeOnNotificationPress(
   type: number,
@@ -29,7 +41,7 @@ export function navigateHomeOnNotificationPress(
   if (type !== EventType.PRESS) {
     return;
   }
-  if (!notificationId || !HOME_ROUTED_NOTIFICATION_IDS.has(notificationId)) {
+  if (!notificationId || !isHomeRoutedNotificationId(notificationId)) {
     return;
   }
   if (navigationRef.isReady()) {
@@ -37,12 +49,32 @@ export function navigateHomeOnNotificationPress(
   }
 }
 
+function openAppUpdateStoreUrlOnPress(type: number, event: Event): void {
+  if (type !== EventType.PRESS) {
+    return;
+  }
+  if (event.detail.notification?.id !== APP_UPDATE_NOTIFICATION_ID) {
+    return;
+  }
+  const storeUrl = event.detail.notification?.data?.storeUrl;
+  if (typeof storeUrl === 'string') {
+    void Linking.openURL(storeUrl);
+  }
+}
+
+function handleNotificationPress(event: Event): void {
+  const { type, detail } = event;
+  navigateHomeOnNotificationPress(type, detail.notification?.id);
+  openAppUpdateStoreUrlOnPress(type, event);
+}
+
 let registered = false;
 
 /**
- * Wires both the foreground and background notifee press listeners. Call once at app boot
- * (`initBleNotifications.ts`). Foreground events cover a press while the app is already open;
- * background events cover a press that brings a backgrounded or killed app forward.
+ * Wires the single app-wide foreground and background notifee press listeners covering every
+ * notification this app displays. Call once at app boot (`initBleNotifications.ts`). Foreground
+ * events cover a press while the app is already open; background events cover a press that
+ * brings a backgrounded or killed app forward.
  */
 export function registerNotificationPressNavigation(): void {
   if (registered) {
@@ -50,12 +82,8 @@ export function registerNotificationPressNavigation(): void {
   }
   registered = true;
 
-  notifee.onForegroundEvent(({ type, detail }) => {
-    navigateHomeOnNotificationPress(type, detail.notification?.id);
-  });
-  notifee.onBackgroundEvent(async ({ type, detail }) => {
-    navigateHomeOnNotificationPress(type, detail.notification?.id);
-  });
+  notifee.onForegroundEvent(handleNotificationPress);
+  notifee.onBackgroundEvent(async event => handleNotificationPress(event));
 }
 
 /** Test-only — same reasoning as `initBleNotifications.ts`'s `__resetBleNotificationsForTests`. */

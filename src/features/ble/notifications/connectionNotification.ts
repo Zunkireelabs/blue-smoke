@@ -10,6 +10,11 @@
  * iOS has no equivalent "ongoing/ambient" notification concept — there is deliberately no
  * iOS branch here, only a `Platform.OS === 'android'` guard, same honesty CLAUDE.md asks of
  * force-quit behaviour: don't claim parity that doesn't exist.
+ *
+ * `useH158ConnectionStore.connections` is a map, so this tracks one notification per connected
+ * device id rather than a single global one — pairing a second unit no longer makes the first
+ * one's notification vanish. The foreground service itself is still registered once and stays
+ * alive for as long as any device is connected.
  */
 import { Platform } from 'react-native';
 import notifee, { AndroidImportance, AndroidCategory } from '@notifee/react-native';
@@ -19,6 +24,10 @@ import { navigationRef } from '@/app/navigation';
 
 const CONNECTION_CHANNEL_ID = 'h158-connection';
 export const CONNECTION_NOTIFICATION_ID = 'h158-connection-notification';
+
+export function connectionNotificationId(deviceId: string): string {
+  return `${CONNECTION_NOTIFICATION_ID}-${deviceId}`;
+}
 
 function connectedBody(batteryPercent: number | null): string {
   return batteryPercent === null ? 'Connected' : `Connected · Battery ${batteryPercent}%`;
@@ -32,10 +41,14 @@ async function ensureChannel(): Promise<void> {
   });
 }
 
-async function showConnectionNotification(deviceName: string | null, batteryPercent: number | null): Promise<void> {
+async function showConnectionNotification(
+  deviceId: string,
+  deviceName: string | null,
+  batteryPercent: number | null,
+): Promise<void> {
   await ensureChannel();
   await notifee.displayNotification({
-    id: CONNECTION_NOTIFICATION_ID,
+    id: connectionNotificationId(deviceId),
     title: deviceName ?? 'BlueSmoke device',
     body: connectedBody(batteryPercent),
     android: {
@@ -45,24 +58,28 @@ async function showConnectionNotification(deviceName: string | null, batteryPerc
       asForegroundService: true,
       ongoing: true,
       // notifee requires a registered foreground service task to keep the service alive —
-      // it never resolves for as long as the connection notification should be shown;
-      // `stopConnectionNotification` is what tears it down via `notifee.stopForegroundService()`.
+      // it never resolves for as long as any connection notification should be shown;
+      // `stopConnectionNotification` is what tears it down via `notifee.stopForegroundService()`,
+      // called only once the last connected device's notification is cleared.
       pressAction: { id: 'default' },
     },
   });
 }
 
-async function stopConnectionNotification(): Promise<void> {
+async function clearConnectionNotification(deviceId: string): Promise<void> {
+  await notifee.cancelNotification(connectionNotificationId(deviceId));
+}
+
+async function stopForegroundService(): Promise<void> {
   await notifee.stopForegroundService();
-  await notifee.cancelNotification(CONNECTION_NOTIFICATION_ID);
 }
 
 let unsubscribe: (() => void) | null = null;
-let shown = false;
+const shownDeviceIds = new Set<string>();
 
 /**
- * Subscribes to `useH158ConnectionStore` and starts/stops the foreground-service-backed
- * notification on connect/disconnect, updating its battery text on every
+ * Subscribes to `useH158ConnectionStore` and starts/stops one foreground-service-backed
+ * notification per connected device, updating its battery text on every
  * `setH158BatteryPercent`. Call once at app boot (`initBleNotifications.ts`); returns an
  * unsubscribe function for tests. A no-op on iOS.
  */
@@ -70,26 +87,36 @@ export function startConnectionNotification(): () => void {
   if (Platform.OS !== 'android') {
     return () => {};
   }
-  shown = false;
+  shownDeviceIds.clear();
   notifee.registerForegroundService(() => new Promise(() => {}));
 
   return useH158ConnectionStore.subscribe((state) => {
-    if (state.device) {
-      shown = true;
-      void showConnectionNotification(state.device.name, state.batteryPercent);
+    const connectedIds = new Set(Object.keys(state.connections));
+
+    for (const deviceId of shownDeviceIds) {
+      if (!connectedIds.has(deviceId)) {
+        shownDeviceIds.delete(deviceId);
+        void clearConnectionNotification(deviceId);
+        clearBanner(connectionNotificationId(deviceId));
+      }
+    }
+
+    for (const [deviceId, connection] of Object.entries(state.connections)) {
+      shownDeviceIds.add(deviceId);
+      void showConnectionNotification(deviceId, connection.device.name, connection.batteryPercent);
       showBanner({
-        id: CONNECTION_NOTIFICATION_ID,
-        text: `${state.device.name ?? 'BlueSmoke device'} — ${connectedBody(state.batteryPercent)}`,
+        id: connectionNotificationId(deviceId),
+        text: `${connection.device.name ?? 'BlueSmoke device'} — ${connectedBody(connection.batteryPercent)}`,
         onPress: () => {
           if (navigationRef.isReady()) {
             navigationRef.navigate('Home');
           }
         },
       });
-    } else if (shown) {
-      shown = false;
-      void stopConnectionNotification();
-      clearBanner(CONNECTION_NOTIFICATION_ID);
+    }
+
+    if (shownDeviceIds.size === 0) {
+      void stopForegroundService();
     }
   });
 }
@@ -105,5 +132,5 @@ export function initConnectionNotification(): void {
 export function __resetConnectionNotificationForTests(): void {
   unsubscribe?.();
   unsubscribe = null;
-  shown = false;
+  shownDeviceIds.clear();
 }

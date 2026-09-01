@@ -2,31 +2,21 @@
  * App-boot-once init for the app-update notice. Same module-level `initialized` flag pattern
  * as `useSessionStore.ts`'s `initSessionListener()` / `initBleNotifications.ts` — this has no
  * screen lifecycle to attach to, it runs once for the whole app session.
+ *
+ * The notifee press handler for this notification (opening the store URL) lives in
+ * `@/features/ble/notifications/notificationNavigation.ts` alongside every other notification's
+ * press handler — notifee only supports one app-wide `onForegroundEvent`/`onBackgroundEvent`
+ * registration, so it is not duplicated here.
  */
-import { Linking } from 'react-native';
-import notifee, { EventType, type Event } from '@notifee/react-native';
 import { checkAppUpdate } from './checkAppUpdate';
 
 let initialized = false;
-
-function handleNotifeeEvent({ type, detail }: Event): void {
-  if (type !== EventType.PRESS) {
-    return;
-  }
-  const storeUrl = detail.notification?.data?.storeUrl;
-  if (typeof storeUrl === 'string') {
-    void Linking.openURL(storeUrl);
-  }
-}
 
 export function initAppUpdateCheck(): void {
   if (initialized) {
     return;
   }
   initialized = true;
-
-  notifee.onForegroundEvent(handleNotifeeEvent);
-  notifee.onBackgroundEvent(async (event) => handleNotifeeEvent(event));
 
   void checkAppUpdate();
 }

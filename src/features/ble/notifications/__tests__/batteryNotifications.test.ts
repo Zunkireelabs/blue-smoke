@@ -18,9 +18,7 @@ jest.mock('@/app/navigation', () => ({
 }));
 
 import {
-  LOW_BATTERY_CLEAR_PERCENT,
-  LOW_BATTERY_LATCH_PERCENT,
-  LOW_BATTERY_NOTIFICATION_ID,
+  lowBatteryNotificationId,
   nextBatteryLatchState,
   startBatteryNotifications,
   __resetBatteryNotificationsForTests,
@@ -58,30 +56,25 @@ describe('nextBatteryLatchState', () => {
     });
   });
 
-  test('crossing below the latch threshold fires "show" exactly once', () => {
-    const first = nextBatteryLatchState({ latched: false }, LOW_BATTERY_LATCH_PERCENT - 1);
+  test('lowBattery flipping true fires "show" exactly once', () => {
+    const first = nextBatteryLatchState({ latched: false }, true);
     expect(first).toEqual({ state: { latched: true }, action: 'show' });
 
-    // Still below threshold on the next reading — already latched, must not re-fire.
-    const second = nextBatteryLatchState(first.state, LOW_BATTERY_LATCH_PERCENT - 1);
+    // Still low on the next reading — already latched, must not re-fire.
+    const second = nextBatteryLatchState(first.state, true);
     expect(second).toEqual({ state: { latched: true }, action: 'none' });
   });
 
-  test('sitting between 15% and 20% while latched neither re-fires nor clears', () => {
-    const result = nextBatteryLatchState({ latched: true }, 17);
-    expect(result).toEqual({ state: { latched: true }, action: 'none' });
-  });
-
-  test('reaching the clear threshold fires "clear" exactly once', () => {
-    const first = nextBatteryLatchState({ latched: true }, LOW_BATTERY_CLEAR_PERCENT);
+  test('lowBattery flipping false fires "clear" exactly once', () => {
+    const first = nextBatteryLatchState({ latched: true }, false);
     expect(first).toEqual({ state: { latched: false }, action: 'clear' });
 
-    const second = nextBatteryLatchState(first.state, LOW_BATTERY_CLEAR_PERCENT);
+    const second = nextBatteryLatchState(first.state, false);
     expect(second).toEqual({ state: { latched: false }, action: 'none' });
   });
 
-  test('not yet latched and above threshold is a no-op', () => {
-    expect(nextBatteryLatchState({ latched: false }, 50)).toEqual({
+  test('not yet latched and lowBattery false is a no-op', () => {
+    expect(nextBatteryLatchState({ latched: false }, false)).toEqual({
       state: { latched: false },
       action: 'none',
     });
@@ -103,32 +96,32 @@ describe('startBatteryNotifications — wired to the real store', () => {
     try {
       setH158Connected(DEVICE, {} as never);
 
-      setH158BatteryPercent(30);
+      setH158BatteryPercent(DEVICE.id, 30);
       await flush();
       expect(notifee.displayNotification).not.toHaveBeenCalled();
 
-      setH158BatteryPercent(14);
+      setH158BatteryPercent(DEVICE.id, 14);
       await flush();
       expect(notifee.displayNotification).toHaveBeenCalledTimes(1);
-      expect(useBannerStore.getState().message?.id).toBe(LOW_BATTERY_NOTIFICATION_ID);
+      expect(useBannerStore.getState().message?.id).toBe(lowBatteryNotificationId(DEVICE.id));
 
       // Still under threshold — must not display again.
-      setH158BatteryPercent(10);
+      setH158BatteryPercent(DEVICE.id, 10);
       await flush();
       expect(notifee.displayNotification).toHaveBeenCalledTimes(1);
 
       // Between 15 and 20 — neither displays nor cancels.
-      setH158BatteryPercent(18);
+      setH158BatteryPercent(DEVICE.id, 18);
       await flush();
       expect(notifee.displayNotification).toHaveBeenCalledTimes(1);
       expect(notifee.cancelNotification).not.toHaveBeenCalled();
 
-      setH158BatteryPercent(20);
+      setH158BatteryPercent(DEVICE.id, 20);
       await flush();
       expect(notifee.cancelNotification).toHaveBeenCalledTimes(1);
       expect(useBannerStore.getState().message).toBeNull();
 
-      setH158Disconnected();
+      setH158Disconnected(DEVICE.id);
     } finally {
       unsubscribe();
     }
@@ -138,7 +131,7 @@ describe('startBatteryNotifications — wired to the real store', () => {
     const unsubscribe = startBatteryNotifications();
     try {
       setH158Connected(DEVICE, {} as never);
-      setH158BatteryPercent(14);
+      setH158BatteryPercent(DEVICE.id, 14);
       await flush();
 
       const message = useBannerStore.getState().message;
@@ -158,7 +151,7 @@ describe('startBatteryNotifications — wired to the real store', () => {
     setH158Connected(DEVICE, {} as never);
     unsubscribe();
 
-    setH158BatteryPercent(5);
+    setH158BatteryPercent(DEVICE.id, 5);
     await flush();
     expect(notifee.displayNotification).not.toHaveBeenCalled();
   });

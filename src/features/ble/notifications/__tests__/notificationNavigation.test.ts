@@ -7,6 +7,7 @@
  * `__resetH158ConnectionStoreForTests` helpers).
  */
 const mockNavigate = jest.fn();
+const mockOpenURL = jest.fn();
 let mockIsReady = true;
 
 jest.mock('@/app/navigation', () => ({
@@ -16,9 +17,14 @@ jest.mock('@/app/navigation', () => ({
   },
 }));
 
+jest.mock('react-native', () => ({
+  Linking: { openURL: (...args: unknown[]) => mockOpenURL(...args) },
+}));
+
 import { EventType } from '@notifee/react-native';
 import { LOW_BATTERY_NOTIFICATION_ID } from '../batteryNotifications';
 import { CONNECTION_NOTIFICATION_ID } from '../connectionNotification';
+import { APP_UPDATE_NOTIFICATION_ID } from '@/features/app-update/checkAppUpdate';
 import { navigateHomeOnNotificationPress } from '../notificationNavigation';
 
 describe('navigateHomeOnNotificationPress', () => {
@@ -63,6 +69,7 @@ describe('registerNotificationPressNavigation', () => {
   beforeEach(() => {
     jest.resetModules();
     mockNavigate.mockClear();
+    mockOpenURL.mockClear();
     mockIsReady = true;
   });
 
@@ -78,6 +85,51 @@ describe('registerNotificationPressNavigation', () => {
 
       expect(notifee.onForegroundEvent).toHaveBeenCalledTimes(1);
       expect(notifee.onBackgroundEvent).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('routes a press of the app-update notification to its store URL instead of Home', () => {
+    jest.isolateModules(() => {
+      const notifee = require('@notifee/react-native');
+      const {
+        registerNotificationPressNavigation,
+      } = require('../notificationNavigation');
+
+      registerNotificationPressNavigation();
+      const foregroundHandler = notifee.onForegroundEvent.mock.calls[0][0];
+
+      foregroundHandler({
+        type: EventType.PRESS,
+        detail: {
+          notification: {
+            id: APP_UPDATE_NOTIFICATION_ID,
+            data: { storeUrl: 'https://example.com/app' },
+          },
+        },
+      });
+
+      expect(mockOpenURL).toHaveBeenCalledWith('https://example.com/app');
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  test('routes a press of the low-battery notification to Home without opening a URL', () => {
+    jest.isolateModules(() => {
+      const notifee = require('@notifee/react-native');
+      const {
+        registerNotificationPressNavigation,
+      } = require('../notificationNavigation');
+
+      registerNotificationPressNavigation();
+      const foregroundHandler = notifee.onForegroundEvent.mock.calls[0][0];
+
+      foregroundHandler({
+        type: EventType.PRESS,
+        detail: { notification: { id: LOW_BATTERY_NOTIFICATION_ID } },
+      });
+
+      expect(mockNavigate).toHaveBeenCalledWith('Home');
+      expect(mockOpenURL).not.toHaveBeenCalled();
     });
   });
 });

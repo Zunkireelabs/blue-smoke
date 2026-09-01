@@ -15,7 +15,7 @@ jest.mock('@/app/navigation', () => ({
 
 import { Platform } from 'react-native';
 import {
-  CONNECTION_NOTIFICATION_ID,
+  connectionNotificationId,
   startConnectionNotification,
   __resetConnectionNotificationForTests,
 } from '../connectionNotification';
@@ -57,10 +57,10 @@ describe('startConnectionNotification — banner wiring (Android)', () => {
       await flush();
 
       expect(notifee.displayNotification).toHaveBeenCalledTimes(1);
-      expect(useBannerStore.getState().message?.id).toBe(CONNECTION_NOTIFICATION_ID);
+      expect(useBannerStore.getState().message?.id).toBe(connectionNotificationId(DEVICE.id));
       expect(useBannerStore.getState().message?.text).toContain('H158');
 
-      setH158Disconnected();
+      setH158Disconnected(DEVICE.id);
       await flush();
 
       expect(useBannerStore.getState().message).toBeNull();
@@ -75,7 +75,7 @@ describe('startConnectionNotification — banner wiring (Android)', () => {
       setH158Connected(DEVICE, {} as never);
       await flush();
 
-      setH158BatteryPercent(42);
+      setH158BatteryPercent(DEVICE.id, 42);
       await flush();
 
       expect(useBannerStore.getState().message?.text).toContain('42%');
