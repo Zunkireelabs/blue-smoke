@@ -1,5 +1,12 @@
-import type { ReactNode } from 'react';
-import { StyleSheet, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import {
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Text, type Tone } from './Text';
@@ -100,8 +107,21 @@ export function CurtainGround({
 }: CurtainGroundProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const curtainTop = Math.round(height * curtainTopRatio);
   const isLeftAligned = align === 'left';
+
+  // `curtainTopRatio` alone only accounts for screen *height* — on a device with a shorter
+  // screen, or a narrower one that wraps `title`/`eyebrow` onto an extra line, the hero text
+  // above can render taller than that fixed fraction leaves room for. The curtain is painted
+  // after it in the same absolutely-positioned coordinate space, so it would otherwise sit on
+  // top of the overflow instead of below it. `heroBottom` is the hero block's actual measured
+  // bottom edge (same frame as `curtainTop`, both relative to `root`'s own top); the curtain
+  // parks at whichever is lower, so it never overlaps text it doesn't have room for.
+  const [heroBottom, setHeroBottom] = useState(0);
+  const handleHeroLayout = (event: LayoutChangeEvent) => {
+    const { y, height: heroHeight } = event.nativeEvent.layout;
+    setHeroBottom(y + heroHeight);
+  };
+  const curtainTop = Math.max(Math.round(height * curtainTopRatio), heroBottom + tokens.spacing.lg);
 
   return (
     <View style={styles.root}>
@@ -123,6 +143,7 @@ export function CurtainGround({
       </View>
 
       <View
+        onLayout={handleHeroLayout}
         style={[
           isLeftAligned && { paddingHorizontal: insets.left + tokens.spacing.lg },
           { marginTop: titleTopSpacing },
@@ -230,10 +251,12 @@ const styles = StyleSheet.create({
   },
   // Larger than the shared `title` token (28) — only for Home's eyebrow-led hero (no `name`
   // line competing for space), to read as a real statement headline rather than the same size
-  // as the plain centred "BlueSmoke" wordmark other `CurtainGround` screens show.
+  // as the plain centred "BlueSmoke" wordmark other `CurtainGround` screens show. Bumped from 34
+  // (design ask, 2026-08-31) to help close the empty gap this hero block leaves above the
+  // curtain's top edge, alongside `eyebrow`'s own size bump below.
   heroTitle: {
-    fontSize: 34,
-    lineHeight: 39,
+    fontSize: 37,
+    lineHeight: 43,
   },
   // Small sentence-case label above the title (Home's greeting + name) — plain `body` weight/
   // case, matching the reference's "Hello, Anna" treatment rather than a shouty small-caps
@@ -242,16 +265,19 @@ const styles = StyleSheet.create({
   // as high as 31% down the screen (`DEVICES_CURTAIN_TOP_RATIO`), so every extra line above the
   // title eats directly into an already-tight budget between the header row and the curtain's
   // top edge.
+  // Bumped from 18/23 (design ask, 2026-08-31) — reads a little more like a real statement next
+  // to the larger `heroTitle` below it, rather than getting lost under it.
   eyebrow: {
-    fontSize: 18,
-    lineHeight: 23,
+    fontSize: 20,
+    lineHeight: 25,
     opacity: 0.82,
   },
   // Only applied when `eyebrow` is present (without `name`) — with no eyebrow, `titleTopSpacing`
   // on the parent container already places the title correctly, and this would add a redundant
-  // gap.
+  // gap. Bumped from `spacing.xs` to `spacing.sm` (design ask, 2026-08-31) — the greeting and
+  // headline read as too tightly stacked at the old spacing.
   titleAfterEyebrow: {
-    marginTop: tokens.spacing.xs,
+    marginTop: tokens.spacing.sm,
   },
   // Applied instead of `titleAfterEyebrow` when `name` renders between `eyebrow` and `title` —
   // a visibly larger gap than the tight `eyebrow`→`name` spacing (`brandTitle` carries no margin

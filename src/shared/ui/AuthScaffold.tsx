@@ -114,9 +114,11 @@ export function AuthScaffold({ topLink, children }: AuthScaffoldProps) {
 /**
  * Header height as a fraction of screen height, so the sheet's curved top edge lands at the same
  * height as Home's curtain card (`HomeScreen.tsx`'s `DEVICES_CURTAIN_TOP_RATIO`) rather than
- * wherever the header's own content happens to end.
+ * wherever the header's own content happens to end. Kept equal to that constant (design ask,
+ * 2026-08-31, when Home's card grew from 0.31 to 0.28) rather than left at the old value — the
+ * whole point of sharing this number is that the two curved cards read as the same height.
  */
-const AUTH_HEADER_HEIGHT_RATIO = 0.31;
+const AUTH_HEADER_HEIGHT_RATIO = 0.28;
 
 /** Matched to the wordmark's cap height so the two read as one lockup, not an icon and a label. */
 const BRAND_MARK_SIZE = 28;

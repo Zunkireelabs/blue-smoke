@@ -55,6 +55,16 @@ const COLOR_REFERENCE = /(\w+)\s*(?::|=)\s*\{?\s*tokens\.color\.(\w+)\b/g;
 
 /** Keys whose value renders as visible text or an icon fill — subject to WCAG contrast. */
 const FG_KEYS = new Set(['color', 'placeholderTextColor']);
+/**
+ * `fill`/`stroke` on a file that is NOT a decorative-shape file (see `isDecorativeShapeFile`
+ * below) — i.e. a real icon, not a logo or an illustration. This is the case the
+ * `DECORATIVE_SHAPE_KEYS` comment below anticipated: Profile's hand-drawn `react-native-svg`
+ * row glyphs are standalone icons conveying meaning, so they carry the same WCAG contrast
+ * obligation as text and are classified as foreground rather than exempted.
+ *
+ * Checked *after* `borderKeysForFile` in `scan` so BrandMark/illustrations keep their exemption.
+ */
+const ICON_SHAPE_KEYS = new Set(['fill', 'stroke']);
 /** Keys whose value is the surface text/an icon sits on. `tintColor` is
  * `react-native-glass-effect-view`'s `GlassEffectView` prop — the color tinting the glass
  * material text/icons render on top of, same background role as `backgroundColor`. */
@@ -120,6 +130,13 @@ const EXEMPT_TOKENS: Readonly<Record<string, string>> = {
   homeWashStop1: "BrandMark's `groundColor` at Home's header (full-screen brand wash) — matches "
     + "the inner flame knockout to CurtainGround's new gradient top stop on Home, same non-text "
     + 'shape-fill role as the `groundTopStrong` entry above.',
+  pressRipple: "Android's `android_ripple` tint on HomeScreen's device row — a transient "
+    + 'translucent veil drawn over the finished row while a finger is down. Never a text or icon '
+    + 'colour, and rgba by necessity (a ripple takes one colour string, with no `opacity` style to '
+    + "dim a solid token the way `Sheet`'s backdrop does), so it has no parseable hex for a "
+    + 'contrastPairs entry either.',
+  pressVeil: 'The iOS counterpart to `pressRipple` — `Pressable` has no ripple there, so the same '
+    + 'veil is drawn as an absolutely-positioned overlay. Same non-text role, same rgba reason.',
 };
 
 /** The destructured form (`const { color } = tokens; color.surface`) produces a different
@@ -153,12 +170,23 @@ function scan(files: SourceFile[]): ScanResult {
     ]);
     for (const match of file.contents.matchAll(COLOR_REFERENCE)) {
       const [, key, tokenName] = match;
-      if (FG_KEYS.has(key)) {
+      // Name-based exemptions are checked FIRST, before any key-based classification. A token in
+      // `EXEMPT_TOKENS` is asserted to never render text or an icon anywhere, and some of the
+      // props that carry one — `android_ripple={{ color }}` in particular — share the literal key
+      // `color` with real text colours, which `COLOR_REFERENCE` cannot tell apart. Adding a name
+      // here is a deliberate, reviewed edit to the list above; nothing lands in it by omission,
+      // which is the property this guard exists to protect.
+      if (Object.prototype.hasOwnProperty.call(EXEMPT_TOKENS, tokenName)) {
+        border.add(tokenName);
+      } else if (FG_KEYS.has(key)) {
         fg.add(tokenName);
       } else if (BG_KEYS.has(key)) {
         bg.add(tokenName);
       } else if (borderKeysForFile.has(key)) {
+        // Before ICON_SHAPE_KEYS, so a decorative-shape file's fill/stroke keeps its exemption.
         border.add(tokenName);
+      } else if (ICON_SHAPE_KEYS.has(key)) {
+        fg.add(tokenName);
       } else {
         unclassified.push(`${file.relativePath}: "${key}" -> tokens.color.${tokenName}`);
       }

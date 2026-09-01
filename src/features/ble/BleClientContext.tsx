@@ -90,6 +90,15 @@ export interface BleManagerLike {
   connectToDevice(deviceId: string): Promise<BleDeviceLike>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
   cancelDeviceConnection(deviceId: string): Promise<BleDeviceLike>;
+  /**
+   * `react-native-ble-plx`'s own `BleManager.enable()` — Android only; it shows the OS's native
+   * "Allow <app> to turn on Bluetooth?" dialog and resolves once the radio is actually on
+   * (rejects if the user declines). Optional, same reasoning as `BleDeviceLike`'s optional
+   * members: existing narrow test doubles predate it and have no need to implement it —
+   * `BluetoothGateScreen.tsx` only calls it when present AND `Platform.OS === 'android'`, iOS's
+   * `BleManager` has no working equivalent (CoreBluetooth exposes no way to flip the toggle).
+   */
+  enable?(): Promise<unknown>;
 }
 
 export interface BleSubscriptionLike {

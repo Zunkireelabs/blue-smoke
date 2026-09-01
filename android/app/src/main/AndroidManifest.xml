@@ -2,6 +2,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Core RN `Vibration` API (Home's swipe-to-lock haptic) — without this, `Vibration.vibrate()`
+         throws a native `SecurityException` that the bridge surfaces as a JS-side crash, not a
+         silent no-op; verified on-device, 2026-08-31. `VIBRATE` is a normal (not runtime-prompted)
+         permission, so declaring it here is the whole fix — no code-side request needed. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- react-native-ble-plx — spec §4. Pre-31 devices need the legacy triad;
          API 31+ devices use the two scoped runtime permissions below. -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
