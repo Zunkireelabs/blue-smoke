@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tokens } from './tokens';
+import { GroundStatusBar } from './GroundStatusBar';
 
 export interface BrandGroundProps {
   children: ReactNode;
@@ -23,6 +24,7 @@ export function BrandGround({ children, style }: BrandGroundProps) {
         style,
       ]}
     >
+      <GroundStatusBar topColor={tokens.color.brand} />
       {children}
     </View>
   );

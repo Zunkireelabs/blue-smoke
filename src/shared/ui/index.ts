@@ -1,3 +1,4 @@
+export { GroundStatusBar, statusBarStyleFor } from './GroundStatusBar';
 export { tokens, contrastPairs, HOME_WASH_LOCATIONS } from './tokens';
 export type { Theme } from './tokens';
 export { Text } from './Text';

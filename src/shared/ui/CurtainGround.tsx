@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Text, type Tone } from './Text';
 import { tokens } from './tokens';
+import { GroundStatusBar } from './GroundStatusBar';
 
 export interface CurtainGroundProps {
   /** The curtain's contents. */
@@ -125,6 +126,10 @@ export function CurtainGround({
 
   return (
     <View style={styles.root}>
+      {/* The wash's FIRST stop is what sits under the bar, and it differs by consumer:
+          `groundTopStrong` (pale) by default, Home's `homeWashStop1` (brand blue) when
+          `washColors` is passed. Deriving per-render is what makes both correct. */}
+      <GroundStatusBar topColor={(washColors ?? DEFAULT_WASH_COLORS)[0]} />
       <LinearGradient
         colors={[...(washColors ?? DEFAULT_WASH_COLORS)]}
         locations={washLocations ? [...washLocations] : undefined}

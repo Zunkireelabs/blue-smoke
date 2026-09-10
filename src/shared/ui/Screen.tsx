@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { tokens } from './tokens';
+import { GroundStatusBar } from './GroundStatusBar';
 
 export interface ScreenProps {
   children: ReactNode;
@@ -27,6 +28,9 @@ export function Screen({ children, scroll = false, centered = true, style }: Scr
   const content = (
     <View style={[styles.content, centered && styles.centered, style]}>{children}</View>
   );
+  // Every `Screen` is a flat `background` surface, and several sit under a white React
+  // Navigation header (Profile, Set a password) — so the bar must read dark on both.
+  const statusBar = <GroundStatusBar topColor={tokens.color.background} />;
 
   if (!scroll) {
     return (
@@ -34,6 +38,7 @@ export function Screen({ children, scroll = false, centered = true, style }: Scr
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        {statusBar}
         {content}
       </KeyboardAvoidingView>
     );
@@ -41,6 +46,7 @@ export function Screen({ children, scroll = false, centered = true, style }: Scr
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {statusBar}
       <ScrollView
         contentContainerStyle={[styles.content, centered && styles.centered, style]}
         keyboardShouldPersistTaps="handled"

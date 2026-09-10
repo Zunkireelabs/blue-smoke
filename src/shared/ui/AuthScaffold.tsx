@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandMark } from './BrandMark';
 import { Text } from './Text';
 import { tokens } from './tokens';
+import { GroundStatusBar } from './GroundStatusBar';
 
 /**
  * The one address a stuck user can write to. Rendered on every auth screen because the
@@ -70,6 +71,8 @@ export function AuthScaffold({ topLink, children }: AuthScaffoldProps) {
         {/* Reserved whether or not `topLink` is given, so the wordmark sits at the same height
             on every screen — the header must not visibly shift between, say, the phone screen
             and the OTP screen that follows it. */}
+        {/* The auth header is a flat `brand` fill behind the bar, not a gradient. */}
+        <GroundStatusBar topColor={markGround.header.backgroundColor} />
         <View style={styles.topRow}>{topLink}</View>
         <View style={styles.brandRow}>
           <BrandMark size={BRAND_MARK_SIZE} tone="solid" groundColor={markGround.header.backgroundColor} />
