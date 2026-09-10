@@ -3,12 +3,14 @@ import { StyleSheet, View } from 'react-native';
 import { ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useQueryClient } from '@tanstack/react-query';
 import { Inquiry } from 'react-native-persona';
 
 import { Button, GradientGround, Text, tokens } from '@/shared/ui';
 import { SignOutButton } from '@/features/auth/SignOutButton';
 import type { RootStackParamList } from '@/app/navigation';
 import { getPersonaConfig } from './personaConfig';
+import { VERIFICATION_STATUS_QUERY_PREFIX } from './useVerificationStatus';
 import { getSupabaseClient } from '@/shared/lib/supabaseClient';
 
 type Stage = 'starting' | 'pending' | 'canceled' | 'error' | 'not_configured';
@@ -56,12 +58,41 @@ interface CreateInquiryResponse {
  * `PERSONA_TEMPLATE_ID` inlined at all, before spending a network round trip) — the actual
  * template id and environment used for the inquiry now come from the server response, which is
  * scoped by the Edge Function's own (server-side) `PERSONA_TEMPLATE_ID`.
+ *
+ * 🔴 2026-09-10 — "Confirming your verification…" stranded users a SECOND time, for a different
+ * reason than the 2026-08-24 fix above. That fix made the row exist; this one makes the app look
+ * at it. `useVerificationStatus` had stopped polling before the flow even began (it mounts at
+ * sign-in, reads 'none', and treated that as terminal), so the webhook's pass was never noticed
+ * until a force-quit remounted the hook. Fixed in that hook's `nextPollInterval`; the
+ * `recheckVerificationStatus()` calls below only make the transition immediate rather than
+ * up to one poll interval late.
  */
 export function PersonaVerificationScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const queryClient = useQueryClient();
   const [stage, setStage] = useState<Stage>('starting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const autoStarted = useRef(false);
+
+  /**
+   * Tell `useVerificationStatus` that the server-side answer may have moved.
+   *
+   * That hook mounts once at sign-in and owns the polling, but it cannot see this flow at all —
+   * it has no way to know an inquiry was just created or just finished. Without this nudge the
+   * user waits up to one poll interval at each step, and (before the 2026-09-10 poll fix) waited
+   * forever, because a query frozen at 'none' had stopped polling altogether.
+   *
+   * Fire-and-forget by design: a failed invalidation must not turn into a user-visible error —
+   * the poll is the backstop and will pick the answer up regardless. This is also why the fix
+   * does not live here alone; a nudge that can fail is not a mechanism you strand a user on.
+   */
+  const recheckVerificationStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: VERIFICATION_STATUS_QUERY_PREFIX }).catch(() => {
+      // Swallowed on purpose, and the only place in this screen where that is right: the poll
+      // in `useVerificationStatus` is the mechanism, this is only an optimisation. Surfacing a
+      // failure here would show an error to a user whose verification is fine.
+    });
+  }, [queryClient]);
 
   const launch = useCallback(() => {
     try {
@@ -86,15 +117,25 @@ export function PersonaVerificationScreen() {
         return;
       }
 
+      // The pending row now exists server-side, so a read taken from here on can return
+      // something other than 'none'. Nudging here (not only at onComplete) means the status
+      // query is already live while the user is still inside the SDK's capture flow.
+      recheckVerificationStatus();
+
       Inquiry.fromInquiry(data.inquiryId)
         .sessionToken(data.sessionToken)
-        .onComplete(() => setStage('pending'))
+        .onComplete(() => {
+          setStage('pending');
+          // The vendor's decision arrives at `persona-webhook`, not through this callback, so
+          // this is a "look again now", never a verification outcome (CLAUDE.md rule 3).
+          recheckVerificationStatus();
+        })
         .onCanceled(() => setStage('canceled'))
         .onError(() => setStage('error'))
         .build()
         .start();
     })().catch(() => setStage('error'));
-  }, []);
+  }, [recheckVerificationStatus]);
 
   useEffect(() => {
     if (autoStarted.current) {

@@ -22,13 +22,15 @@
  * `useVerificationStatus.test.tsx`/`ProfileScreen.test.tsx` already do, and every spy below
  * moved from `Inquiry.fromTemplate` to `Inquiry.fromInquiry`.
  */
-import React from 'react';
+import React, { type PropsWithChildren } from 'react';
 import { Text } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { PersonaVerificationScreen } from '../PersonaVerificationScreen';
+import { VERIFICATION_STATUS_QUERY_PREFIX } from '../useVerificationStatus';
 import { AuthClientProvider } from '@/features/auth/AuthClientContext';
 import { createMockAuthClient, type MockAuthClient } from '@/features/auth/mockAuthClient';
 import { findByLabel, renderedText } from '@/features/auth/testUtils';
@@ -46,18 +48,38 @@ function mockCreateInquiry(invoke: jest.Mock) {
 
 const Stack = createNativeStackNavigator();
 
+/**
+ * The screen calls `useQueryClient()` (2026-09-10 — it nudges the verification-status query when
+ * an inquiry is created and again when the SDK completes), and that hook throws outright without
+ * a provider above it, so every render helper here needs one. `queryClient` is module-level so a
+ * test can spy on `invalidateQueries` and assert the nudge actually fired; it is reset per test.
+ */
+let queryClient: QueryClient;
+
+function withProviders(client: MockAuthClient, children: React.ReactNode) {
+  function Providers({ children: inner }: PropsWithChildren) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AuthClientProvider client={client}>{inner}</AuthClientProvider>
+      </QueryClientProvider>
+    );
+  }
+  return <Providers>{children}</Providers>;
+}
+
 function renderInStack(client: MockAuthClient) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <NavigationContainer>
-        <AuthClientProvider client={client}>
+      withProviders(
+        client,
+        <NavigationContainer>
           <Stack.Navigator initialRouteName="VerifyAge" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="CameraPriming">{() => <Text>ARRIVED CAMERA PRIMING</Text>}</Stack.Screen>
             <Stack.Screen name="VerifyAge" component={PersonaVerificationScreen} />
           </Stack.Navigator>
-        </AuthClientProvider>
-      </NavigationContainer>,
+        </NavigationContainer>,
+      ),
     );
   });
   return renderer;
@@ -80,14 +102,15 @@ function renderWithCameraPrimingBehind(client: MockAuthClient) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <NavigationContainer>
-        <AuthClientProvider client={client}>
+      withProviders(
+        client,
+        <NavigationContainer>
           <Stack.Navigator initialRouteName="CameraPriming" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="CameraPriming" component={CameraPrimingStandIn} />
             <Stack.Screen name="VerifyAge" component={PersonaVerificationScreen} />
           </Stack.Navigator>
-        </AuthClientProvider>
-      </NavigationContainer>,
+        </NavigationContainer>,
+      ),
     );
   });
   return renderer;
@@ -100,6 +123,7 @@ async function press(renderer: ReactTestRenderer.ReactTestRenderer, label: strin
 }
 
 beforeEach(() => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   (getPersonaConfig as jest.Mock).mockReturnValue({ templateId: 'itmpl_test', environment: 'sandbox' });
   mockCreateInquiry(
     jest.fn().mockResolvedValue({
@@ -111,6 +135,7 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  queryClient.clear();
 });
 
 describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
@@ -217,6 +242,37 @@ describe('PersonaVerificationScreen — VF-2/VF-5/VF-6/VF-12', () => {
 
     await press(renderer, 'Sign out');
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("onComplete re-checks verification status instead of parking on 'Confirming' forever", async () => {
+    // Regression, 2026-09-10: onComplete used to only call setStage('pending') and render a
+    // static spinner. Nothing told `useVerificationStatus` to look again, so a user whose
+    // webhook pass had already landed sat on "Confirming your verification…" until they
+    // force-quit the app. Assert the nudge itself, not the spinner — the spinner rendered
+    // correctly all along; that was never the broken part.
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    const renderer = renderInStack(createMockAuthClient());
+    await act(async () => {});
+
+    const afterLaunch = invalidate.mock.calls.length;
+    await act(async () => {
+      __lastHandlers().onComplete();
+    });
+
+    expect(renderedText(renderer)).toContain('Confirming your verification');
+    expect(invalidate.mock.calls.length).toBe(afterLaunch + 1);
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: VERIFICATION_STATUS_QUERY_PREFIX });
+  });
+
+  it('re-checks as soon as create-inquiry succeeds, so polling is live during capture', async () => {
+    // The pending row exists from this moment, so a read can now return something other than
+    // 'none'. Nudging here means the status query is already live while the user is still
+    // inside the SDK, rather than only once they finish.
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    renderInStack(createMockAuthClient());
+    await act(async () => {});
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: VERIFICATION_STATUS_QUERY_PREFIX });
   });
 
   it('a create-inquiry failure surfaces as the error stage, never launches the SDK, and never silently stalls', async () => {
