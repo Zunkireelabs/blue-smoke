@@ -87,8 +87,10 @@ jobs:
         continue-on-error: true
         run: |
           set +e
+          node -e "const R=require('$PWD/tools/jest/startReporter.js'); console.log('reporter resolves ok:', typeof R)" \
+            || echo "!!! REPORTER FAILED TO RESOLVE — START lines will be missing !!!"
           node ./node_modules/jest/bin/jest.js --logHeapUsage \
-            --reporters=default --reporters=./tools/jest/startReporter.js &
+            --reporters=default --reporters="$PWD/tools/jest/startReporter.js" &
           JPID=$!
           for i in $(seq 1 30); do
             sleep 10
@@ -113,7 +115,7 @@ jobs:
         run: |
           set +e
           node ./node_modules/jest/bin/jest.js --runInBand --logHeapUsage \
-            --reporters=default --reporters=./tools/jest/startReporter.js &
+            --reporters=default --reporters="$PWD/tools/jest/startReporter.js" &
           JPID=$!
           for i in $(seq 1 30); do
             sleep 10
