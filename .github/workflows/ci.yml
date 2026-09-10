@@ -82,26 +82,37 @@ jobs:
           node -e "const os=require('os');console.log('node',process.version,'cpus',os.cpus().length,'mem',(os.totalmem()/1e9).toFixed(1)+'GB')"
           nproc; free -m || true
 
-      # D1 — whole suite with PairDeviceScreen.test.tsx excluded. C4 showed the victim is
-      # simply whatever file runs after it, so if removing it lets the suite finish, that file
-      # is the sole trigger. Flag-only args: --reporters is an array option and swallows
-      # positional paths, which invalidated C1-C3.
-      - name: Diag D (is PairDeviceScreen the sole trigger?)
+      # E — PairDeviceScreen.test.tsx is the sole trigger (D1). It reports 8/8 passing and
+      # THEN the worker spins at 100%, so the loop outlives the file. If so, running the file
+      # alone should also fail to exit, and -t narrows it to one test in a single run.
+      - name: Diag E (which test leaves the loop?)
         continue-on-error: true
         run: |
           set +e
-          node ./node_modules/jest/bin/jest.js --runInBand \
-            --reporters=default --reporters="$PWD/tools/jest/startReporter.js" \
-            --testPathIgnorePatterns "/node_modules/" "PairDeviceScreen.test.tsx" &
-          JPID=$!; W=0
-          while kill -0 $JPID 2>/dev/null && [ $W -lt 180 ]; do sleep 5; W=$((W+5)); done
-          if kill -0 $JPID 2>/dev/null; then
-            echo ">>> RESULT: suite WITHOUT PairDeviceScreen = STILL WEDGED at ${W}s"
-            ps -eo pid,stat,pcpu,rss,etime,args | grep -i node | grep -v grep | head -4
-            kill -9 $JPID 2>/dev/null; pkill -9 -f "jest/bin/jest.js" 2>/dev/null
-          else
-            echo ">>> RESULT: suite WITHOUT PairDeviceScreen = COMPLETED at ~${W}s (sole trigger confirmed)"
-          fi
+          F=src/features/devices/__tests__/PairDeviceScreen.test.tsx
+          RUN() {
+            local label="$1"; shift
+            node ./node_modules/jest/bin/jest.js "$F" --runInBand "$@" >/tmp/e.log 2>&1 &
+            local pid=$!; local w=0
+            while kill -0 $pid 2>/dev/null && [ $w -lt 45 ]; do sleep 3; w=$((w+3)); done
+            if kill -0 $pid 2>/dev/null; then
+              local cpu=$(ps -o pcpu= -p $(pgrep -f processChild.js | head -1) 2>/dev/null | tr -d ' ')
+              echo ">>> $label = DID NOT EXIT (${w}s, workerCPU=${cpu:-n/a})"
+              kill -9 $pid 2>/dev/null; pkill -9 -f "jest/bin/jest.js" 2>/dev/null
+            else
+              echo ">>> $label = exited ~${w}s  [$(grep -E 'Tests:' /tmp/e.log | tail -1)]"
+            fi
+            sleep 1
+          }
+          RUN "E0 whole file"
+          RUN "E1 lists a discovered device"     -t "lists a discovered device"
+          RUN "E2 empty room times out"          -t "empty room times out"
+          RUN "E3 bluetooth off"                 -t "Bluetooth off blocks the scan"
+          RUN "E4 stops radio scan on unmount"   -t "stops the radio scan when the screen unmounts"
+          RUN "E5 denied permission"             -t "a denied permission blocks the scan"
+          RUN "E6 blocked routes to Settings"    -t "permanently-blocked permission routes to Settings"
+          RUN "E7 granted proceeds to scan"      -t "a granted permission proceeds to scan"
+          RUN "E8 returns from Settings granted" -t "item 8"
           exit 0
 
       # Only gate that actually loads the app the way Metro does — typecheck/lint/test
