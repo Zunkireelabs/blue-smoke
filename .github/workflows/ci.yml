@@ -82,50 +82,52 @@ jobs:
           node -e "const os=require('os');console.log('node',process.version,'cpus',os.cpus().length,'mem',(os.totalmem()/1e9).toFixed(1)+'GB')"
           nproc; free -m || true
 
-      # DIAGNOSTIC 1 — which file does the worker never finish, and is it spinning or blocked?
-      - name: Diag A (workers, as CI runs today)
+      # Bisect: is the wedge caused by h158Protocol.test.ts itself, or by its POSITION
+      # (i.e. contamination left running by the files before it)?
+      - name: Diag C (bisect)
         continue-on-error: true
         run: |
           set +e
-          node -e "const R=require('$PWD/tools/jest/startReporter.js'); console.log('reporter resolves ok:', typeof R)" \
-            || echo "!!! REPORTER FAILED TO RESOLVE — START lines will be missing !!!"
-          node ./node_modules/jest/bin/jest.js --logHeapUsage \
-            --reporters=default --reporters="$PWD/tools/jest/startReporter.js" &
-          JPID=$!
-          for i in $(seq 1 30); do
-            sleep 10
-            kill -0 $JPID 2>/dev/null || { echo "== jest exited on its own after ~$((i*10))s =="; break; }
-          done
-          if kill -0 $JPID 2>/dev/null; then
-            echo "===== WEDGED — process snapshot (STAT/%CPU shows spin vs block) ====="
-            ps -eo pid,ppid,stat,pcpu,pmem,rss,etime,args | grep -i node | grep -v grep
-            echo "===== kernel wait channel per node pid ====="
-            for p in $(pgrep -f "jest" 2>/dev/null); do
-              echo "--- pid $p wchan=$(cat /proc/$p/wchan 2>/dev/null) ---"
-              grep -E "^(State|Threads|VmRSS)" /proc/$p/status 2>/dev/null
-            done
-            kill -9 $JPID 2>/dev/null; pkill -9 -f jest 2>/dev/null
-          fi
-          exit 0
+          RUN() {
+            local label="$1"; local cap="$2"; shift 2
+            echo "################ $label ################"
+            node ./node_modules/jest/bin/jest.js --runInBand \
+              --reporters=default --reporters="$PWD/tools/jest/startReporter.js" "$@" &
+            local pid=$!; local w=0
+            while kill -0 $pid 2>/dev/null && [ $w -lt $cap ]; do sleep 5; w=$((w+5)); done
+            if kill -0 $pid 2>/dev/null; then
+              echo ">>> RESULT: $label = WEDGED at ${w}s"
+              ps -eo pid,stat,pcpu,rss,etime,args | grep -i "jest\|node" | grep -v grep | head -5
+              kill -9 $pid 2>/dev/null; pkill -9 -f "jest/bin/jest.js" 2>/dev/null
+            else
+              echo ">>> RESULT: $label = COMPLETED at ~${w}s"
+            fi
+            sleep 2
+          }
 
-      # DIAGNOSTIC 2 — same suite with no worker process at all. If this passes, the wedge is in
-      # worker orchestration; if it hangs too, it is the test code itself.
-      - name: Diag B (runInBand, no worker process)
-        continue-on-error: true
-        run: |
-          set +e
-          node ./node_modules/jest/bin/jest.js --runInBand --logHeapUsage \
-            --reporters=default --reporters="$PWD/tools/jest/startReporter.js" &
-          JPID=$!
-          for i in $(seq 1 30); do
-            sleep 10
-            kill -0 $JPID 2>/dev/null || { echo "== in-band jest exited on its own after ~$((i*10))s =="; break; }
-          done
-          if kill -0 $JPID 2>/dev/null; then
-            echo "===== IN-BAND ALSO WEDGED ====="
-            ps -eo pid,ppid,stat,pcpu,pmem,rss,etime,args | grep -i node | grep -v grep
-            kill -9 $JPID 2>/dev/null; pkill -9 -f jest 2>/dev/null
-          fi
+          # C1 — the suspect file entirely on its own.
+          RUN "C1 h158Protocol alone" 90 src/features/ble/h158/__tests__/h158Protocol.test.ts
+
+          # C2 — the suspect preceded only by the file that runs before it in CI.
+          RUN "C2 PairDeviceScreen + h158Protocol" 90 \
+            src/features/devices/__tests__/PairDeviceScreen.test.tsx \
+            src/features/ble/h158/__tests__/h158Protocol.test.ts
+
+          # C3 — CI's exact first seven, in CI's order.
+          RUN "C3 first seven" 120 \
+            src/features/devices/__tests__/devicePairingFlow.test.tsx \
+            src/features/ble/__tests__/auth.test.ts \
+            src/features/ble/__tests__/scanner.test.ts \
+            supabase/functions/_shared/__tests__/personaInquiry.test.ts \
+            src/features/onboarding/__tests__/BluetoothGateScreen.test.tsx \
+            src/features/devices/__tests__/PairDeviceScreen.test.tsx \
+            src/features/ble/h158/__tests__/h158Protocol.test.ts
+
+          # C4 — THE DECIDING ONE. Whole suite with the suspect file excluded. If the wedge
+          # simply moves to whatever file now runs 7th, the file is innocent and the cause is
+          # cumulative state from the run, not this file's code.
+          RUN "C4 whole suite, h158Protocol excluded" 150 \
+            --testPathIgnorePatterns "/node_modules/" "h158Protocol.test.ts"
           exit 0
 
       # Only gate that actually loads the app the way Metro does — typecheck/lint/test
