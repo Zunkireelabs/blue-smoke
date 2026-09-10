@@ -49,6 +49,9 @@ jobs:
   verify:
     name: Typecheck / Lint / Test
     runs-on: ubuntu-latest
+    # A wedged job used to run to the multi-hour default, producing no output and no failure.
+    # The suite takes ~30s serially on a 2-core runner, so this only ever fires on a real hang.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -68,16 +71,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # `test:ci` is `jest --forceExit`, deliberately NOT the same as local `npm test`.
-      # 2026-09-01: the app suite leaks a handle that stops Node exiting AFTER every test has
-      # passed and Jest has printed its summary — reproduced locally at `--maxWorkers=2
-      # --detectOpenHandles` (64/64 suites passed, summary printed, then the process sat there
-      # until killed). On CI's 2-4 workers this wedged the job for 58 minutes with zero output.
-      # `--forceExit` makes the process exit once the run is genuinely finished; it does not mask
-      # a failing test, which still fails the job normally. Local `npm test` stays strict so the
-      # underlying leak stays visible to whoever fixes it properly — see docs/session-log/sadin.md.
+      # Runs exactly what a developer runs. The `--forceExit` variant that lived here was based
+      # on a misreading of the symptom: the job was not failing to exit after a completed run,
+      # it was wedging a quarter of the way through one, so forceExit could not have helped and
+      # demonstrably did not. Cause and guard are in jest.config.js (fakeTimers.doNotFake).
       - name: Test
-        run: npm run test:ci
+        run: npm test
 
       # Only gate that actually loads the app the way Metro does — typecheck/lint/test
       # all resolve zod's CJS build and would stay green through an ESM-only bundle break.
