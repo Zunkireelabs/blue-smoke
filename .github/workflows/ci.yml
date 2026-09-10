@@ -49,6 +49,7 @@ jobs:
   verify:
     name: Typecheck / Lint / Test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -76,8 +77,54 @@ jobs:
       # `--forceExit` makes the process exit once the run is genuinely finished; it does not mask
       # a failing test, which still fails the job normally. Local `npm test` stays strict so the
       # underlying leak stays visible to whoever fixes it properly — see docs/session-log/sadin.md.
-      - name: Test
-        run: npm run test:ci
+      - name: Runner specs
+        run: |
+          node -e "const os=require('os');console.log('node',process.version,'cpus',os.cpus().length,'mem',(os.totalmem()/1e9).toFixed(1)+'GB')"
+          nproc; free -m || true
+
+      # DIAGNOSTIC 1 — which file does the worker never finish, and is it spinning or blocked?
+      - name: Diag A (workers, as CI runs today)
+        continue-on-error: true
+        run: |
+          set +e
+          node ./node_modules/jest/bin/jest.js --logHeapUsage \
+            --reporters=default --reporters=./tools/jest/startReporter.js &
+          JPID=$!
+          for i in $(seq 1 30); do
+            sleep 10
+            kill -0 $JPID 2>/dev/null || { echo "== jest exited on its own after ~$((i*10))s =="; break; }
+          done
+          if kill -0 $JPID 2>/dev/null; then
+            echo "===== WEDGED — process snapshot (STAT/%CPU shows spin vs block) ====="
+            ps -eo pid,ppid,stat,pcpu,pmem,rss,etime,args | grep -i node | grep -v grep
+            echo "===== kernel wait channel per node pid ====="
+            for p in $(pgrep -f "jest" 2>/dev/null); do
+              echo "--- pid $p wchan=$(cat /proc/$p/wchan 2>/dev/null) ---"
+              grep -E "^(State|Threads|VmRSS)" /proc/$p/status 2>/dev/null
+            done
+            kill -9 $JPID 2>/dev/null; pkill -9 -f jest 2>/dev/null
+          fi
+          exit 0
+
+      # DIAGNOSTIC 2 — same suite with no worker process at all. If this passes, the wedge is in
+      # worker orchestration; if it hangs too, it is the test code itself.
+      - name: Diag B (runInBand, no worker process)
+        continue-on-error: true
+        run: |
+          set +e
+          node ./node_modules/jest/bin/jest.js --runInBand --logHeapUsage \
+            --reporters=default --reporters=./tools/jest/startReporter.js &
+          JPID=$!
+          for i in $(seq 1 30); do
+            sleep 10
+            kill -0 $JPID 2>/dev/null || { echo "== in-band jest exited on its own after ~$((i*10))s =="; break; }
+          done
+          if kill -0 $JPID 2>/dev/null; then
+            echo "===== IN-BAND ALSO WEDGED ====="
+            ps -eo pid,ppid,stat,pcpu,pmem,rss,etime,args | grep -i node | grep -v grep
+            kill -9 $JPID 2>/dev/null; pkill -9 -f jest 2>/dev/null
+          fi
+          exit 0
 
       # Only gate that actually loads the app the way Metro does — typecheck/lint/test
       # all resolve zod's CJS build and would stay green through an ESM-only bundle break.
