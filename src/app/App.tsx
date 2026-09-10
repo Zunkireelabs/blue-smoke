@@ -4,6 +4,9 @@ import { RootNavigator } from './navigation';
 import { useAppReadyStore } from './stores/useAppReadyStore';
 import { initSessionListener } from './stores/useSessionStore';
 import { initOnboardingListener } from './stores/useOnboardingStore';
+import { initAppUpdateCheck } from '@/features/app-update/initAppUpdateCheck';
+import { initBleNotifications } from '@/features/ble/notifications/initBleNotifications';
+import { Banner } from '@/shared/ui';
 
 export function App() {
   const isReady = useAppReadyStore(state => state.isReady);
@@ -11,6 +14,8 @@ export function App() {
   useEffect(() => {
     initSessionListener();
     initOnboardingListener();
+    initAppUpdateCheck();
+    initBleNotifications();
   }, []);
 
   if (!isReady) {
@@ -20,6 +25,7 @@ export function App() {
   return (
     <AppProviders>
       <RootNavigator />
+      <Banner />
     </AppProviders>
   );
 }

@@ -1,4 +1,4 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BootSplashScreen } from '@/app/BootSplashScreen';
 import type { AuthMode } from '@/features/auth/authMode';
@@ -116,6 +116,15 @@ export type RootStackParamList = {
  */
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * Navigation ref for code outside the React tree — notifee press events
+ * (`notificationNavigation.ts`) fire from notifee's own listener, not a hook, so they need a
+ * ref rather than `useNavigation()`. Always guard on `navigationRef.isReady()` before calling
+ * `navigate` — a press can land before `<NavigationContainer>` has mounted (cold start from a
+ * killed state).
+ */
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
 /** Which of the mutually exclusive stacks should be mounted. */
 export type GatedStack =
   | 'boot'
@@ -203,7 +212,7 @@ export function RootNavigator() {
   const stack = selectStack(sessionStatus, verification, onboardingStatus);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {stack === 'boot' ? (
         // Restoring a Keychain-backed session. Render nothing decisive: showing the auth
         // stack here would flash a login screen at an already-signed-in user on every launch.

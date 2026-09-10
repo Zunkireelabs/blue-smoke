@@ -30,6 +30,14 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
+    <!-- @notifee/react-native (feature/ble-notification) — low-battery alert (POST_NOTIFICATIONS,
+         API 33+) and the Android ongoing "connected" notification, which notifee implements as a
+         foreground service of type connectedDevice (P1-7.0's OS-notification-bar half; the rest
+         of that TODO item — reconnect/background-BLE-survival — is P1-7.0's own branch). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -61,5 +69,14 @@
             <data android:scheme="bluesmoke" android:host="reset-password" />
         </intent-filter>
       </activity>
+
+      <!-- Overrides notifee's own merged manifest entry to declare foregroundServiceType,
+           required on API 34+ for any FGS started with that type (notifee setup docs, Android
+           foreground service guide). Name/exported must match notifee's library manifest
+           exactly for the merge to target this service rather than duplicate it. -->
+      <service
+        android:name="app.notifee.core.ForegroundService"
+        android:foregroundServiceType="connectedDevice"
+        android:exported="false" />
     </application>
 </manifest>
