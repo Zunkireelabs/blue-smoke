@@ -57,6 +57,31 @@ because the number was never verified on the trial account. Extended in the dash
 `hejwrhijrztgdysycvto`. Note `supabase/config.toml`'s `[auth.sms.test_otp]` block is **inert**
 here — there is no local Docker stack, so that setting lives only in the dashboard.
 
+### 🔴 OQ-11 is no longer theoretical — a mismatched ID and face PASSED
+
+Tested at the end of the session, and nobody had run this before: **one person's government ID
+submitted with a different person's face** (Sadin's ID, Anish's selfie). **Persona returned a pass
+and the app verified the account.**
+
+Two readings, and our code cannot distinguish them: `PERSONA_ENVIRONMENT=sandbox`, so sandbox may
+not run the comparison for real; or the template has **no blocking selfie-to-ID face comparison**
+— absent, or report-only so a mismatch is recorded without stopping the pass.
+
+This is the same warning `TODO-phase-2.md` has carried since Day 9 — Persona `approved` means
+"passed the checks THIS TEMPLATE was configured with", not "is over 18" and not "is the person
+holding the phone". **The difference is that it is now measured rather than suspected**, the same
+way OQ-17 was settled by scanning two units instead of asking a fourth time.
+
+**Where the gap is NOT:** `persona-webhook` already refuses to set `age_verified` unless the
+inquiry came from exactly the configured `PERSONA_TEMPLATE_ID`, logging loudly and leaving the row
+`pending` otherwise. That proves *which* template answered. Nothing in code can prove *what that
+template checks*. Our half is sound; the vendor-config half is unverified and is dashboard
+configuration, not a code change.
+
+Full checklist for whoever has Persona dashboard access is in
+[`RESUME-2026-09-10.md`](RESUME-2026-09-10.md) — including re-running this exact experiment
+against **production** config, where it must be refused.
+
 ### Copy pass, and the support address is no longer a placeholder
 
 Client gave their real contact address, so `AuthScaffold`'s `SUPPORT_EMAIL` is now

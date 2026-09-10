@@ -13,7 +13,8 @@
 > still outstanding.** The PRD text above is left verbatim rather than rewritten, because it's the
 > client's original instruction and the thing that needs their sign-off to actually change.
 
-**Progress:** 0 / 4 tasks · **20 / 30 sub-tasks** *(audited Day 9, 2026-08-08 — it read `0 / 30`
+**Progress:** 0 / 4 tasks · **20 / 31 sub-tasks** *(31, not 30, since 2026-09-10 — one box added to
+`P2-1.0`, see its Status line. Audited Day 9, 2026-08-08 — it read `0 / 30`
 while the entire Persona integration, the webhook, the server-side age gate and the RLS proofs were
 already built and merged. See the audit note below.)*
 
@@ -99,12 +100,22 @@ protect, and it's been removed. What still applies:
       template — OQ-11)*
 - [ ] End-to-end sandbox test: front-camera selfie + liveness challenge completes 🔴 *(same)*
 - [ ] Forced-pass and forced-fail Simulate runs both handled without a crash 🔴 *(same)*
+- [ ] 🔴 **Confirm the template's selfie-to-ID face comparison is BLOCKING, not report-only**
+      *(new box, 2026-09-10, opened by measurement rather than suspicion: one person's government
+      ID submitted with a **different person's face** returned a **pass**, and the app verified the
+      account. Either sandbox does not run the comparison for real, or the template has no blocking
+      one — not decidable from code, it is dashboard configuration. Same OQ-11 blocker as the three
+      boxes above. Full checklist, including re-running the experiment against production config,
+      in `docs/session-log/RESUME-2026-09-10.md`.)*
 - [x] Dead on-device scaffolding removed: `capture/`, `facematch/`, `liveness/`, `ocr/` stubs,
       `decision.ts`, the native Vision/ML Kit bridge files, `react-native-vision-camera` dependency
       *(verified — `src/features/verification/` holds only the three Persona files, and
       `react-native-vision-camera` is absent from package.json)*
 
-**Status: 9 / 12.** The integration is built. The three open boxes are all the same blocker: nobody
+**Status: 9 / 13** *(denominator 12 → 13 on 2026-09-10: the face-comparison box above is new, added
+because the question was answered by measurement and the answer was bad. Recorded here rather than
+silently re-cut, same convention as the Day 9 audit below.)* The integration is built. The four
+open boxes are all the same blocker: nobody
 has confirmed a Persona template exists with an **age requirement configured**. 🔴 Persona
 `approved` means "passed the template's checks", **not** "is over 18" — a template that scans an ID
 and matches a selfie but carries no `min_age` returns `approved` for a 14-year-old, and **no code in
