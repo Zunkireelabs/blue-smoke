@@ -182,6 +182,10 @@ const styles = StyleSheet.create({
   heading: {
     textAlign: 'center',
     marginBottom: tokens.spacing.xl,
+    // A touch more compact than the shared `title` size (28) — closer to the reference's
+    // proportions on this specific screen. Overridden here rather than in the shared token,
+    // which every other screen still relies on at full size.
+    fontSize: 20,
   },
   row: {
     flexDirection: 'row',

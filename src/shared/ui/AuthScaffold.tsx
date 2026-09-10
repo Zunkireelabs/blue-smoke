@@ -19,7 +19,14 @@ import { tokens } from './tokens';
  * reference design pins it to the bottom of each sheet, and a support route that only appears
  * on some screens is one the user finds by luck.
  */
-const SUPPORT_EMAIL = 'info.zunkireelabs@gmail.com';
+// ⚠️ PLACEHOLDER, not the client's support address. `everestdeploy.com` is OUR deployment
+// infrastructure domain — `supabase/README.md` flags in red that production must not present it
+// to users, because a domain the user has never heard of reads as a phishing signal, and it is
+// not the client's to control or protect. It replaces an agency Gmail, which was no better.
+//
+// Must be replaced before production. The question has no OQ row and no owner today; it is the
+// same class as OQ-7 (brand assets) and OQ-8 (account ownership) and is blocked on both.
+const SUPPORT_EMAIL = 'support@everestdeploy.com';
 
 export interface AuthScaffoldProps {
   /**
