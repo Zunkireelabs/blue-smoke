@@ -151,8 +151,13 @@ plan; it no longer exists as in-app work. See `P2-1.0`.
 > Persona can't verify.
 
 - [x] Pending/result screen surfaces `provider_status` from the webhook-confirmed row
-      *(`useVerificationStatus.ts` — reads server state, polls only while non-terminal, and
-      documents in its own header that it is a UX hint and never an authority)*
+      *(`useVerificationStatus.ts` — reads server state and documents in its own header that it
+      is a UX hint and never an authority. **Corrected 2026-09-10:** this box used to read "polls
+      only while non-terminal", which was the bug, not the design — the hook mounts at sign-in
+      and reads 'none' (no inquiry yet), and 'none' was stopping the poll, so the webhook's pass
+      was never noticed and testers sat on "Confirming your verification…" until they force-quit.
+      It now polls until 'verified', the only state that cannot change again — see
+      `nextPollInterval`.)*
 - [ ] Manual fallback route implemented — carries only user ID, never images *(**not built** —
       VF-11 is blocked on OQ-2: no owner, channel, or SLA yet. See P2-6.0 execution brief §4.)*
 - [ ] Manual fallback operational policy agreed with client *(OQ-2 🔴, unrelated to the vendor

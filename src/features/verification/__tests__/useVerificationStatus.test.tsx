@@ -13,7 +13,7 @@ import React, { type PropsWithChildren } from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { useVerificationStatus } from '../useVerificationStatus';
+import { nextPollInterval, useVerificationStatus } from '../useVerificationStatus';
 import { useSessionStore } from '@/app/stores/useSessionStore';
 
 jest.mock('@/shared/lib/supabaseClient');
@@ -135,5 +135,75 @@ describe('useVerificationStatus — transport-error handling', () => {
     // this is the regression the fix guards: an error must never downgrade known data to
     // 'error' or 'none'.
     expect(latest?.state).toBe('pending');
+  });
+});
+
+/**
+ * The 2026-09-10 stuck-screen bug. Testers finished Persona's flow, Persona's dashboard showed
+ * every check passed, and the app sat on "Confirming your verification…" until it was force-quit
+ * — which worked precisely because it remounted this hook and forced a fresh read.
+ *
+ * Why the existing coverage above missed it: every test here starts from a row that ALREADY
+ * exists ('pending'). The hook mounts at sign-in, before any inquiry, so the real first read is
+ * 'none' — and `refetchInterval` returned false for anything that wasn't 'pending', freezing the
+ * query at 'none' for the rest of the session. The transition that mattered was the one no test
+ * ever performed: an in-session 'none' → 'verified' with no remount in between.
+ */
+describe('useVerificationStatus — polling continues until the answer is verified', () => {
+  it.each([
+    ['none', 'a row appears the moment create-inquiry runs'],
+    ['pending', 'this is the webhook we are waiting for'],
+    ['declined', 'a retry moves the same row back to pending'],
+    [undefined, 'the read failed, so we know nothing yet'],
+  ] as const)('keeps polling on %s — %s', (state, _why) => {
+    expect(nextPollInterval(state)).toBe(5_000);
+  });
+
+  it('stops polling once verified, the one state that never changes again', () => {
+    expect(nextPollInterval('verified')).toBe(false);
+  });
+
+  it("goes 'none' → 'verified' in-session, with the live query still scheduled to poll", async () => {
+    // The end-to-end shape of the bug, in the two halves that actually broke.
+    //
+    // Deliberately NOT driven by advancing a fake clock. Faking timers here makes React's own
+    // act scheduling reentrant (it reports "You called act(async () => ...) without await") and
+    // leaves a worker to be force-exited — the same class of failure as the 2026-09-01 CI hang,
+    // and not a trap worth re-laying to test a five-second interval. Instead: assert the real
+    // mounted query's own refetchInterval resolves to a live number against real 'none' data,
+    // then prove the read that interval would perform returns the pass.
+    let call = 0;
+    mockSupabaseRow(async () => {
+      call += 1;
+      // Read 1 is the sign-in read: no inquiry exists yet, so no row. By read 2 the user has
+      // been through Persona and the webhook has written the pass.
+      return call === 1
+        ? { data: null, error: null }
+        : { data: { age_verified: true, provider_status: 'approved' }, error: null };
+    });
+
+    const client = freshClient();
+    let latest: { state: string; refetch: () => Promise<unknown> } | undefined;
+    renderHookIn(client, useVerificationStatus, (v) => {
+      latest = v as { state: string; refetch: () => Promise<unknown> };
+    });
+    await flush();
+    expect(latest?.state).toBe('none');
+
+    // Half one: the query is still scheduled. Read off the mounted observer rather than the
+    // exported predicate, so re-hardcoding `refetchInterval` in the hook fails this too.
+    const query = client.getQueryCache().find({ queryKey: ['verification-status', 'user-1'] });
+    const observer = query?.observers[0];
+    const configured = observer?.options.refetchInterval;
+    const scheduled = typeof configured === 'function' ? configured(query as never) : configured;
+    expect(scheduled).toBe(5_000);
+
+    // Half two: the next read that interval performs is the one that frees the user.
+    await act(async () => {
+      await latest!.refetch();
+    });
+    await flush();
+    expect(latest?.state).toBe('verified');
+    expect(call).toBe(2);
   });
 });

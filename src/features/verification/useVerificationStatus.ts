@@ -24,10 +24,8 @@ import { useSessionStore } from '@/app/stores/useSessionStore';
  * ── Why polling, and why it stops ─────────────────────────────────────────────────────
  *
  * The webhook lands whenever Persona decides, which may be seconds or minutes, and there is
- * no push channel to the app yet (§5.5 covers push, unbuilt). So the app polls, but only
- * while an outcome is genuinely outstanding: `refetchInterval` returns false the moment the
- * state is terminal, so a verified user is not polling the database every few seconds for
- * the life of the session.
+ * no push channel to the app yet (§5.5 covers push, unbuilt). So the app polls, and stops
+ * only at `verified` — the one state that never changes again. See `nextPollInterval`.
  */
 export type VerificationState =
   /** Still fetching — say nothing to the user yet. */
@@ -51,6 +49,43 @@ export type VerificationState =
   | 'error';
 
 const POLL_INTERVAL_MS = 5_000;
+
+/**
+ * Every query for this hook, for any user. Deliberately a PREFIX, not a full key: callers that
+ * want to force a re-read (`PersonaVerificationScreen`) know an outcome may have landed, but
+ * have no business assembling the signed-in user's id into a cache key to say so.
+ */
+export const VERIFICATION_STATUS_QUERY_PREFIX = ['verification-status'] as const;
+
+/**
+ * How long until the next read, given what the last one returned.
+ *
+ * 🔴 The rule is "stop at `verified`", NOT "stop at any terminal-looking state" — that reading
+ * is what caused the stuck-screen bug fixed here (2026-09-10), where testers sat on "Confirming
+ * your verification…" indefinitely while Persona's dashboard already showed a pass, and only a
+ * force-quit (which remounts the hook and forces a fresh read) let them through.
+ *
+ * The hook mounts once, at sign-in, which is BEFORE the user has started the Persona flow. The
+ * first read therefore resolves to 'none' — no row exists yet. Treating 'none' as a state that
+ * stops polling froze the query there for the rest of the session: `create-inquiry` then wrote
+ * the pending row and the webhook wrote the pass, and the app never looked again.
+ *
+ * So the states are read as "can this still change?", and only one cannot:
+ *   - 'none'      — a row appears the moment `create-inquiry` runs. CHANGES.
+ *   - 'pending'   — waiting on exactly the webhook we are polling for. CHANGES.
+ *   - 'declined'  — a user may retry, which moves the same row back to pending. CHANGES.
+ *                   (`navigation.tsx` routes 'declined' straight back into the Persona flow,
+ *                   so this is the ordinary path, not an edge case.)
+ *   - undefined   — the read itself failed, so we know nothing. Retrying is the point.
+ *   - 'verified'  — the webhook wrote a pass. Nothing revokes it in-session. STOP.
+ *
+ * Polling a non-verified signed-in user costs one indexed single-row read every 5s, and only
+ * while they sit on a verification screen — every other stack is gated behind 'verified', so
+ * this cannot run in the background of normal app use.
+ */
+export function nextPollInterval(state: VerificationState | undefined): number | false {
+  return state === 'verified' ? false : POLL_INTERVAL_MS;
+}
 
 interface VerificationRow {
   age_verified: boolean;
@@ -76,11 +111,11 @@ export function useVerificationStatus() {
   const userId = useSessionStore((s) => s.user?.id ?? null);
 
   const query = useQuery({
-    queryKey: ['verification-status', userId],
+    queryKey: [...VERIFICATION_STATUS_QUERY_PREFIX, userId],
     // Disabled while signed out: without a session RLS returns nothing, and an empty result
     // would be indistinguishable from "never verified".
     enabled: userId !== null,
-    refetchInterval: (q) => (q.state.data === 'pending' ? POLL_INTERVAL_MS : false),
+    refetchInterval: (q) => nextPollInterval(q.state.data),
     queryFn: async (): Promise<VerificationState> => {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase

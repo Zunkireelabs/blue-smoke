@@ -4,6 +4,73 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-09-10 — "Confirming your verification…" stranded users again, for a new reason
+
+**Branch:** `fix/P2-6.0-verification-status-stuck-pending`.
+
+Testers finished Persona's flow, Persona's dashboard showed Government ID and Selfie both
+**Passed**, and the app sat on "Confirming your verification…" indefinitely. Force-quitting and
+reopening fixed it every time, landing them straight on Home.
+
+**That force-quit is the whole diagnosis.** A relaunch remounts `useVerificationStatus`, which
+forces a fresh read. So the webhook, `create-inquiry`, RLS and the row itself were all fine — the
+only broken thing was the app never looking a second time. No backend change was needed, and
+none was made.
+
+**Root cause.** `refetchInterval` was `data === 'pending' ? 5s : false`. The hook mounts once at
+sign-in — *before* the user starts verifying — so its first read finds no row and resolves to
+`'none'`. `'none' !== 'pending'`, so the interval evaluated to `false` and polling never started.
+Nothing restarted it later: no realtime channel (deliberate, §5.5 unbuilt), and nothing
+invalidated the query when the inquiry was created or completed. The query was frozen at `'none'`
+for the rest of the session, and `navigation.tsx`'s `selectStack` reads that frozen value.
+
+**Fix, in two parts, and the order matters.** The mechanism is the hook: it now polls until
+`'verified'`, the one state that cannot change again (`nextPollInterval`, with the reasoning per
+state written out). That also closes a second instance of the same bug nobody had hit yet —
+`'declined'` was equally "terminal", so a declined user retrying would have stranded exactly the
+same way, and `navigation.tsx` routes declined users straight back into the flow, so it was on
+the ordinary path. `PersonaVerificationScreen` additionally invalidates the query when
+create-inquiry succeeds and when the SDK's `onComplete` fires, which only makes the transition
+immediate instead of up to 5s late — it is an optimisation, not the fix, and it is written to
+fail silently for that reason.
+
+**Why no test caught it:** every existing test started from a row that already existed
+(`'pending'`). The transition that broke is in-session `'none' → 'verified'` with no remount, and
+nothing performed it. Now covered, plus per-state coverage of the interval decision.
+
+**A test I wrote and then deleted.** The natural way to test a 5s poll is `jest.useFakeTimers()`
++ `advanceTimersByTime`. It made React's `act` reentrant ("You called act(async () => ...)
+without await") and left a worker to be force-exited — the same family as the 2026-09-01 CI hang,
+which is not a trap worth re-laying to test an interval. The test instead reads the real mounted
+observer's own `refetchInterval` and evaluates it against real `'none'` data, so re-hardcoding
+the interval in the hook still fails it. (The "worker failed to exit gracefully" line on a
+filtered `src/features/verification` run is **pre-existing** — confirmed by running the same
+command on an unmodified `stage`.)
+
+**Verified:** Node 22 `--maxWorkers=1` (CI's shape), 80 suites / 952 tests, all passing;
+typecheck clean; lint 0 errors at the 154-warning baseline, unchanged; `bundle:check` clean.
+
+**Also fixed this session, no code involved:** dev/test OTP login was failing with "can't send a
+code". Supabase's *Test OTPs Valid Until* had expired (set to 2026-08-31); once past it, Supabase
+silently stops matching the test-OTP list and falls through to real Twilio Verify, which fails
+because the number was never verified on the trial account. Extended in the dashboard for project
+`hejwrhijrztgdysycvto`. Note `supabase/config.toml`'s `[auth.sms.test_otp]` block is **inert**
+here — there is no local Docker stack, so that setting lives only in the dashboard.
+
+### 🔴 Carried forward, NOT done — two PATs from 2026-09-01 may still be live
+
+`HANDOFF-2026-09-01.md` §7 records two personal access tokens exposed that day (one pasted into
+chat, one embedded in the `origin` remote URL). **Containment was verified today and is
+complete** — remote URL clean, no token in git history/objects/logs on either clone, none in
+shell history, no `~/.netrc` or `~/.git-credentials`, no keychain entry, `gh` on a `gho_` OAuth
+keyring token. **Revocation is NOT verified and cannot be**: GitHub exposes no API for a token to
+list or revoke other PATs, so this needs a human at
+<https://github.com/settings/tokens> (check both tabs; delete all — nothing here depends on a
+PAT). Worth a look at the security log for 2026-09-01 while there. Until that is done, treat the
+repo as having been readable by a third party.
+
+---
+
 ## 2026-09-01 — CI hang traced to one test; half fixed, half quarantined honestly
 
 **Branches:** `fix/pair-device-screen-test-timeout` (PR #30).
