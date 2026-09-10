@@ -82,37 +82,40 @@ jobs:
           node -e "const os=require('os');console.log('node',process.version,'cpus',os.cpus().length,'mem',(os.totalmem()/1e9).toFixed(1)+'GB')"
           nproc; free -m || true
 
-      # E — PairDeviceScreen.test.tsx is the sole trigger (D1). It reports 8/8 passing and
-      # THEN the worker spins at 100%, so the loop outlives the file. If so, running the file
-      # alone should also fail to exit, and -t narrows it to one test in a single run.
-      - name: Diag E (which test leaves the loop?)
+      # F — the file alone exits (E0), so the trigger is a COMBINATION with the suites that
+      # precede it in the same worker. Narrow which predecessor matters.
+      # NOTE: positional paths must come BEFORE flags — --reporters/-t are array options and
+      # swallow trailing positionals, which is what invalidated C1-C3.
+      - name: Diag F (which predecessor arms it?)
         continue-on-error: true
         run: |
           set +e
-          F=src/features/devices/__tests__/PairDeviceScreen.test.tsx
+          A=src/features/devices/__tests__/devicePairingFlow.test.tsx
+          B=src/features/ble/__tests__/auth.test.ts
+          C=src/features/ble/__tests__/scanner.test.ts
+          D=supabase/functions/_shared/__tests__/personaInquiry.test.ts
+          E=src/features/onboarding/__tests__/BluetoothGateScreen.test.tsx
+          P=src/features/devices/__tests__/PairDeviceScreen.test.tsx
+          Z=src/features/ble/h158/__tests__/h158Protocol.test.ts
           RUN() {
             local label="$1"; shift
-            node ./node_modules/jest/bin/jest.js "$F" --runInBand "$@" >/tmp/e.log 2>&1 &
+            node ./node_modules/jest/bin/jest.js "$@" --runInBand >/tmp/f.log 2>&1 &
             local pid=$!; local w=0
-            while kill -0 $pid 2>/dev/null && [ $w -lt 45 ]; do sleep 3; w=$((w+3)); done
+            while kill -0 $pid 2>/dev/null && [ $w -lt 90 ]; do sleep 5; w=$((w+5)); done
             if kill -0 $pid 2>/dev/null; then
-              local cpu=$(ps -o pcpu= -p $(pgrep -f processChild.js | head -1) 2>/dev/null | tr -d ' ')
-              echo ">>> $label = DID NOT EXIT (${w}s, workerCPU=${cpu:-n/a})"
+              echo ">>> $label = WEDGED (${w}s) lastPASS=[$(grep -c PASS /tmp/f.log) suites done]"
+              ps -eo stat,pcpu,etime,args | grep processChild | grep -v grep | head -2
               kill -9 $pid 2>/dev/null; pkill -9 -f "jest/bin/jest.js" 2>/dev/null
             else
-              echo ">>> $label = exited ~${w}s  [$(grep -E 'Tests:' /tmp/e.log | tail -1)]"
+              echo ">>> $label = ok ~${w}s [$(grep -E 'Tests:' /tmp/f.log | tail -1)]"
             fi
             sleep 1
           }
-          RUN "E0 whole file"
-          RUN "E1 lists a discovered device"     -t "lists a discovered device"
-          RUN "E2 empty room times out"          -t "empty room times out"
-          RUN "E3 bluetooth off"                 -t "Bluetooth off blocks the scan"
-          RUN "E4 stops radio scan on unmount"   -t "stops the radio scan when the screen unmounts"
-          RUN "E5 denied permission"             -t "a denied permission blocks the scan"
-          RUN "E6 blocked routes to Settings"    -t "permanently-blocked permission routes to Settings"
-          RUN "E7 granted proceeds to scan"      -t "a granted permission proceeds to scan"
-          RUN "E8 returns from Settings granted" -t "item 8"
+          RUN "F1 P+Z"          "$P" "$Z"
+          RUN "F2 A+P+Z"        "$A" "$P" "$Z"
+          RUN "F3 E+P+Z"        "$E" "$P" "$Z"
+          RUN "F4 all seven"    "$A" "$B" "$C" "$D" "$E" "$P" "$Z"
+          RUN "F5 seven, no P"  "$A" "$B" "$C" "$D" "$E" "$Z"
           exit 0
 
       # Only gate that actually loads the app the way Metro does — typecheck/lint/test
