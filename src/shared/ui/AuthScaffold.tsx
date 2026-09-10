@@ -20,14 +20,16 @@ import { GroundStatusBar } from './GroundStatusBar';
  * reference design pins it to the bottom of each sheet, and a support route that only appears
  * on some screens is one the user finds by luck.
  */
-// ⚠️ PLACEHOLDER, not the client's support address. `everestdeploy.com` is OUR deployment
-// infrastructure domain — `supabase/README.md` flags in red that production must not present it
-// to users, because a domain the user has never heard of reads as a phishing signal, and it is
-// not the client's to control or protect. It replaces an agency Gmail, which was no better.
+// The client's own address, given by them on 2026-09-10. This is no longer a placeholder — it
+// replaced `support@everestdeploy.com` (our deployment infrastructure domain), which in turn had
+// replaced an agency Gmail. Neither was the client's to control or protect, and a domain the user
+// has never heard of reads as a phishing signal.
 //
-// Must be replaced before production. The question has no OQ row and no owner today; it is the
-// same class as OQ-7 (brand assets) and OQ-8 (account ownership) and is blocked on both.
-const SUPPORT_EMAIL = 'support@everestdeploy.com';
+// 🔴 The matching HALF of that problem is still open, and it is not in this file: outbound mail
+// (verification codes, password resets) still SENDS from `noreply@ble.everestdeploy.com` — see
+// the red flag in `supabase/README.md`. So a user reads this address on screen and then receives
+// mail from a different, unrelated domain. Closing that is a Resend/DNS change, not a code one.
+const SUPPORT_EMAIL = 'info@nepawholesale.com';
 
 export interface AuthScaffoldProps {
   /**

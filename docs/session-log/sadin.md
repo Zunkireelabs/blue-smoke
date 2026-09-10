@@ -57,6 +57,24 @@ because the number was never verified on the trial account. Extended in the dash
 `hejwrhijrztgdysycvto`. Note `supabase/config.toml`'s `[auth.sms.test_otp]` block is **inert**
 here — there is no local Docker stack, so that setting lives only in the dashboard.
 
+### Copy pass, and the support address is no longer a placeholder
+
+Client gave their real contact address, so `AuthScaffold`'s `SUPPORT_EMAIL` is now
+**`info@nepawholesale.com`**, replacing `support@everestdeploy.com` (which had itself replaced an
+agency Gmail). That closes the "placeholder support email" item that had no OQ row and no owner.
+
+🔴 **Only half of that problem is closed.** Outbound mail still *sends* from
+`noreply@ble.everestdeploy.com` — the red flag in `supabase/README.md` stands untouched. A user
+now reads `info@nepawholesale.com` on screen and then receives their verification code from an
+unrelated domain, which is a worse phishing signal than before, not a better one. Closing it is a
+Resend/DNS change plus moving the Resend account off a personal one, neither of which is code.
+
+Wording changes in the same pass, all from screenshots on real hardware: the auth password/code
+prompts became `Log in with a password?` / `Log in with a code?` (both, so the two mirrored
+prompts still match); the Home hero is `Connect Your\nDevices`; the empty state reads "start using
+and managing it from your phone"; and the lock captions say **usage** rather than **puffs** on
+*both* states, not just the locked one.
+
 ### 🔴 Carried forward, NOT done — two PATs from 2026-09-01 may still be live
 
 `HANDOFF-2026-09-01.md` §7 records two personal access tokens exposed that day (one pasted into
