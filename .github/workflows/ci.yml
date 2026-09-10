@@ -82,52 +82,26 @@ jobs:
           node -e "const os=require('os');console.log('node',process.version,'cpus',os.cpus().length,'mem',(os.totalmem()/1e9).toFixed(1)+'GB')"
           nproc; free -m || true
 
-      # Bisect: is the wedge caused by h158Protocol.test.ts itself, or by its POSITION
-      # (i.e. contamination left running by the files before it)?
-      - name: Diag C (bisect)
+      # D1 — whole suite with PairDeviceScreen.test.tsx excluded. C4 showed the victim is
+      # simply whatever file runs after it, so if removing it lets the suite finish, that file
+      # is the sole trigger. Flag-only args: --reporters is an array option and swallows
+      # positional paths, which invalidated C1-C3.
+      - name: Diag D (is PairDeviceScreen the sole trigger?)
         continue-on-error: true
         run: |
           set +e
-          RUN() {
-            local label="$1"; local cap="$2"; shift 2
-            echo "################ $label ################"
-            node ./node_modules/jest/bin/jest.js --runInBand \
-              --reporters=default --reporters="$PWD/tools/jest/startReporter.js" "$@" &
-            local pid=$!; local w=0
-            while kill -0 $pid 2>/dev/null && [ $w -lt $cap ]; do sleep 5; w=$((w+5)); done
-            if kill -0 $pid 2>/dev/null; then
-              echo ">>> RESULT: $label = WEDGED at ${w}s"
-              ps -eo pid,stat,pcpu,rss,etime,args | grep -i "jest\|node" | grep -v grep | head -5
-              kill -9 $pid 2>/dev/null; pkill -9 -f "jest/bin/jest.js" 2>/dev/null
-            else
-              echo ">>> RESULT: $label = COMPLETED at ~${w}s"
-            fi
-            sleep 2
-          }
-
-          # C1 — the suspect file entirely on its own.
-          RUN "C1 h158Protocol alone" 90 src/features/ble/h158/__tests__/h158Protocol.test.ts
-
-          # C2 — the suspect preceded only by the file that runs before it in CI.
-          RUN "C2 PairDeviceScreen + h158Protocol" 90 \
-            src/features/devices/__tests__/PairDeviceScreen.test.tsx \
-            src/features/ble/h158/__tests__/h158Protocol.test.ts
-
-          # C3 — CI's exact first seven, in CI's order.
-          RUN "C3 first seven" 120 \
-            src/features/devices/__tests__/devicePairingFlow.test.tsx \
-            src/features/ble/__tests__/auth.test.ts \
-            src/features/ble/__tests__/scanner.test.ts \
-            supabase/functions/_shared/__tests__/personaInquiry.test.ts \
-            src/features/onboarding/__tests__/BluetoothGateScreen.test.tsx \
-            src/features/devices/__tests__/PairDeviceScreen.test.tsx \
-            src/features/ble/h158/__tests__/h158Protocol.test.ts
-
-          # C4 — THE DECIDING ONE. Whole suite with the suspect file excluded. If the wedge
-          # simply moves to whatever file now runs 7th, the file is innocent and the cause is
-          # cumulative state from the run, not this file's code.
-          RUN "C4 whole suite, h158Protocol excluded" 150 \
-            --testPathIgnorePatterns "/node_modules/" "h158Protocol.test.ts"
+          node ./node_modules/jest/bin/jest.js --runInBand \
+            --reporters=default --reporters="$PWD/tools/jest/startReporter.js" \
+            --testPathIgnorePatterns "/node_modules/" "PairDeviceScreen.test.tsx" &
+          JPID=$!; W=0
+          while kill -0 $JPID 2>/dev/null && [ $W -lt 180 ]; do sleep 5; W=$((W+5)); done
+          if kill -0 $JPID 2>/dev/null; then
+            echo ">>> RESULT: suite WITHOUT PairDeviceScreen = STILL WEDGED at ${W}s"
+            ps -eo pid,stat,pcpu,rss,etime,args | grep -i node | grep -v grep | head -4
+            kill -9 $JPID 2>/dev/null; pkill -9 -f "jest/bin/jest.js" 2>/dev/null
+          else
+            echo ">>> RESULT: suite WITHOUT PairDeviceScreen = COMPLETED at ~${W}s (sole trigger confirmed)"
+          fi
           exit 0
 
       # Only gate that actually loads the app the way Metro does — typecheck/lint/test
