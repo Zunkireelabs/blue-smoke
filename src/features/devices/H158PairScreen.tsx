@@ -813,8 +813,8 @@ function H158PairScreenContent() {
                   {lockKnown === null
                     ? "Status unknown until it's read — see Power above."
                     : lockKnown
-                      ? 'Locked — blocks puffs until you unlock it.'
-                      : 'Unlocked — allows puffs until you lock it.'}
+                      ? 'Locked — blocks usage until you unlock it.'
+                      : 'Unlocked — allows usage until you lock it.'}
                 </Text>
               </View>
 

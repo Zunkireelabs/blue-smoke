@@ -45,7 +45,7 @@ export const AUTH_MODE_COPY: Record<
     legal: 'By signing in, I accept the Terms & Conditions.',
     switchLabel: 'New user?',
     switchTo: 'signup',
-    passwordPrompt: 'Prefer logging in with a password?',
+    passwordPrompt: 'Log in with a password?',
   },
 };
 
@@ -64,5 +64,5 @@ export const PASSWORD_LINK_LABEL = 'Use password';
 export type CredentialMode = 'code' | 'password';
 
 /** The sentence offering the code alternative, shown while the screen is in its password state. */
-export const CODE_PROMPT = 'Prefer logging in with a code?';
+export const CODE_PROMPT = 'Log in with a code?';
 export const CODE_LINK_LABEL = 'Get code';

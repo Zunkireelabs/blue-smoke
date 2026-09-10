@@ -42,7 +42,7 @@ import type { RootStackParamList } from '@/app/navigation';
  * P1-5.0's real multi-device list now exists (below), but "you have N devices" isn't copy this
  * pass's scope covers — that's a design decision for whoever next touches this hero block, not a
  * byproduct of the list existing. */
-const HERO_HEADLINE = 'Get your device\nconnected.';
+const HERO_HEADLINE = 'Connect Your\nDevices';
 
 // F6.P (USER_FLOWS.md) — after roughly this long pending, stop implying imminence and offer an
 // exit rather than a bare spinner with no timeout (DE-8).
@@ -294,7 +294,7 @@ function DevicesEmptyState() {
         No devices paired yet
       </Text>
       <Text variant="body" tone="secondary" style={styles.emptyBody}>
-        Pair your device to start locking and unlocking it from your phone.
+        Pair your device to start using and managing it from your phone.
       </Text>
     </View>
   );
