@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tools/mock-peripheral/tsconfig.json && tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tools/mock-peripheral/tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test:ci": "jest --forceExit"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",

@@ -41,17 +41,24 @@ export const H158_PIPE_CHARACTERISTIC_UUID = '0000fff1-0000-1000-8000-00805f9b34
 // device). A prefix match is therefore correct either way, and matches the
 // manufacturer's own SDKs (BleScanner.kt, BleScanner.swift:93-96).
 //
-// 🔴 OQ-17 — do NOT read this constant as "the whole advertised name". The
-// manufacturer has answered that question both ways and the contradiction is
-// unresolved as of 2026-08-23:
-//   2026-08-12 item 1: the name is `YP65-AT` "with the MAC address appended as
-//     a unique identifier to distinguish between devices".
-//   2026-08-13 item 4: "all devices share the same Bluetooth name".
-// Their iOS SDK settles nothing — it prefix-filters and then keys devices on
-// CoreBluetooth's per-install `peripheral.identifier`, which works under either
-// answer. Whether two units can be told apart at all is decidable on the bench
-// by scanning two of them; until that is done, assume nothing here identifies a
-// specific unit. See docs/hardware/manufacturer-supplied-2026-08-23/MANIFEST.md §5.
+// 🔴 OQ-17 — ANSWERED 2026-09-01, and the answer is the pessimistic one: this
+// prefix IS the whole advertised name. There is no per-device suffix.
+//
+// The manufacturer had answered both ways — 2026-08-12 item 1 claimed the name
+// is `YP65-AT` "with the MAC address appended as a unique identifier"; 2026-08-13
+// item 4 said "all devices share the same Bluetooth name". Settled by measuring
+// two units bonded to one Android phone, read out of the Bluetooth stack:
+//   record 007  xx:xx:xx:xx:00:0c  BLE  name:"YP65-AT"
+//   record 008  xx:xx:xx:xx:00:03  BLE  name:"YP65-AT"
+// Different MACs, same firmware, identical bare name. The item-4 answer holds.
+//
+// So: NOTHING in an advertisement identifies a specific unit. Two units are
+// indistinguishable at scan time on both platforms, and iOS has no MAC to fall
+// back on — their own SDK comments say `iOS 不暴露 MAC 地址` and key on a
+// per-phone `CBPeripheral.identifier`, which is not stable across phones or
+// reinstalls. Do not build device identity on anything visible here; it must
+// come from a post-connection read. See docs/session-log/sadin.md 2026-09-01
+// and docs/hardware/manufacturer-supplied-2026-08-23/MANIFEST.md §5.
 export const H158_DEVICE_NAME_PREFIX = 'YP65-AT';
 
 // ── frame constants ──────────────────────────────────────────────────────────

@@ -45,6 +45,104 @@ or a maintainer who can reproduce GitHub's actual runner pressure.
 CI attempts before the mechanism was understood, on branches that had nothing to do with it —
 `PairDeviceScreen.test.tsx` was untouched by the status-bar work throughout.
 
+## 2026-09-01 — OQ-17 settled by measurement; first real-hardware pass on both platforms
+
+**Branches:** `fix/status-bar-contrast` (PR #27), `fix/auth-support-email-and-heading` (PR #28).
+**Landed on `stage`:** PR #24 (`feature/ui-refinements`) merged as `e6a4669`.
+
+### 🔴 OQ-17 is answered — by measuring, not asking again
+
+Two YP65-AT units, both bonded to one Android phone, read straight out of the Bluetooth stack:
+
+```
+record 007  xx:xx:xx:xx:00:0c  BLE  name:"YP65-AT"
+record 008  xx:xx:xx:xx:00:03  BLE  name:"YP65-AT"
+```
+
+Different MACs, same firmware (`remote_info: 08-00004-01294`), **identical bare advertised name
+with no per-device suffix**. The manufacturer's two answers conflicted — 2026-08-12 said the name
+carries a MAC suffix, 2026-08-13 said all devices share one name. **The second is correct.**
+CLAUDE.md asked for exactly this measurement rather than a fourth round of questions; here it is.
+
+Consequence: a user with two units cannot tell them apart by name on either platform, and iOS
+exposes no MAC to fall back on (their own SDK comments say so: `iOS 不暴露 MAC 地址`, and
+`BleScanDevice.id` is a per-phone `CBPeripheral.identifier`). Asked in the manufacturer note
+whether a future build can append a suffix.
+
+**OQ-16 also confirmed on hardware, same source:** `le_encrypted:F`, `le_authenticated:F`,
+`bond_type:BOND_TYPE_UNKNOWN`. Unencrypted, unauthenticated, unbonded, as documented.
+
+### The iOS SDK zip was a duplicate — verified rather than assumed
+
+`temp_ss/materials-by-manufacturer/H158_IOS.zip` is **byte-identical** to
+`docs/hardware/manufacturer-supplied-2026-08-23/h158lib-ios-sdk/` (`diff -r` clean but for two
+empty directories). Nothing new, nothing missing.
+
+Reading it was still worth it — it independently confirms `h158Protocol.ts`, which until now cited
+only their *Android* SDK. Every constant matches (HEAD `0x02`, TAIL `0x01`, `0xA1`/`0xA2`,
+`0x78`/`0x87`, `0x31`, XOR-from-header), and **the quirk we reverse-engineered is real**: their
+`parseTerminalInfoResponse` also accepts status under CMD `0xA1`, not just `0xA2`. Our write mode
+(prefer withoutResponse, fall back to withResponse) matches theirs exactly. Grepping the whole SDK
+for auth/pairing/encryption returns one hit — CoreBluetooth's `.unauthorized` permission state.
+
+### Real-hardware results
+
+Android (Nothing Phone 1, Android 16 / API 36): swipe-to-lock and unlock both round-trip against a
+real YP65-AT; haptic fires (`VIBRATE ... status FINISHED`, so 683e6fe's manifest fix is real); the
+Android 12+ `BLUETOOTH_CONNECT` preflight on row-tap reconnect launches `GrantPermissionsActivity`
+from our own package. No JS errors across the session.
+
+iOS (iPhone 13, iOS 26.3.1) — first ever device build on this project. See gotchas below.
+
+### 🔴 Gotcha worth stealing: CocoaPods caches podspecs by *absolute path*
+
+An iOS device build died in Hermes bytecode compilation:
+
+```
+/Users/.../Desktop/nepa-project/node_modules/hermes-compiler/.../hermesc: No such file or directory
+```
+
+— missing the `Project/` path segment. `hermes-engine.podspec` computes `HERMES_CLI_PATH` by asking
+Node to resolve `hermes-compiler`, and **Node resolved it correctly**; CocoaPods was reusing an
+*evaluated podspec JSON* cached from when the repo sat at a different path. **`pod install` alone
+does not fix it** — it reads the same cache. The fix is to delete both:
+
+```
+~/Library/Caches/CocoaPods/Pods/Specs/External/hermes-engine/*.podspec.json
+ios/Pods/Local Podspecs/hermes-engine.podspec.json
+```
+
+then `pod install`. Anyone who moves this repo after their first `pod install` hits this.
+
+**Related:** `ios/Podfile.lock`'s SPEC CHECKSUMS are **machine-dependent** here — those podspecs
+embed absolute paths, so a `pod install` on a different path rewrites hermes-engine, React-Core,
+AsyncStorage and others. Do not commit a lockfile churned only by a local `pod install`.
+
+### iOS tooling limits found the hard way
+
+- A physical iOS 26 device **cannot be screenshotted** from the CLI. `devicectl` has no screenshot
+  command; `idevicescreenshot` needs the DDI's `screenshotr` service, which iOS 17+ moved to a
+  tunnelled protocol libimobiledevice 1.4.0 does not speak. `ideviceinfo` works, screenshots do
+  not. Use Xcode > Devices and Simulators > Take Screenshot, or the **simulator**, which
+  `xcrun simctl io ... screenshot` captures fine.
+- Distribution to anyone else's iPhone needs the **paid Apple Developer Program**. The team here is
+  a free Personal Team: 7-day expiry, 3 apps, and profiles only for devices registered to it. There
+  is no iOS equivalent of handing someone an APK. Blocks the manufacturer test build; see OQ-8.
+
+### Two bits of process debt paid off, one found
+
+- The design pass merged to `stage` **before** device testing, deliberately, to unblock Anish's
+  notification branches. It turned out to contain a visible bug (below). Worth remembering that
+  "merge first to unblock" has a cost.
+- **A status-bar bug shipped from `App.tsx` reading `useColorScheme()`** — the OS theme rather than
+  the colour behind the bar. On a dark-mode phone, Profile's white header rendered the clock and
+  signal icons white-on-white, invisible. `tokens.ts` already forbade exactly this
+  ("do not add `useColorScheme()` branches"). Fixed in PR #27 by deriving `barStyle` from the
+  ground's own colour via WCAG luminance. Verified on both platforms, both grounds.
+- **Two changes sat in `stash@{1}` since P0-7.0 and were reported today as a regression.** They were
+  never committed, so they never reached `stage`. Landed in PR #28. A stash is not a place to leave
+  work: it is invisible to everyone including the person who made it.
+
 ---
 
 ## 2026-08-10 — new machine set up from nothing; P2-8.0 closed, reviewed twice, PR opened
