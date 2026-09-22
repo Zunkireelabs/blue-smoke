@@ -8,7 +8,7 @@
  */
 
 import type { BleManagerLike } from '../BleClientContext';
-import { connectH158Session, type H158Session } from './h158Session';
+import { connectH158Session, type H158ConnectOptions, type H158Session } from './h158Session';
 import { addPairedH158Device } from './h158DeviceStorage';
 import {
   setH158Connected,
@@ -31,13 +31,19 @@ export type ConnectH158DeviceOutcome =
  * `detail` on failure is already the coaching copy a `Text` can render as-is (CLAUDE.md: "never
  * diagnostic") — a timeout says which step stalled, a transport failure carries the underlying
  * message, neither exposes anything about the H158 protocol itself.
+ *
+ * `options` (2026-09-22) is forwarded untouched to `connectH158Session`. The auto-reconnect
+ * supervisor passes `{ autoConnect: true, connectTimeoutMs: null }` to make the dial a standing
+ * intent rather than a 10-second attempt; a user-initiated tap passes nothing and keeps the
+ * bounded behaviour, because a person waiting on a button needs an answer either way.
  */
 export async function connectAndRememberH158Device(
   manager: BleManagerLike,
   deviceId: string,
   name: string | null,
+  options?: H158ConnectOptions,
 ): Promise<ConnectH158DeviceOutcome> {
-  const outcome = await connectH158Session(manager, deviceId);
+  const outcome = await connectH158Session(manager, deviceId, undefined, options);
 
   if (!outcome.ok) {
     const detail =

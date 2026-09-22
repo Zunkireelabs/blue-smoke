@@ -28,6 +28,12 @@ import { createDeviceScanner, type DiscoveredDevice, type ScanState } from '@/fe
 import { H158_DEVICE_NAME_PREFIX } from '@/features/ble/h158/h158Protocol';
 import type { H158Session } from '@/features/ble/h158/h158Session';
 import { connectAndRememberH158Device } from '@/features/ble/h158/connectAndRememberH158Device';
+import {
+  allowH158AutoReconnect,
+  forgetH158AutoReconnect,
+  refreshH158ReconnectTargets,
+  suppressH158AutoReconnect,
+} from '@/features/ble/h158/h158AutoReconnect';
 import { getPairedH158Devices, removePairedH158Device } from '@/features/ble/h158/h158DeviceStorage';
 import {
   useH158ConnectionStore,
@@ -396,12 +402,20 @@ function H158PairScreenContent() {
 
   const connect = useCallback(
     async (deviceId: string, name: string | null) => {
+      // Tapping a device IS the intent to use it, so it clears any earlier "the user pressed
+      // Disconnect" suppression — otherwise a device disconnected once this session would
+      // connect now and then never reconnect itself again, which is the exact behaviour the
+      // supervisor exists to remove.
+      allowH158AutoReconnect(deviceId);
       const outcome = await connectAndRememberH158Device(manager, deviceId, name);
       if (!outcome.ok) {
         setPhase({ kind: 'failed', detail: outcome.detail });
         return;
       }
       setPhase({ kind: 'connected', device: outcome.device, session: outcome.session });
+      // A device paired for the first time is only now in the remembered list, so the supervisor
+      // has never heard of it. Without this it would stay unmanaged until the next foreground.
+      void refreshH158ReconnectTargets();
     },
     [manager],
   );
@@ -553,6 +567,10 @@ function H158PairScreenContent() {
       return;
     }
     const deviceId = phase.device.id;
+    // 🔴 Before `setH158Disconnected` below, not after. The supervisor detects drops by watching
+    // `useH158ConnectionStore`, so a suppression registered afterwards would arrive one tick too
+    // late and the device would reconnect seconds after the user pressed Disconnect.
+    suppressH158AutoReconnect(deviceId);
     phase.session.dispose();
     try {
       await manager.cancelDeviceConnection(deviceId);
@@ -594,6 +612,9 @@ function H158PairScreenContent() {
    */
   const forgetDevice = useCallback(
     async (deviceId: string) => {
+      // Same ordering reason as `disconnect` above: the intent has to be gone before the store
+      // update the supervisor is watching for.
+      forgetH158AutoReconnect(deviceId);
       const connection = useH158ConnectionStore.getState().connections[deviceId];
       if (connection) {
         connection.session.dispose();
@@ -605,6 +626,7 @@ function H158PairScreenContent() {
         setH158Disconnected(deviceId);
       }
       await removePairedH158Device(deviceId);
+      void refreshH158ReconnectTargets();
       setLastStatus(null);
       navigation.popToTop();
     },

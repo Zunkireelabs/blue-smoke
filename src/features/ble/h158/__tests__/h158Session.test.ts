@@ -80,6 +80,41 @@ function buildFakeManager(options: FakeDeviceOptions): BleManagerLike {
   };
 }
 
+describe('connectH158Session — connect options (auto-reconnect, 2026-09-22)', () => {
+  test('passes autoConnect through to the manager, and nothing when not asked for', async () => {
+    const base = buildFakeManager({ captureListener: () => {} });
+    const connectToDevice = jest.fn((deviceId: string) => base.connectToDevice(deviceId));
+    const manager = { ...base, connectToDevice } as unknown as BleManagerLike;
+
+    await connectH158Session(manager, DEVICE_ID, undefined, { autoConnect: true });
+    expect(connectToDevice).toHaveBeenLastCalledWith(DEVICE_ID, { autoConnect: true });
+
+    // The default call must stay single-argument: `react-native-ble-plx` defaults autoConnect to
+    // false, and every narrow test double in this repo declares the one-argument form.
+    await connectH158Session(manager, DEVICE_ID);
+    expect(connectToDevice).toHaveBeenLastCalledWith(DEVICE_ID);
+  });
+
+  test('connectTimeoutMs: null leaves the connect stage pending instead of timing out', async () => {
+    jest.useFakeTimers();
+    try {
+      const manager = buildFakeManager({ neverSettlesConnect: true });
+      let settled = false;
+      // 🔴 The iOS half of auto-reconnect: a pending CoreBluetooth connect IS the standing
+      // intent, and the default 10 s race is what used to throw it away.
+      void connectH158Session(manager, DEVICE_ID, undefined, { connectTimeoutMs: null }).then(
+        () => {
+          settled = true;
+        },
+      );
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(settled).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe('connectH158Session', () => {
   test('a hung connectToDevice times out with stage "connect"', async () => {
     jest.useFakeTimers();

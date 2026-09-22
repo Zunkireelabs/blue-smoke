@@ -46,6 +46,32 @@ const REPLY_TIMEOUT_MS = 3000;
 
 export type H158Stage = 'connect' | 'discover' | 'subscribe';
 
+/**
+ * Per-call overrides for the connect stage — added 2026-09-22 for the auto-reconnect
+ * supervisor (`h158ReconnectSupervisor.ts`). Nothing else passes these, and the defaults are
+ * exactly the previous hard-coded behaviour, so every existing call site is unaffected.
+ */
+export interface H158ConnectOptions {
+  /**
+   * Android only, ignored by CoreBluetooth: hand the wait to the OS GATT stack so it keeps
+   * watching for a device that is not in range *yet*. See `BleManagerLike.connectToDevice`'s
+   * own comment for why this is the load-bearing flag on that platform.
+   */
+  autoConnect?: boolean;
+  /**
+   * `null` means **no timeout on the connect stage** — a standing intent that stays pending
+   * until the device appears, is cancelled, or the radio rejects it.
+   *
+   * 🔴 This is the iOS half of auto-reconnect, and the reason the option exists. A plain
+   * CoreBluetooth `connect` is already a pending connection that waits indefinitely; the
+   * 10 s `withTimeout` race below is what was throwing that away. Discover and subscribe keep
+   * their own timeouts either way — those run against a device that is *already* connected,
+   * where an unbounded await really would be a hang (CLAUDE.md: "Every BLE operation has an
+   * explicit timeout").
+   */
+  connectTimeoutMs?: number | null;
+}
+
 export type H158ConnectOutcome =
   | { ok: true; session: H158Session; device: BleDeviceLike }
   | { ok: false; reason: 'timeout'; stage: H158Stage }
@@ -123,14 +149,22 @@ export async function connectH158Session(
   manager: BleManagerLike,
   deviceId: string,
   onFrame?: (direction: 'tx' | 'rx', hex: string) => void,
+  options?: H158ConnectOptions,
 ): Promise<H158ConnectOutcome> {
   let stage: H158Stage = 'connect';
   try {
-    const device: BleDeviceLike = await withTimeout(
-      manager.connectToDevice(deviceId),
-      CONNECT_TIMEOUT_MS,
-      'connect',
-    );
+    // `undefined` and `null` mean different things here, so this cannot collapse to `??`:
+    // absent = use the default budget, explicit `null` = no budget at all.
+    const connectTimeoutMs =
+      options?.connectTimeoutMs === undefined ? CONNECT_TIMEOUT_MS : options.connectTimeoutMs;
+    // Only pass an options object when there is something to say. `react-native-ble-plx`
+    // defaults `autoConnect` to false, which is the previous behaviour, and a test double
+    // declaring the one-argument form keeps working either way.
+    const dial = options?.autoConnect
+      ? manager.connectToDevice(deviceId, { autoConnect: true })
+      : manager.connectToDevice(deviceId);
+    const device: BleDeviceLike =
+      connectTimeoutMs === null ? await dial : await withTimeout(dial, connectTimeoutMs, 'connect');
 
     stage = 'discover';
     await withTimeout(device.discoverAllServicesAndCharacteristics(), DISCOVER_TIMEOUT_MS, 'discover');
