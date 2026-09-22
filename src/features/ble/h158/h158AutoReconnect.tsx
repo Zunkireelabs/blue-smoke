@@ -15,7 +15,7 @@
 
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
-import { useBleManager, useBleScanner } from '../BleClientContext';
+import { BleClientProvider, useBleManager, useBleScanner } from '../BleClientContext';
 import { getPairedH158Devices } from './h158DeviceStorage';
 import {
   createH158ReconnectSupervisor,
@@ -76,6 +76,26 @@ export function __setH158ReconnectSupervisorForTests(next: H158ReconnectSupervis
  *   unnoticed in the first place.
  */
 export function H158AutoReconnect() {
+  // 🔴 Wrapped in its own bare `<BleClientProvider>` — no `manager` prop — so `useBleManager()`
+  // inside falls through to the lazily-constructed REAL `BleManager`. Identical reasoning to
+  // `H158HomeConnectAgent` and `H158PairScreen`, and for the same reason: in a `__DEV__` build
+  // `providers.tsx` (§3.3) overrides the app-wide provider with `tools/mock-peripheral`'s
+  // `MockBleManager`, so anything mounted under `AppProviders` talks to the mock.
+  //
+  // Found on real hardware, 2026-09-22: without this, the supervisor dialled the MOCK with a
+  // real device's MAC on every reconnect and got back "MockBleManager: unknown device ...".
+  // The row correctly said "Out of range — will reconnect automatically" and then never
+  // reconnected, which looked exactly like a firmware problem and was not one. A release build
+  // would have worked by accident (no override to inherit) — a debug-only failure is the worst
+  // kind, because it is the build every test runs on.
+  return (
+    <BleClientProvider>
+      <H158AutoReconnectSupervisorHost />
+    </BleClientProvider>
+  );
+}
+
+function H158AutoReconnectSupervisorHost() {
   const manager = useBleManager();
   const scanner = useBleScanner();
 

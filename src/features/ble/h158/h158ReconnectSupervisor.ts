@@ -68,6 +68,23 @@ export interface H158ReconnectTarget {
   name: string | null;
 }
 
+/**
+ * Dev-only tracing. Auto-reconnect is the one part of this app whose whole job is to do nothing
+ * visible for long stretches, which makes "it didn't work" almost impossible to diagnose from
+ * the outside: a device that never comes back looks identical whether we never dialled, dialled
+ * and the radio rejected it, or dialled and the device simply was not there. Stripped in
+ * release by the `__DEV__` guard, so this adds nothing to a production build — and it is BLE
+ * state only, never verification data (CLAUDE.md forbids logging anywhere near that subtree).
+ */
+function trace(message: string, detail?: unknown): void {
+  if (__DEV__) {
+    // `no-console` is scoped to `src/features/verification/**` only (.eslintrc.js 3.1) — the
+    // subtree where a stray log could carry an inquiry_id. This file is BLE state, so no
+    // suppression is needed, and CLAUDE.md forbids adding one anyway.
+    console.log(`[h158-reconnect] ${message}`, detail ?? '');
+  }
+}
+
 // App-level operational choices, not device protocol — same split as `h158Session.ts`'s own
 // timeout constants, and for the same reason they live here rather than in `h158Protocol.ts`.
 
@@ -88,6 +105,10 @@ const RETRY_BASE_MS = 2_000;
  * feel broken while a 1-second retry would spin.
  */
 const RETRY_MAX_MS = 60_000;
+
+/** Dev-only probe cadence — see `scheduleProbe`. Never runs in a release build. */
+const PROBE_INTERVAL_MS = 10_000;
+const PROBE_SCAN_MS = 4_000;
 
 export interface H158ReconnectSupervisor {
   /**
@@ -121,7 +142,8 @@ export interface CreateH158ReconnectSupervisorOptions {
    * `BleManager` satisfies it structurally, narrow test doubles do not, and without it the
    * supervisor simply relies on `poke()` instead of being event-driven.
    */
-  adapter?: Pick<BleScannerLike, 'onStateChange'>;
+  adapter?: Pick<BleScannerLike, 'onStateChange'> &
+    Partial<Pick<BleScannerLike, 'startDeviceScan' | 'stopDeviceScan'>>;
   /** Seams, for tests. Defaults are the real implementations. */
   connect?: typeof connectAndRememberH158Device;
   readGateState?: typeof readBluetoothGateState;
@@ -206,6 +228,7 @@ export function createH158ReconnectSupervisor(
       gate = 'unknown';
     }
     if (gate !== 'poweredOn') {
+      trace('blocked: bluetooth gate not open', { deviceId, gate });
       setH158ReconnectPhase(deviceId, 'blockedBluetooth');
       // No retry scheduled for a hard block: `poke()` on foreground and the adapter-state
       // subscription are both better signals than a timer, and neither costs anything while
@@ -223,6 +246,8 @@ export function createH158ReconnectSupervisor(
 
     entry.dialInFlight = true;
     setH158ReconnectPhase(deviceId, 'reconnecting');
+    trace('dial START (autoConnect, no timeout)', { deviceId, failures: entry.failures });
+    const startedAt = Date.now();
     try {
       // 🔴 The two options that make this a *standing* intent rather than a 10-second attempt.
       // See `H158ConnectOptions` in `h158Session.ts` for what each platform does with them.
@@ -240,6 +265,12 @@ export function createH158ReconnectSupervisor(
         return;
       }
       current.dialInFlight = false;
+      trace('dial SETTLED', {
+        deviceId,
+        afterMs: Date.now() - startedAt,
+        ok: outcome.ok,
+        detail: outcome.ok ? undefined : outcome.detail,
+      });
       // 🔴 The user pressed Disconnect *while this dial was in flight*. A dial is not
       // cancellable once issued, so the decision has to be re-checked here rather than only at
       // the top: without this, a connect that started a moment before the tap lands a moment
@@ -264,6 +295,7 @@ export function createH158ReconnectSupervisor(
       // not one the UI should make them think about.
       current.failures += 1;
       setH158ReconnectPhase(deviceId, 'reconnecting');
+      trace('dial REJECTED — backing off', { deviceId, failures: current.failures });
       scheduleRetry(deviceId, Math.min(RETRY_BASE_MS * 2 ** (current.failures - 1), RETRY_MAX_MS));
     } catch {
       // `connectAndRememberH158Device` is typed never to throw; this is belt-and-braces so a
@@ -309,6 +341,7 @@ export function createH158ReconnectSupervisor(
       if (!armed.has(deviceId) || suppressed.has(deviceId)) {
         continue;
       }
+      trace('DROP detected — re-arming', { deviceId });
       setH158ReconnectPhase(deviceId, 'reconnecting');
       scheduleRetry(deviceId, REDIAL_SETTLE_MS);
     }
@@ -337,10 +370,85 @@ export function createH158ReconnectSupervisor(
     }, false);
   }
 
+  /**
+   * Dev-only visibility probe. A pending dial that never resolves is ambiguous in exactly the
+   * way that matters: the device may be absent (not advertising — a firmware question), or
+   * present but the standing intent is not firing (an us question). Nothing in the connect path
+   * can tell those apart, because a pending connect reports nothing either way.
+   *
+   * So while something is armed and disconnected, this runs a short passive scan and logs what
+   * the radio can actually see. If the target id shows up here while the dial stays pending,
+   * the device is there and `autoConnect` is the problem. If it never shows up, the device is
+   * not advertising and no app-side change can reach it.
+   *
+   * Stripped from release builds by `__DEV__`, and it never runs unless a device is actually
+   * waiting to reconnect — this is a bring-up instrument, not a background scanner.
+   */
+  let probeHandle: ReturnType<typeof setTimeout> | undefined;
+  function scheduleProbe(): void {
+    if (!__DEV__ || disposed || !adapter?.startDeviceScan || probeHandle !== undefined) {
+      return;
+    }
+    probeHandle = setTimeoutFn(() => {
+      probeHandle = undefined;
+      if (disposed) {
+        return;
+      }
+      const waiting = [...armed.keys()].filter(
+        (deviceId) =>
+          !useH158ConnectionStore.getState().connections[deviceId] && !suppressed.has(deviceId),
+      );
+      if (waiting.length === 0) {
+        scheduleProbe();
+        return;
+      }
+      const seen = new Map<string, string | null>();
+      try {
+        adapter.startDeviceScan?.(null, null, (error, advertisement) => {
+          if (error || !advertisement) {
+            return;
+          }
+          seen.set(advertisement.id, advertisement.name ?? null);
+        });
+      } catch (error) {
+        trace('probe could not start', { error: String(error) });
+        scheduleProbe();
+        return;
+      }
+      setTimeoutFn(() => {
+        try {
+          adapter.stopDeviceScan?.();
+        } catch {
+          // Nothing to do — the probe is diagnostic only.
+        }
+        for (const deviceId of waiting) {
+          trace('probe', {
+            deviceId,
+            visible: seen.has(deviceId),
+            nameSeen: seen.get(deviceId) ?? null,
+            totalAdvertisers: seen.size,
+            // The id is the reconnect handle. If the device is advertising under a DIFFERENT id
+            // each time, reconnect-by-id cannot work even in principle — that is OQ-17 territory
+            // and a different fix entirely, so list what else is out there with a matching name.
+            sameNameOtherIds: [...seen.entries()]
+              .filter(([id, name]) => id !== deviceId && name === entryName(deviceId))
+              .map(([id]) => id),
+          });
+        }
+        scheduleProbe();
+      }, PROBE_SCAN_MS);
+    }, PROBE_INTERVAL_MS);
+  }
+
+  function entryName(deviceId: string): string | null {
+    return armed.get(deviceId)?.target.name ?? null;
+  }
+
   function poke(): void {
     if (disposed) {
       return;
     }
+    trace('poke', { armed: [...armed.keys()] });
     for (const [deviceId, entry] of armed) {
       if (suppressed.has(deviceId) || entry.dialInFlight) {
         continue;
@@ -372,6 +480,8 @@ export function createH158ReconnectSupervisor(
           continue;
         }
         armed.set(target.id, { target, dialInFlight: false, failures: 0 });
+        trace('armed', { deviceId: target.id, name: target.name });
+        scheduleProbe();
         if (suppressed.has(target.id)) {
           setH158ReconnectPhase(target.id, 'suppressed');
           continue;
@@ -419,6 +529,10 @@ export function createH158ReconnectSupervisor(
         return;
       }
       disposed = true;
+      if (probeHandle !== undefined) {
+        clearTimeoutFn(probeHandle);
+        probeHandle = undefined;
+      }
       unsubscribeConnections();
       adapterSubscription?.remove();
       for (const entry of armed.values()) {
