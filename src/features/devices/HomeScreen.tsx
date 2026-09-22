@@ -36,6 +36,15 @@ import {
   connectAndRememberH158Device,
   type ConnectH158DeviceOutcome,
 } from '@/features/ble/h158/connectAndRememberH158Device';
+import {
+  allowH158AutoReconnect,
+  forgetH158AutoReconnect,
+  refreshH158ReconnectTargets,
+} from '@/features/ble/h158/h158AutoReconnect';
+import {
+  useH158ReconnectStore,
+  type H158ReconnectPhase,
+} from '@/features/ble/h158/useH158ReconnectStore';
 import type { RootStackParamList } from '@/app/navigation';
 
 /** The hero's headline, below the greeting — fixed rather than branching on paired-device count.
@@ -99,6 +108,37 @@ const DAY_MS = 24 * HOUR_MS;
  * user actually reads at a glance; nothing finer-grained is worth the extra precision. `elapsed`
  * is clamped to 0 so a `lastConnectedAt` that's (implausibly) in the future — clock skew, a bad
  * device clock — reads as "just now" rather than a negative number. */
+/**
+ * The status line under a disconnected row's name. Auto-reconnect (2026-09-22) changed what this
+ * line is *for*: it used to be a bare fact ("Last connected 2h ago") because a disconnected
+ * device stayed disconnected until the user tapped it, so there was nothing else to say. Now the
+ * app is usually still working on it, and the line's job is to say so — the earphone model only
+ * feels calm if the user can see the app is handling it and does not need to act.
+ *
+ * `null` falls through to `formatLastConnected` below: no standing intent means either the user
+ * disconnected this device deliberately (`suppressed`) or the supervisor has not yet heard of
+ * it, and in both cases the old bare fact is still the honest thing to show.
+ */
+function autoReconnectCaption(phase: H158ReconnectPhase | undefined): string | null {
+  switch (phase) {
+    case 'reconnecting':
+      // Deliberately not "Reconnecting…", which implies something is happening right now and
+      // should finish shortly. A device sitting in a drawer is in this state for days. This says
+      // what is true — it is out of reach, and the app is watching for it — without promising a
+      // resolution that depends on the user walking back into range.
+      return 'Out of range — will reconnect automatically';
+    case 'blockedBluetooth':
+      return 'Turn on Bluetooth to reconnect';
+    case 'blockedLimit':
+      return 'Disconnect another device to reconnect this one';
+    case 'suppressed':
+    case undefined:
+      return null;
+    default:
+      return null;
+  }
+}
+
 function formatLastConnected(lastConnectedAt: number): string {
   const elapsed = Math.max(0, Date.now() - lastConnectedAt);
   if (elapsed < MINUTE_MS) {
@@ -337,6 +377,7 @@ function ConnectedDeviceCard({
   batteryPercent,
   lowBattery,
   isConnecting,
+  autoReconnectPhase,
   onPress,
   onToggleLock,
   isOpen,
@@ -353,6 +394,10 @@ function ConnectedDeviceCard({
    * separate "Connecting to <device>…" screen). Swaps the "Connect ›" hint below for a small
    * spinner for the real duration of the attempt, not a guessed one. */
   isConnecting?: boolean;
+  /** The auto-reconnect supervisor's standing intent for THIS device, if any
+   * (`h158ReconnectSupervisor.ts`). Only meaningful on a `!connected` row — a connected device
+   * has no intent outstanding, by construction. */
+  autoReconnectPhase?: H158ReconnectPhase;
   onPress: () => void;
   /** Sends the device the opposite of its current `locked` reading; resolves `true` only once
    * the device has confirmed the new state (`useH158ConnectionStore`'s own `setH158LockState`
@@ -366,7 +411,15 @@ function ConnectedDeviceCard({
 }) {
   const lockClause = locked === null ? '' : locked ? ', locked' : ', unlocked';
   const batteryClause = batteryPercent === null ? '' : `, battery ${batteryPercent}%`;
-  const statusClause = connected ? `connected${lockClause}${batteryClause}` : isConnecting ? 'connecting' : 'disconnected';
+  const autoCaption = connected ? null : autoReconnectCaption(autoReconnectPhase);
+  const statusClause = connected
+    ? `connected${lockClause}${batteryClause}`
+    : isConnecting
+      ? 'connecting'
+      : // Screen-reader users get the same distinction sighted users get from the caption line:
+        // "disconnected" alone reads as a dead end, which is exactly the wrong impression once
+        // the app is holding a standing intent to bring it back.
+        (autoCaption ?? 'disconnected');
 
   const swipeEnabled = connected && locked !== null && !!onToggleLock;
 
@@ -565,7 +618,7 @@ function ConnectedDeviceCard({
             on the disconnected branch rather than another `!== null` guard. */}
         {!connected && (
           <Text variant="caption" tone="secondary">
-            {formatLastConnected(device.lastConnectedAt)}
+            {autoCaption ?? formatLastConnected(device.lastConnectedAt)}
           </Text>
         )}
       </View>
@@ -1159,7 +1212,11 @@ export function HomeScreen({ testManager }: HomeScreenProps = {}) {
   // disconnects a live session) — this is only ever reached from `forgetConfirm`, which only ever
   // opens from a FAILED connect attempt, so there is never a session here to dispose.
   const forgetFailedDevice = useCallback(async (deviceId: string) => {
+    // Before the storage write, so a `refresh` racing this cannot re-arm a device that is on its
+    // way out of the remembered list.
+    forgetH158AutoReconnect(deviceId);
     await removePairedH158Device(deviceId);
+    void refreshH158ReconnectTargets();
     setPairedDevices((current) => current.filter((device) => device.id !== deviceId));
   }, []);
   // Guards `handleConnectSettled` below against acting on a connect that finishes after the user
@@ -1176,8 +1233,18 @@ export function HomeScreen({ testManager }: HomeScreenProps = {}) {
       };
     }, []),
   );
+  // The supervisor's standing intents, so a disconnected row can say "will reconnect
+  // automatically" instead of the old bare "Last connected 2h ago". Read as a whole map rather
+  // than per-row: `ConnectedDeviceCard` is not a `memo`, so a per-row selector would buy nothing
+  // and every row re-renders together anyway.
+  const reconnectPhases = useH158ReconnectStore((s) => s.phases);
+
   const handleConnectPress = useCallback((deviceId: string, name: string | null) => {
     setConnectError(null);
+    // A tap IS the intent to use this device — it lifts any "user pressed Disconnect"
+    // suppression, so the device is auto-managed again from here on. Same reasoning as
+    // `H158PairScreen`'s own `connect`.
+    allowH158AutoReconnect(deviceId);
     setPendingConnect({ deviceId, name });
   }, []);
 
@@ -1267,6 +1334,11 @@ export function HomeScreen({ testManager }: HomeScreenProps = {}) {
   const handleConnectSettled = useCallback(
     (deviceId: string, outcome: ConnectH158DeviceOutcome) => {
       setPendingConnect((current) => (current?.deviceId === deviceId ? null : current));
+      // Unconditional, and deliberately before the focus guard: a device that just connected for
+      // the first time is only now in the remembered list, and it needs a standing intent
+      // whether or not Home is still the screen on top. This is the half that must not be
+      // skipped when a slow dial settles after the user has navigated away.
+      void refreshH158ReconnectTargets();
       if (!homeFocusedRef.current) {
         return;
       }
@@ -1469,6 +1541,7 @@ export function HomeScreen({ testManager }: HomeScreenProps = {}) {
                         batteryPercent={null}
                         lowBattery={null}
                         isConnecting={pendingConnect?.deviceId === device.id}
+                        autoReconnectPhase={reconnectPhases[device.id]}
                         onPress={() => handleConnectPress(device.id, device.name ?? null)}
                       />
                     ))}

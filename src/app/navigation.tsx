@@ -16,9 +16,13 @@ import {
   useVerificationStatus,
   type VerificationState,
 } from '@/features/verification/useVerificationStatus';
-import { HomeScreen, VerificationPendingScreen } from '@/features/devices/HomeScreen';
+import {
+  HomeScreen,
+  VerificationPendingScreen,
+} from '@/features/devices/HomeScreen';
 import { PairDeviceScreen } from '@/features/devices/PairDeviceScreen';
 import { H158BringUpScreen } from '@/features/ble/h158/H158BringUpScreen';
+import { H158AutoReconnect } from '@/features/ble/h158/h158AutoReconnect';
 import { DevicePairingPrimingScreen } from '@/features/devices/DevicePairingPrimingScreen';
 import { DevicePairingGateScreen } from '@/features/devices/DevicePairingGateScreen';
 import { DeviceScanScreen } from '@/features/devices/DeviceScanScreen';
@@ -30,7 +34,10 @@ import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { ScreenGalleryScreen } from '@/features/devgallery/ScreenGalleryScreen';
 import { ScreenPreviewScreen } from '@/features/devgallery/ScreenPreviewScreen';
 import { useSessionStore } from '@/app/stores/useSessionStore';
-import { useOnboardingStore, type OnboardingStatus } from '@/app/stores/useOnboardingStore';
+import {
+  useOnboardingStore,
+  type OnboardingStatus,
+} from '@/app/stores/useOnboardingStore';
 
 /**
  * Root param list — spec §9.2 app/navigation.tsx. Contested shared file (CLAUDE.md): every
@@ -197,8 +204,8 @@ export function selectStack(
  * already checks it".
  */
 export function RootNavigator() {
-  const sessionStatus = useSessionStore((s) => s.status);
-  const onboardingStatus = useOnboardingStore((s) => s.status);
+  const sessionStatus = useSessionStore(s => s.status);
+  const onboardingStatus = useOnboardingStore(s => s.status);
   const { state: verification, refetch } = useVerificationStatus();
   const stack = selectStack(sessionStatus, verification, onboardingStatus);
 
@@ -208,7 +215,10 @@ export function RootNavigator() {
         // Restoring a Keychain-backed session. Render nothing decisive: showing the auth
         // stack here would flash a login screen at an already-signed-in user on every launch.
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="VerificationPending" component={BootSplashScreen} />
+          <Stack.Screen
+            name="VerificationPending"
+            component={BootSplashScreen}
+          />
         </Stack.Navigator>
       ) : stack === 'onboarding' ? (
         // F1 — first launch, no session yet, onboarding flag unset. Its own single-screen
@@ -216,7 +226,10 @@ export function RootNavigator() {
         // be reached by a stale navigate() call, and onboarding has no gated content behind it
         // for that property to protect, but the pattern stays consistent regardless.
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Onboarding" component={OnboardingCarouselScreen} />
+          <Stack.Screen
+            name="Onboarding"
+            component={OnboardingCarouselScreen}
+          />
         </Stack.Navigator>
       ) : stack === 'auth' ? (
         // Phone entry is the front door now — AU-1's chooser was retired with the reference
@@ -251,41 +264,61 @@ export function RootNavigator() {
           />
         </Stack.Navigator>
       ) : stack === 'home' ? (
-        <Stack.Navigator>
-          <Stack.Screen
-            name="Home"
-            component={HomeScreen}
-            options={{
-              // Home now builds its own header (avatar + dev "Screens" link, centered) so the
-              // gradient can run edge-to-edge behind the status bar — see HomeScreen.tsx.
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
-          <Stack.Screen name="SetPassword" component={SetPasswordScreen} options={{ title: 'Change password' }} />
-          {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection.
+        // `H158AutoReconnect` renders nothing — it owns the app-wide standing reconnect intents
+        // for remembered devices (the "earphone model": pair once, and the link maintains
+        // itself). It sits OUTSIDE the navigator on purpose: mounted on a screen it would be
+        // disposed the moment the user opened Profile, taking every pending dial with it.
+        // Scoped to this stack because only a signed-in, age-verified user has devices to keep
+        // connected — sign-out unmounts it, which is also the correct moment to drop the intents.
+        <>
+          <H158AutoReconnect />
+          <Stack.Navigator>
+            <Stack.Screen
+              name="Home"
+              component={HomeScreen}
+              options={{
+                // Home now builds its own header (avatar + dev "Screens" link, centered) so the
+                // gradient can run edge-to-edge behind the status bar — see HomeScreen.tsx.
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="Profile"
+              component={ProfileScreen}
+              options={{ title: 'Profile' }}
+            />
+            <Stack.Screen
+              name="SetPassword"
+              component={SetPasswordScreen}
+              options={{ title: 'Change password' }}
+            />
+            {/* P1-3.0 — F7.2-F7.5, device pairing entry through the hard boundary at selection.
               No native header — `BluetoothPrimingScreen` renders its own gradient + "BlueSmoke"
               + curtain shell, matching Home's. `slide_from_bottom` makes entering it read as
               Home's own curtain continuing to rise, landing at the same resting height. */}
-          <Stack.Screen
-            name="BluetoothPriming"
-            component={DevicePairingPrimingScreen}
-            options={{ headerShown: false, animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen
-            name="BluetoothGate"
-            component={DevicePairingGateScreen}
-            options={{ title: 'Pair a device' }}
-          />
-          {/* No native header — DeviceScanScreen renders its own full-bleed gradient (matching
+            <Stack.Screen
+              name="BluetoothPriming"
+              component={DevicePairingPrimingScreen}
+              options={{ headerShown: false, animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="BluetoothGate"
+              component={DevicePairingGateScreen}
+              options={{ title: 'Pair a device' }}
+            />
+            {/* No native header — DeviceScanScreen renders its own full-bleed gradient (matching
               Home's) with its own back control, same reasoning as Home itself above. */}
-          <Stack.Screen name="DeviceScan" component={DeviceScanScreen} options={{ headerShown: false }} />
-          <Stack.Screen
-            name="DevicePairingBoundary"
-            component={PairingBoundaryScreen}
-            options={{ title: 'Pair a device' }}
-          />
-          {/*
+            <Stack.Screen
+              name="DeviceScan"
+              component={DeviceScanScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="DevicePairingBoundary"
+              component={PairingBoundaryScreen}
+              options={{ title: 'Pair a device' }}
+            />
+            {/*
             🔴 Merge finding, 2026-08-23: two independent pairing-flow implementations exist —
             this four-screen BluetoothPriming→...→DevicePairingBoundary flow (stage) and the
             single-screen PairDeviceScreen below (feature/ble-connectivity, built against
@@ -293,49 +326,61 @@ export function RootNavigator() {
             registered so the file isn't silently orphaned, but nothing navigates to it any
             more. Needs a team decision on which one is canonical — see the session log.
           */}
-          <Stack.Screen
-            name="PairDevice"
-            component={PairDeviceScreen}
-            options={{ title: 'Pair device' }}
-          />
-          {/* Real H158 hardware chain — Home's live "Pair a device" button lands here (see
+            <Stack.Screen
+              name="PairDevice"
+              component={PairDeviceScreen}
+              options={{ title: 'Pair device' }}
+            />
+            {/* Real H158 hardware chain — Home's live "Pair a device" button lands here (see
               HomeScreen.tsx's PairingModal onContinue). No native header, matching the gate's
               own leaf screens (GradientGround-based, no nav bar). */}
-          <Stack.Screen name="H158Gate" component={H158GateScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="H158Pair" component={H158PairScreen} options={{ headerShown: false }} />
-          {/*
+            <Stack.Screen
+              name="H158Gate"
+              component={H158GateScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="H158Pair"
+              component={H158PairScreen}
+              options={{ headerShown: false }}
+            />
+            {/*
             Dev-only. `__DEV__` is statically false in a release build, so these routes are not
             merely hidden — they are absent from the navigator, which is the same guarantee the
             gated stacks rely on: an unregistered screen cannot be reached at all.
           */}
-          {__DEV__ && (
-            <Stack.Group>
-              <Stack.Screen
-                name="ScreenGallery"
-                component={ScreenGalleryScreen}
-                options={{ title: 'Screens (dev)' }}
-              />
-              <Stack.Screen
-                name="ScreenPreview"
-                component={ScreenPreviewScreen}
-                options={({ route }) => ({ title: route.params.id })}
-              />
-              <Stack.Screen
-                name="H158BringUp"
-                component={H158BringUpScreen}
-                options={{ title: 'H158 bring-up' }}
-              />
-              <Stack.Screen
-                name="DeviceListDev"
-                component={DeviceListDevScreen}
-                options={{ title: 'Devices (dev)' }}
-              />
-            </Stack.Group>
-          )}
-        </Stack.Navigator>
+            {__DEV__ && (
+              <Stack.Group>
+                <Stack.Screen
+                  name="ScreenGallery"
+                  component={ScreenGalleryScreen}
+                  options={{ title: 'Screens (dev)' }}
+                />
+                <Stack.Screen
+                  name="ScreenPreview"
+                  component={ScreenPreviewScreen}
+                  options={({ route }) => ({ title: route.params.id })}
+                />
+                <Stack.Screen
+                  name="H158BringUp"
+                  component={H158BringUpScreen}
+                  options={{ title: 'H158 bring-up' }}
+                />
+                <Stack.Screen
+                  name="DeviceListDev"
+                  component={DeviceListDevScreen}
+                  options={{ title: 'Devices (dev)' }}
+                />
+              </Stack.Group>
+            )}
+          </Stack.Navigator>
+        </>
       ) : stack === 'pending' ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="VerificationPending" component={VerificationPendingScreen} />
+          <Stack.Screen
+            name="VerificationPending"
+            component={VerificationPendingScreen}
+          />
         </Stack.Navigator>
       ) : stack === 'transportError' ? (
         // F6.X / VF-7 — its own single-screen stack, exactly like 'pending' above, so a

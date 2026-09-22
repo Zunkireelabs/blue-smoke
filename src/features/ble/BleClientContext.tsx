@@ -87,7 +87,29 @@ export interface BleManagerLike {
     listener: (error: Error | null, device: BleDeviceLike | null) => void,
   ): void;
   stopDeviceScan(): void;
-  connectToDevice(deviceId: string): Promise<BleDeviceLike>;
+  /**
+   * `options` added 2026-09-22 for the H158 auto-reconnect supervisor
+   * (`h158/h158ReconnectSupervisor.ts`). It mirrors `react-native-ble-plx`'s
+   * own `ConnectionOptions` (index.d.ts) and is **optional and additive**, so
+   * every existing narrow test double that declares the one-argument form
+   * still satisfies this interface unchanged.
+   *
+   * 🔴 Why it had to exist at all: without it there is no way to ask either
+   * platform for a *standing* connection intent, which is the whole mechanism
+   * behind "reconnects itself when it comes back into range".
+   * - Android: `autoConnect: true` hands the wait to the OS GATT stack, which
+   *   keeps watching for the device indefinitely at no battery cost to us.
+   *   `autoConnect: false` (the library default) is a one-shot direct connect
+   *   that fails immediately when the device is not already in range.
+   * - iOS: CoreBluetooth has no `autoConnect` flag — a plain `connect` is
+   *   *already* a pending connection that never times out on its own. There
+   *   the relevant half is `timeout`, which must be left unset: supplying one
+   *   is what cancels the very behaviour we want.
+   */
+  connectToDevice(
+    deviceId: string,
+    options?: { autoConnect?: boolean; timeout?: number },
+  ): Promise<BleDeviceLike>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
   cancelDeviceConnection(deviceId: string): Promise<BleDeviceLike>;
   /**
