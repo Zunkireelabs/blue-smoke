@@ -4,6 +4,100 @@ Newest first. Conventions in [`README.md`](README.md).
 
 ---
 
+## 2026-09-29 — Twilio → Azure Communication Services: decided, not yet safe to build
+
+**Decided, and why.** Client team decided this week to move phone-OTP SMS delivery off Twilio
+Verify to Azure Communication Services. Trigger: Twilio Trust Hub rejected the account's Business
+Profile (**"Bizmind INC"**, Error `18602` — "The Business ID you provided could not be verified"),
+on what looks like a fresh/default account (`My First Twilio Account`, $50 trial balance).
+🔴 **Client-confirmed verbally in a meeting only, nothing in writing** — same status §1.2.2 sat in
+before it was written down. Treat as provisional until there's an email/message thread, not just a
+meeting, per the standing convention for vendor-facing decisions.
+
+**Found while investigating, not yet resolved — worth stopping on before building anything:**
+
+1. Per spec §1.2.1 and Twilio's own docs, **Twilio Verify — the product already wired into this
+   app — does not require a Trust Hub Business Profile or A2P 10DLC registration at all.** That
+   requirement is for raw Messaging Service / dedicated-number sending, a different product.
+   Nobody has established what the rejected "Bizmind INC" profile was actually being submitted
+   for, or whether the existing Verify-based OTP flow works today regardless of that rejection.
+   If it does, the trigger for this whole switch may be solving a problem that doesn't affect us.
+2. Azure Communication Services has the same shape of requirement for US numbers, just slower.
+   **Alphanumeric sender ID cannot be used for US/Canada at all** (carrier policy, every vendor,
+   not a Twilio-specific restriction), so the only real ACS options are a toll-free number
+   (5–6 week carrier verification; a number is blocked from sending anything until it clears) or a
+   short code (6–8 weeks). Both require submitting the same category of business-identity
+   information Twilio just rejected. If "Bizmind INC" doesn't clear Twilio's check, there is a
+   real chance the same entity fails Azure's toll-free verification too — just discovered 5–6
+   weeks later instead of today.
+
+**Blocked / needs someone else.** Client needs to (a) get the actual reason for the Twilio
+`18602` rejection (Twilio support: trusthub-verify@twilio.com — commonly an EIN/legal-name
+mismatch, often fixable in days) and (b) confirm the Business Profile was ever required for
+Verify's OTP path in the first place, before either fixing Twilio or committing to Azure's
+timeline. The code side of the swap (a Supabase Send SMS Hook + one Edge Function calling ACS,
+same signed-webhook shape `persona-webhook` already uses) is roughly a day of work — but there is
+no reason to spend it before knowing the vendor on the other end can actually deliver, given the
+5–8 week provisioning lead time either path may carry.
+
+**Update, same day — a live test corrects point 1 above.** The account balance was topped up to
+$50 (no longer trial) and a real, non-test `signInWithOtp` was sent to a real Nepali number
+(+977 98…) against the dev Supabase project. It failed immediately:
+
+```
+sms_send_failed / 422
+Error sending confirmation OTP to provider: To send messages or make calls to unverified
+numbers, you must have an approved Primary Compliance Profile. Alternatively, you can add
+recipient numbers as verified caller IDs to continue testing. More information:
+https://www.twilio.com/docs/errors/21608
+```
+
+**Point 1 above was too broad and is now corrected.** "Verify doesn't need a Business Profile" is
+true only for *A2P 10DLC*, a US-specific long-code registration scheme. Twilio's own docs for
+error `21608` say a paid account without an **approved Primary Compliance Profile** stays capped
+to verified-caller-ID-only sending for *any* destination, Verify included. **The rejected
+"Bizmind INC" profile is the real blocker after all**, not a red herring — trust the live call
+over the general research it contradicted.
+
+**New, Nepal-specific facts that change the Twilio-vs-Azure comparison:** Twilio has a published
+Nepal SMS guideline and documented Nepali-carrier support (Ncell requires a pre-registered
+alphanumeric sender ID; one-way only, which is fine for OTP — Nepal has no two-way SMS support on
+any vendor). **Azure Communication Services has no native Nepal support at all** — reaching Nepal
+from ACS requires a third-party aggregator bolted on top ("Messaging Connect", e.g. Infobip), a
+second vendor relationship with its own separate onboarding. The toll-free/short-code options
+investigated above are US/Canada-only regardless and were never going to reach Nepal.
+
+**Revised recommendation:** if end users are Nepal-based, Azure is the *wrong* direction, not
+just a slower one — Twilio already has Nepal coverage; Azure would need a second vendor bolted on
+to get there at all. The critical path is fixing the Trust Hub rejection (`18602`) on the
+account Twilio already has working Nepal support for, not switching providers.
+
+### Decision — the recommendation above was overridden, same day. Build ACS.
+
+Recording this because the entry as written argues against the work that is now being done, and a
+future reader (or a fresh agent picking up the brief) would be right to ask why. It was not
+ignored; it was overruled, on a fact that only emerged afterwards:
+
+**The client already has an Azure Communication Services resource provisioned, with an SMS sender
+they say is verified.** That removes the single strongest argument above — the 5–6 week toll-free
+provisioning wait — because the provisioning has already happened on their side. What remains of
+the Twilio case (that fixing `18602` is ~48h of paperwork) is real but no longer decisive against
+a vendor the client has already paid for, set up, and chosen.
+
+**What was NOT resolved by that, and is still open:** Nepal. ACS has no native +977 coverage, and
+nothing about the client owning an ACS resource changes that. The requirement has since firmed up
+to **USA *and* Nepal**, so this is now a live risk against the plan, not a footnote —
+`docs/execution-briefs/P1-1.0-acs-sms-hook.md` §11 carries it, and the client has been asked
+directly whether their sender reaches Nepal and whether Messaging Connect is enabled. **If the
+answer is no, this decision should be revisited rather than worked around.**
+
+**Still verbal-only.** No written client confirmation of the vendor switch exists. Same status
+§1.2.2 sat in, and the same standing risk: treat as provisional. Tracked in the brief's DoD.
+
+**Work proceeding on** `feature/P1-1.0-acs-sms-hook` under that brief.
+
+---
+
 ## 2026-09-10 — "Confirming your verification…" stranded users again, for a new reason
 
 **Branch:** `fix/P2-6.0-verification-status-stuck-pending`.
